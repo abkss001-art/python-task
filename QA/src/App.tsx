@@ -15,6 +15,7 @@ import { SmartTableView } from './components/SmartTableView';
 import { IssueFormModal } from './components/IssueFormModal';
 import { LightboxModal } from './components/LightboxModal';
 import { FirebaseSetupModal } from './components/FirebaseSetupModal';
+import { AdminReportModal } from './components/AdminReportModal';
 import { LoginScreen, AuthenticatedUser } from './components/LoginScreen';
 import { extractImagesFromClipboardEvent } from './utils/imageUtils';
 import {
@@ -110,10 +111,11 @@ export function App() {
     title: string;
   } | null>(null);
 
-  // Confirmation & Archive Modals
+  // Confirmation, Archive & Admin Report Modals
   const [issueToDelete, setIssueToDelete] = useState<StdIssue | null>(null);
   const [systemToRemove, setSystemToRemove] = useState<string | null>(null);
   const [isArchiveModalOpen, setIsArchiveModalOpen] = useState<boolean>(false);
+  const [isAdminReportOpen, setIsAdminReportOpen] = useState<boolean>(false);
 
   // Live Notification Toast & Highlight
   const [liveToast, setLiveToast] = useState<string | null>(null);
@@ -908,6 +910,9 @@ export function App() {
         onAddSystem={handleAddSystem}
         onRequestRemoveSystem={(sys) => setSystemToRemove(sys)}
         onOpenArchiveModal={() => setIsArchiveModalOpen(true)}
+        onOpenAdminReport={() => {
+          if (isAdmin) setIsAdminReportOpen(true);
+        }}
         issues={issues}
         syncStatus={syncStatus}
         currentUserName={currentUserName}
@@ -1352,6 +1357,19 @@ export function App() {
             </div>
           </div>
         </div>
+      )}
+
+      {/* Admin Executive QA Progress Report Modal (Admin Only) */}
+      {isAdminReportOpen && isAdmin && (
+        <AdminReportModal
+          systems={systems}
+          issues={issues.filter((i) => !archivedSystems.includes(i.system))}
+          initialSystem={activeSystem}
+          onClose={() => setIsAdminReportOpen(false)}
+          onOpenLightbox={(images, index, title) =>
+            setLightboxData({ images, index, title })
+          }
+        />
       )}
 
       {/* Fullscreen Lightbox with Zoom & Pan for Mobile Details */}

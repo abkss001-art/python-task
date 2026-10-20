@@ -15,7 +15,8 @@ import {
   Archive,
   BellRing,
   Download,
-  LogOut
+  LogOut,
+  BarChart3
 } from 'lucide-react';
 import { StdIssue, SyncStatusInfo, TeamRole } from '../types/std';
 
@@ -27,6 +28,7 @@ interface NavbarProps {
   onAddSystem: (newSys: string) => void;
   onRequestRemoveSystem?: (sys: string) => void;
   onOpenArchiveModal?: () => void;
+  onOpenAdminReport?: () => void;
   issues: StdIssue[];
   syncStatus: SyncStatusInfo;
   currentUserName: string;
@@ -122,6 +124,7 @@ export const Navbar: React.FC<NavbarProps> = ({
   onAddSystem,
   onRequestRemoveSystem,
   onOpenArchiveModal,
+  onOpenAdminReport,
   issues,
   syncStatus,
   currentUserName,
@@ -285,17 +288,29 @@ export const Navbar: React.FC<NavbarProps> = ({
                 </button>
               )}
 
-              {/* Admin-Only Cloud Settings Button */}
+              {/* Admin-Only Progress Report & Cloud Settings Buttons */}
               {isAdmin && (
-                <button
-                  type="button"
-                  onClick={onOpenFirebaseModal}
-                  className="flex items-center gap-1 px-2.5 py-1.5 rounded-xl bg-indigo-50 hover:bg-indigo-100 text-indigo-700 border border-indigo-200 text-[11px] sm:text-xs font-bold transition cursor-pointer shrink-0"
-                  title="הגדרות ענן (זמין למנהל בלבד)"
-                >
-                  <Settings className="w-3.5 h-3.5" />
-                  <span>הגדר ענן</span>
-                </button>
+                <>
+                  <button
+                    type="button"
+                    onClick={onOpenAdminReport}
+                    className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl bg-gradient-to-l from-indigo-600 to-blue-600 hover:from-indigo-700 hover:to-blue-700 text-white shadow-xs text-[11px] sm:text-xs font-bold transition cursor-pointer shrink-0"
+                    title="הפקת דוח התקדמות מנהלים לפי כלל המערכות או לפי מערכת (זמין למנהל בלבד)"
+                  >
+                    <BarChart3 className="w-3.5 h-3.5" />
+                    <span>דוח התקדמות</span>
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={onOpenFirebaseModal}
+                    className="flex items-center gap-1 px-2.5 py-1.5 rounded-xl bg-indigo-50 hover:bg-indigo-100 text-indigo-700 border border-indigo-200 text-[11px] sm:text-xs font-bold transition cursor-pointer shrink-0"
+                    title="הגדרות ענן (זמין למנהל בלבד)"
+                  >
+                    <Settings className="w-3.5 h-3.5" />
+                    <span>הגדר ענן</span>
+                  </button>
+                </>
               )}
             </div>
 
