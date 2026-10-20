@@ -260,25 +260,30 @@ export const Navbar: React.FC<NavbarProps> = ({
                 </span>
               </div>
 
-              {/* Install App & Enable Notifications Button */}
-              <button
-                type="button"
-                onClick={onInstallAndNotify}
-                className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl border text-[11px] sm:text-xs font-bold transition cursor-pointer shrink-0 ${
-                  notificationsEnabled
-                    ? 'bg-indigo-50 hover:bg-indigo-100 text-indigo-700 border-indigo-200'
-                    : 'bg-amber-50 hover:bg-amber-100 text-amber-900 border-amber-300'
-                }`}
-                title="הורד אפליקציה והפעל התראות על תקלות חדשות"
-              >
-                <Download className="w-3.5 h-3.5 text-indigo-600" />
-                <BellRing
-                  className={`w-3.5 h-3.5 ${
-                    notificationsEnabled ? 'text-emerald-600' : 'text-amber-600 animate-bounce'
-                  }`}
-                />
-                <span>{notificationsEnabled ? 'אפליקציה והתראות' : 'הורד אפליקציה + התראות'}</span>
-              </button>
+              {/* Install App & Notification Settings Button */}
+              {notificationsEnabled ? (
+                <button
+                  type="button"
+                  onClick={onInstallAndNotify}
+                  className="relative flex items-center justify-center w-8 h-8 sm:w-9 sm:h-9 rounded-xl bg-emerald-50 hover:bg-emerald-100 text-emerald-600 border border-emerald-200 shadow-2xs transition cursor-pointer shrink-0"
+                  title="הגדרות התראות ואפליקציה (פעיל)"
+                  aria-label="הגדרות התראות"
+                >
+                  <BellRing className="w-4 h-4 text-emerald-600" />
+                  <span className="absolute -top-0.5 -right-0.5 w-2.5 h-2.5 rounded-full bg-emerald-500 border-2 border-white" />
+                </button>
+              ) : (
+                <button
+                  type="button"
+                  onClick={onInstallAndNotify}
+                  className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl border text-[11px] sm:text-xs font-bold bg-amber-50 hover:bg-amber-100 text-amber-900 border-amber-300 transition cursor-pointer shrink-0"
+                  title="הורד אפליקציה והפעל התראות על תקלות חדשות"
+                >
+                  <Download className="w-3.5 h-3.5 text-indigo-600" />
+                  <BellRing className="w-3.5 h-3.5 text-amber-600 animate-bounce" />
+                  <span>הורד אפליקציה + התראות</span>
+                </button>
+              )}
 
               {/* Admin-Only Cloud Settings Button */}
               {isAdmin && (

@@ -1,7 +1,55 @@
 /**
- * רישום Service Worker, בקשת הרשאת התראות ושליחת התראות מערכת (Push / OS Notifications)
- * בכל פעם שעולה תקלה חדשה במערכת "צב מן"
+ * ניהול הגדרות התראות מותאמות אישית, Service Worker ושליחת התראות מערכת
  */
+
+export interface NotificationPreferences {
+  enabled: boolean;
+  notifyOnNewIssue: boolean;
+  notifyOnStatusChange: boolean;
+  notifyOnNewComment: boolean;
+  soundEnabled: boolean;
+}
+
+const PREFS_STORAGE_KEY = 'std_qa_notification_prefs_v1';
+
+export function loadNotificationPreferences(): NotificationPreferences {
+  const browserGranted =
+    typeof window !== 'undefined' &&
+    'Notification' in window &&
+    Notification.permission === 'granted';
+
+  try {
+    const saved = localStorage.getItem(PREFS_STORAGE_KEY);
+    if (saved) {
+      const parsed = JSON.parse(saved);
+      return {
+        enabled: Boolean(parsed.enabled && browserGranted),
+        notifyOnNewIssue: parsed.notifyOnNewIssue ?? true,
+        notifyOnStatusChange: parsed.notifyOnStatusChange ?? true,
+        notifyOnNewComment: parsed.notifyOnNewComment ?? true,
+        soundEnabled: parsed.soundEnabled ?? true
+      };
+    }
+  } catch {
+    // ignore
+  }
+
+  return {
+    enabled: browserGranted,
+    notifyOnNewIssue: true,
+    notifyOnStatusChange: true,
+    notifyOnNewComment: true,
+    soundEnabled: true
+  };
+}
+
+export function saveNotificationPreferences(prefs: NotificationPreferences) {
+  try {
+    localStorage.setItem(PREFS_STORAGE_KEY, JSON.stringify(prefs));
+  } catch {
+    // ignore
+  }
+}
 
 export async function registerPwaServiceWorker(): Promise<ServiceWorkerRegistration | null> {
   if (!('serviceWorker' in navigator)) return null;
@@ -25,17 +73,20 @@ export async function requestAppNotificationPermission(): Promise<boolean> {
     return false;
   }
   if (Notification.permission === 'granted') {
-    localStorage.setItem('std_qa_notifications_enabled', 'true');
+    const current = loadNotificationPreferences();
+    saveNotificationPreferences({ ...current, enabled: true });
     return true;
   }
   try {
     const permission = await Notification.requestPermission();
     const granted = permission === 'granted';
     if (granted) {
-      localStorage.setItem('std_qa_notifications_enabled', 'true');
+      const current = loadNotificationPreferences();
+      saveNotificationPreferences({ ...current, enabled: true });
       await sendSystemNotification(
         '🔔 ההתראות ב"צב מן" הופעלו בהצלחה!',
-        'מעכשיו תקבל התראה מיידית למכשיר בכל פעם שתעלה תקלה חדשה במערכת.'
+        'מעכשיו תקבל התראה למכשיר לפי ההגדרות שבחרת.',
+        true
       );
     }
     return granted;
@@ -65,8 +116,14 @@ export function playNotificationSound() {
   }
 }
 
-export async function sendSystemNotification(title: string, body: string) {
-  playNotificationSound();
+export async function sendSystemNotification(
+  title: string,
+  body: string,
+  playSound = true
+) {
+  if (playSound) {
+    playNotificationSound();
+  }
 
   if (typeof window === 'undefined' || !('Notification' in window)) return;
   if (Notification.permission !== 'granted') return;

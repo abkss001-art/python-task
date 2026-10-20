@@ -253,29 +253,29 @@ export const LoginScreen: React.FC<LoginScreenProps> = ({
           </button>
 
           {/* Install App & Enable Push Notifications Button */}
-          <div className="pt-3 border-t border-slate-100">
-            <button
-              type="button"
-              onClick={onInstallAndNotify}
-              className={`w-full flex items-center justify-center gap-2 py-2.5 px-4 rounded-xl border text-xs font-bold transition cursor-pointer ${
-                notificationsEnabled
-                  ? 'bg-emerald-50 border-emerald-200 text-emerald-800 hover:bg-emerald-100'
-                  : 'bg-slate-100 hover:bg-slate-200 text-slate-700 border-slate-200'
-              }`}
-            >
-              {notificationsEnabled ? (
-                <>
-                  <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
-                  <span>התראות פעילות • לחץ להורדת האפליקציה</span>
-                </>
-              ) : (
-                <>
-                  <Download className="w-4 h-4 text-indigo-600 shrink-0" />
-                  <BellRing className="w-4 h-4 text-amber-500 shrink-0" />
-                  <span>הורד אפליקציה והפעל התראות על תקלות חדשות</span>
-                </>
-              )}
-            </button>
+          <div className="pt-3 border-t border-slate-100 flex justify-center">
+            {notificationsEnabled ? (
+              <button
+                type="button"
+                onClick={onInstallAndNotify}
+                className="relative flex items-center justify-center w-10 h-10 rounded-xl bg-emerald-50 hover:bg-emerald-100 text-emerald-600 border border-emerald-200 shadow-2xs transition cursor-pointer"
+                title="הגדרות התראות ואפליקציה (פעיל)"
+                aria-label="הגדרות התראות"
+              >
+                <BellRing className="w-5 h-5 text-emerald-600" />
+                <span className="absolute -top-0.5 -right-0.5 w-2.5 h-2.5 rounded-full bg-emerald-500 border-2 border-white" />
+              </button>
+            ) : (
+              <button
+                type="button"
+                onClick={onInstallAndNotify}
+                className="w-full flex items-center justify-center gap-2 py-2.5 px-4 rounded-xl border text-xs font-bold bg-slate-100 hover:bg-slate-200 text-slate-700 border-slate-200 transition cursor-pointer"
+              >
+                <Download className="w-4 h-4 text-indigo-600 shrink-0" />
+                <BellRing className="w-4 h-4 text-amber-500 shrink-0" />
+                <span>הורד אפליקציה והפעל התראות על תקלות חדשות</span>
+              </button>
+            )}
           </div>
         </form>
       </div>

@@ -17,7 +17,7 @@
         "data:image/webp;base64,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"
       ],
       "comments": [],
-      "createdBy": "בודק צוות (בודק)",
+      "createdBy": "צוות בדיקות",
       "createdAt": 1792410899534,
       "updatedAt": 1792410899534
     },
@@ -33,20 +33,20 @@
       "comments": [
         {
           "id": "c-1",
-          "author": "דניאל (בודק)",
+          "author": "דניאל צוות בדיקות",
           "role": "qa",
           "text": "שוחזר גם באייפון 14 וגם באייפון 15 Pro בגרסת iOS 17.4.",
           "createdAt": 1792400045388
         },
         {
           "id": "c-2",
-          "author": "רועי (מפתח)",
+          "author": "רועי צוות פיתוח",
           "role": "dev",
           "text": "בודק את ה-Safe Area padding בתחתית המסך, מעלה תיקון לסביבת הבדיקות בקרוב.",
           "createdAt": 1792407245388
         }
       ],
-      "createdBy": "דניאל (בודק)",
+      "createdBy": "דניאל צוות בדיקות",
       "createdAt": 1792396445388,
       "updatedAt": 1792407245388
     },
@@ -62,13 +62,13 @@
       "comments": [
         {
           "id": "c-3",
-          "author": "מיכל (בודקת)",
+          "author": "מיכל צוות בדיקות",
           "role": "qa",
           "text": "שימו לב שזה קורה רק כשמזינים משקל עם נקודה עשרונית.",
           "createdAt": 1792403645388
         }
       ],
-      "createdBy": "מיכל (בודקת)",
+      "createdBy": "מיכל צוות בדיקות",
       "createdAt": 1792402245388,
       "updatedAt": 1792403645388
     },
@@ -84,13 +84,13 @@
       "comments": [
         {
           "id": "c-4",
-          "author": "רועי (מפתח)",
+          "author": "רועי צוות פיתוח",
           "role": "dev",
           "text": "עודכן הפונט המוטמע ב-PDF ותוקן כיוון ה-RTL. אשמח לבדיקה חוזרת ב-Safari.",
           "createdAt": 1792409045388
         }
       ],
-      "createdBy": "דניאל (בודק)",
+      "createdBy": "דניאל צוות בדיקות",
       "createdAt": 1792396445388,
       "updatedAt": 1792409045388
     },
@@ -106,25 +106,25 @@
       "comments": [
         {
           "id": "c-5",
-          "author": "אלון (מפתח)",
+          "author": "אלון צוות פיתוח",
           "role": "dev",
           "text": "נוסף אינדקס לחיפוש מהיר ובוצע Debounce לשדה החיפוש.",
           "createdAt": 1792405445388
         },
         {
           "id": "c-6",
-          "author": "מיכל (בודקת)",
+          "author": "מיכל צוות בדיקות",
           "role": "qa",
           "text": "נבדק שוב – התוצאות עולות תוך פחות מ-200ms. תקין!",
           "createdAt": 1792408445388
         }
       ],
-      "createdBy": "מיכל (בודקת)",
+      "createdBy": "מיכל צוות בדיקות",
       "createdAt": 1792392845388,
       "updatedAt": 1792408445388
     }
   ],
-  "lastUpdatedBy": "בודק צוות",
+  "lastUpdatedBy": "צוות בדיקות",
   "lastAction": "תקלה חדשה בתסריט #13 (CARGO)",
   "clientId": "client-1fdi9ay",
   "updatedAt": 1792410899542

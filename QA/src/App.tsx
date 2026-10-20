@@ -19,8 +19,11 @@ import { LoginScreen, AuthenticatedUser } from './components/LoginScreen';
 import { extractImagesFromClipboardEvent } from './utils/imageUtils';
 import {
   getNotificationPermissionState,
+  loadNotificationPreferences,
+  NotificationPreferences,
   registerPwaServiceWorker,
   requestAppNotificationPermission,
+  saveNotificationPreferences,
   sendSystemNotification
 } from './utils/notificationUtils';
 import {
@@ -36,6 +39,9 @@ import {
   Trash2,
   Eye,
   BellRing,
+  BellOff,
+  Volume2,
+  VolumeX,
   Download,
   Smartphone
 } from 'lucide-react';
@@ -56,7 +62,14 @@ export function App() {
       const saved = localStorage.getItem(AUTH_STORAGE_KEY);
       if (saved) {
         const parsed = JSON.parse(saved) as AuthenticatedUser;
-        if (parsed && parsed.fullName && parsed.role) {
+        if (
+          parsed &&
+          parsed.firstName &&
+          parsed.lastName &&
+          parsed.fullName &&
+          parsed.role &&
+          parsed.fullName !== 'בודק צוות'
+        ) {
           return parsed;
         }
       }
@@ -70,8 +83,11 @@ export function App() {
   const [showShortcutBanner, setShowShortcutBanner] = useState<boolean>(true);
   const [dismissedLastEventText, setDismissedLastEventText] = useState<string | null>(null);
 
-  // PWA Install Prompt & Notification Permission State
+  // PWA Install Prompt & Notification Preferences State
   const [deferredInstallPrompt, setDeferredInstallPrompt] = useState<any>(null);
+  const [notifPrefs, setNotifPrefs] = useState<NotificationPreferences>(() =>
+    loadNotificationPreferences()
+  );
   const [notificationsEnabled, setNotificationsEnabled] = useState<boolean>(() => {
     return getNotificationPermissionState() === 'granted';
   });
@@ -108,6 +124,8 @@ export function App() {
   const isAdmin = Boolean(authUser?.isAdmin);
   const currentUserName = authUser?.fullName || 'חבר צוות';
   const currentUserRole = authUser?.role || 'qa';
+  const userTeamTitle = currentUserRole === 'dev' && !isAdmin ? 'צוות פיתוח' : 'צוות בדיקות';
+  const formattedUserDisplay = `${currentUserName} ${userTeamTitle}`;
   // QA testers and Admins can create/edit issues; Developers (1111) only update status and add comments
   const canCreateOrEdit = Boolean(authUser && (authUser.isAdmin || authUser.role === 'qa'));
 
@@ -129,6 +147,8 @@ export function App() {
 
     const unsubState = syncService.subscribeState((state, isRemoteUpdate) => {
       if (isRemoteUpdate && hasLoadedInitialStateRef.current && state.issues.length > 0) {
+        const activePrefs = loadNotificationPreferences();
+
         // Detect if a brand new issue was added!
         const newlyAddedIssue = state.issues.find(
           (incoming) => !prevIssuesRef.current.some((p) => p.id === incoming.id)
@@ -137,10 +157,13 @@ export function App() {
         if (newlyAddedIssue) {
           setHighlightedIssueId(newlyAddedIssue.id);
           setTimeout(() => setHighlightedIssueId(null), 3500);
-          sendSystemNotification(
-            `🚨 תקלה חדשה עלתה ב"צב מן" (${newlyAddedIssue.system})`,
-            `תסריט #${newlyAddedIssue.testCaseId}: ${newlyAddedIssue.subject} • דווח ע"י ${newlyAddedIssue.createdBy}`
-          );
+          if (activePrefs.enabled && activePrefs.notifyOnNewIssue) {
+            sendSystemNotification(
+              `🚨 תקלה חדשה עלתה ב"צב מן" (${newlyAddedIssue.system})`,
+              `תסריט #${newlyAddedIssue.testCaseId}: ${newlyAddedIssue.subject} • דווח ע"י ${newlyAddedIssue.createdBy}`,
+              activePrefs.soundEnabled
+            );
+          }
         } else {
           const changed = state.issues.find((incoming) => {
             const prev = prevIssuesRef.current.find((p) => p.id === incoming.id);
@@ -149,6 +172,27 @@ export function App() {
           if (changed) {
             setHighlightedIssueId(changed.id);
             setTimeout(() => setHighlightedIssueId(null), 3000);
+
+            const prev = prevIssuesRef.current.find((p) => p.id === changed.id);
+            if (prev && activePrefs.enabled) {
+              if (prev.status !== changed.status && activePrefs.notifyOnStatusChange) {
+                sendSystemNotification(
+                  `🔄 עדכון סטטוס ב"צב מן" (${changed.system})`,
+                  `תסריט #${changed.testCaseId} עבר לסטטוס "${changed.status}"`,
+                  activePrefs.soundEnabled
+                );
+              } else if (
+                (changed.comments?.length || 0) > (prev.comments?.length || 0) &&
+                activePrefs.notifyOnNewComment
+              ) {
+                const latestComment = changed.comments[changed.comments.length - 1];
+                sendSystemNotification(
+                  `💬 הערה חדשה בתסריט #${changed.testCaseId} (${changed.system})`,
+                  `${latestComment.author}: ${latestComment.text}`,
+                  activePrefs.soundEnabled
+                );
+              }
+            }
           }
         }
 
@@ -213,7 +257,7 @@ export function App() {
           status: 'פתוח',
           screenshots: pastedImages,
           comments: [],
-          createdBy: currentUserName,
+          createdBy: formattedUserDisplay,
           createdAt: Date.now(),
           updatedAt: Date.now()
         });
@@ -248,23 +292,23 @@ export function App() {
     return false;
   };
 
-  const handleInstallAndNotify = async () => {
-    const granted = await requestAppNotificationPermission();
-    setNotificationsEnabled(granted);
+  const updateNotifPref = (patch: Partial<NotificationPreferences>) => {
+    setNotifPrefs((prev) => {
+      const next = { ...prev, ...patch };
+      saveNotificationPreferences(next);
+      return next;
+    });
+  };
 
-    if (deferredInstallPrompt) {
-      try {
-        deferredInstallPrompt.prompt();
-        const choice = await deferredInstallPrompt.userChoice;
-        if (choice.outcome === 'accepted') {
-          setDeferredInstallPrompt(null);
-        }
-      } catch {
-        setIsInstallModalOpen(true);
+  const handleInstallAndNotify = async () => {
+    if (!notificationsEnabled) {
+      const granted = await requestAppNotificationPermission();
+      setNotificationsEnabled(granted);
+      if (granted) {
+        updateNotifPref({ enabled: true });
       }
-    } else {
-      setIsInstallModalOpen(true);
     }
+    setIsInstallModalOpen(true);
   };
 
   const handleAddSystem = (newSys: string) => {
@@ -416,8 +460,6 @@ export function App() {
     const isEditingExisting =
       editingIssue && editingIssue.id !== '__NEW_FROM_PASTE__';
 
-    const roleLabel = isAdmin ? 'מנהל' : currentUserRole === 'dev' ? 'מפתח' : 'בודק';
-
     if (isEditingExisting) {
       const nextIssues = issues.map((item) =>
         item.id === editingIssue.id
@@ -444,7 +486,7 @@ export function App() {
       if (formData.initialComment) {
         comments.push({
           id: `c-${Date.now()}`,
-          author: `${currentUserName} (${roleLabel})`,
+          author: formattedUserDisplay,
           role: currentUserRole,
           text: formData.initialComment,
           createdAt: Date.now()
@@ -461,7 +503,7 @@ export function App() {
         status: formData.status,
         screenshots: formData.screenshots,
         comments,
-        createdBy: `${currentUserName} (${roleLabel})`,
+        createdBy: formattedUserDisplay,
         createdAt: Date.now(),
         updatedAt: Date.now()
       };
@@ -501,10 +543,9 @@ export function App() {
 
   const handleAddComment = (issueId: string, text: string, screenshot?: string) => {
     const target = issues.find((i) => i.id === issueId);
-    const roleLabel = isAdmin ? 'מנהל' : currentUserRole === 'dev' ? 'מפתח' : 'בודק';
     const newComment: StdComment = {
       id: `c-${Date.now()}-${Math.random().toString(36).substring(2, 5)}`,
-      author: `${currentUserName} (${roleLabel})`,
+      author: formattedUserDisplay,
       role: currentUserRole,
       text,
       screenshot,
@@ -601,7 +642,7 @@ export function App() {
     Boolean(syncStatus.lastEventText) &&
     syncStatus.lastEventText !== dismissedLastEventText;
 
-  // Render App Installation & Push Notification Instructions Modal
+  // Render Interactive Notification Settings & App Installation Modal
   const renderInstallModal = () => {
     if (!isInstallModalOpen) return null;
     return (
@@ -609,18 +650,28 @@ export function App() {
         className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/60 backdrop-blur-xs p-4"
         dir="rtl"
       >
-        <div className="bg-white rounded-2xl shadow-2xl border border-slate-200 w-full max-w-md overflow-hidden p-6 space-y-4">
+        <div className="bg-white rounded-2xl shadow-2xl border border-slate-200 w-full max-w-md overflow-hidden p-5 sm:p-6 space-y-4 max-h-[90vh] overflow-y-auto">
           <div className="flex items-start justify-between gap-3">
             <div className="flex items-center gap-3">
-              <div className="w-11 h-11 rounded-2xl bg-indigo-50 border border-indigo-200 flex items-center justify-center text-indigo-600 shrink-0">
-                <Smartphone className="w-6 h-6" />
+              <div
+                className={`w-11 h-11 rounded-2xl border flex items-center justify-center shrink-0 ${
+                  notificationsEnabled && notifPrefs.enabled
+                    ? 'bg-emerald-50 border-emerald-200 text-emerald-600'
+                    : 'bg-slate-100 border-slate-200 text-slate-500'
+                }`}
+              >
+                {notificationsEnabled && notifPrefs.enabled ? (
+                  <BellRing className="w-6 h-6" />
+                ) : (
+                  <BellOff className="w-6 h-6" />
+                )}
               </div>
               <div>
                 <h3 className="text-base font-extrabold text-slate-900">
-                  התקנת אפליקציית "צב מן" והתראות
+                  הגדרות התראות ואפליקציה
                 </h3>
                 <p className="text-xs text-slate-500 mt-0.5">
-                  קבלת התראות מיידיות למכשיר בכל פעם שעולה תקלה חדשה
+                  התאם אישית אילו התראות תרצה לקבל בזמן אמת למכשיר
                 </p>
               </div>
             </div>
@@ -633,8 +684,9 @@ export function App() {
             </button>
           </div>
 
+          {/* Browser Permission Status Banner */}
           <div
-            className={`p-3.5 rounded-xl border text-xs font-semibold flex items-center justify-between ${
+            className={`p-3.5 rounded-xl border text-xs font-semibold flex items-center justify-between gap-2 ${
               notificationsEnabled
                 ? 'bg-emerald-50 border-emerald-200 text-emerald-800'
                 : 'bg-amber-50 border-amber-200 text-amber-800'
@@ -644,7 +696,7 @@ export function App() {
               <BellRing className="w-4 h-4 shrink-0" />
               <span>
                 {notificationsEnabled
-                  ? 'התראות על תקלות חדשות מופעלות במכשיר זה!'
+                  ? 'הרשאת התראות דפדפן מאושרת ופעילה!'
                   : 'התראות טרם אושרו בדפדפן שלך'}
               </span>
             </div>
@@ -654,6 +706,7 @@ export function App() {
                 onClick={async () => {
                   const ok = await requestAppNotificationPermission();
                   setNotificationsEnabled(ok);
+                  if (ok) updateNotifPref({ enabled: true });
                 }}
                 className="px-3 py-1.5 rounded-lg bg-amber-600 hover:bg-amber-700 text-white text-xs font-bold cursor-pointer shrink-0"
               >
@@ -665,30 +718,153 @@ export function App() {
                 onClick={() =>
                   sendSystemNotification(
                     '🚨 בדיקת התראה - צב מן',
-                    'המערכת מחוברת! כך תיראה ההתראה כשתעלה תקלה חדשה.'
+                    'המערכת מחוברת! כך תיראה ההתראה בזמן אמת.',
+                    notifPrefs.soundEnabled
                   )
                 }
-                className="px-2.5 py-1 rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white text-[11px] font-bold cursor-pointer shrink-0"
+                className="px-2.5 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white text-[11px] font-bold cursor-pointer shrink-0"
               >
                 שלח התראת בדיקה
               </button>
             )}
           </div>
 
-          <div className="space-y-2.5 text-xs text-slate-600 bg-slate-50 p-4 rounded-xl border border-slate-200/80 leading-relaxed">
-            <div className="font-bold text-slate-900 flex items-center gap-1.5">
-              <Download className="w-4 h-4 text-indigo-600" />
-              <span>איך מתקינים את האפליקציה למסך הבית / שולחן העבודה?</span>
+          {/* Interactive Notification Preferences Toggles */}
+          <div className="space-y-2.5 bg-slate-50 p-3.5 rounded-2xl border border-slate-200/80">
+            <div className="text-xs font-extrabold text-slate-800 mb-1">
+              ניהול העדפות התראות:
             </div>
-            <ul className="list-disc list-inside space-y-1.5">
+
+            {/* Master Switch */}
+            <label className="flex items-center justify-between gap-3 p-2.5 rounded-xl bg-white border border-slate-200/80 cursor-pointer hover:border-indigo-200 transition">
+              <div>
+                <div className="text-xs font-bold text-slate-900">קבלת התראות פעילה</div>
+                <div className="text-[11px] text-slate-500">כיבוי או הדלקה של כל ההתראות במכשיר זה</div>
+              </div>
+              <input
+                type="checkbox"
+                checked={notifPrefs.enabled}
+                onChange={(e) => updateNotifPref({ enabled: e.target.checked })}
+                className="w-4 h-4 accent-emerald-600 rounded cursor-pointer"
+              />
+            </label>
+
+            {/* New Issue Toggle */}
+            <label
+              className={`flex items-center justify-between gap-3 p-2.5 rounded-xl bg-white border border-slate-200/80 cursor-pointer transition ${
+                !notifPrefs.enabled ? 'opacity-50 pointer-events-none' : 'hover:border-indigo-200'
+              }`}
+            >
+              <div>
+                <div className="text-xs font-bold text-slate-900">התראה על תקלה חדשה</div>
+                <div className="text-[11px] text-slate-500">קבל הודעה בכל פעם שבודק מעלה תקלה חדשה</div>
+              </div>
+              <input
+                type="checkbox"
+                checked={notifPrefs.notifyOnNewIssue}
+                onChange={(e) => updateNotifPref({ notifyOnNewIssue: e.target.checked })}
+                className="w-4 h-4 accent-indigo-600 rounded cursor-pointer"
+              />
+            </label>
+
+            {/* Status Change Toggle */}
+            <label
+              className={`flex items-center justify-between gap-3 p-2.5 rounded-xl bg-white border border-slate-200/80 cursor-pointer transition ${
+                !notifPrefs.enabled ? 'opacity-50 pointer-events-none' : 'hover:border-indigo-200'
+              }`}
+            >
+              <div>
+                <div className="text-xs font-bold text-slate-900">התראה על שינוי סטטוס</div>
+                <div className="text-[11px] text-slate-500">עדכון כשסטטוס משתנה (למשל: ניתן לבדוק שוב / נבדק תקין)</div>
+              </div>
+              <input
+                type="checkbox"
+                checked={notifPrefs.notifyOnStatusChange}
+                onChange={(e) => updateNotifPref({ notifyOnStatusChange: e.target.checked })}
+                className="w-4 h-4 accent-indigo-600 rounded cursor-pointer"
+              />
+            </label>
+
+            {/* New Comment Toggle */}
+            <label
+              className={`flex items-center justify-between gap-3 p-2.5 rounded-xl bg-white border border-slate-200/80 cursor-pointer transition ${
+                !notifPrefs.enabled ? 'opacity-50 pointer-events-none' : 'hover:border-indigo-200'
+              }`}
+            >
+              <div>
+                <div className="text-xs font-bold text-slate-900">התראה על הערה חדשה</div>
+                <div className="text-[11px] text-slate-500">קבל הודעה כשמפתח או בודק מוסיפים הערה לתקלה</div>
+              </div>
+              <input
+                type="checkbox"
+                checked={notifPrefs.notifyOnNewComment}
+                onChange={(e) => updateNotifPref({ notifyOnNewComment: e.target.checked })}
+                className="w-4 h-4 accent-indigo-600 rounded cursor-pointer"
+              />
+            </label>
+
+            {/* Sound Toggle */}
+            <label
+              className={`flex items-center justify-between gap-3 p-2.5 rounded-xl bg-white border border-slate-200/80 cursor-pointer transition ${
+                !notifPrefs.enabled ? 'opacity-50 pointer-events-none' : 'hover:border-indigo-200'
+              }`}
+            >
+              <div className="flex items-center gap-2">
+                {notifPrefs.soundEnabled ? (
+                  <Volume2 className="w-4 h-4 text-indigo-600 shrink-0" />
+                ) : (
+                  <VolumeX className="w-4 h-4 text-slate-400 shrink-0" />
+                )}
+                <div>
+                  <div className="text-xs font-bold text-slate-900">צליל התראה</div>
+                  <div className="text-[11px] text-slate-500">השמע צליל בעת קבלת התראה חדשה</div>
+                </div>
+              </div>
+              <input
+                type="checkbox"
+                checked={notifPrefs.soundEnabled}
+                onChange={(e) => updateNotifPref({ soundEnabled: e.target.checked })}
+                className="w-4 h-4 accent-indigo-600 rounded cursor-pointer"
+              />
+            </label>
+          </div>
+
+          {/* Direct Install Button if supported or Guide */}
+          <div className="space-y-2.5 text-xs text-slate-600 bg-slate-50 p-3.5 rounded-xl border border-slate-200/80 leading-relaxed">
+            <div className="flex items-center justify-between gap-2">
+              <div className="font-bold text-slate-900 flex items-center gap-1.5">
+                <Smartphone className="w-4 h-4 text-indigo-600 shrink-0" />
+                <span>התקנת האפליקציה למסך הבית / מחשב:</span>
+              </div>
+              {deferredInstallPrompt && (
+                <button
+                  type="button"
+                  onClick={async () => {
+                    try {
+                      deferredInstallPrompt.prompt();
+                      const choice = await deferredInstallPrompt.userChoice;
+                      if (choice.outcome === 'accepted') {
+                        setDeferredInstallPrompt(null);
+                      }
+                    } catch {
+                      // ignore
+                    }
+                  }}
+                  className="px-3 py-1 rounded-lg bg-indigo-600 hover:bg-indigo-700 text-white text-[11px] font-bold cursor-pointer shrink-0"
+                >
+                  התקן כעת
+                </button>
+              )}
+            </div>
+            <ul className="list-disc list-inside space-y-1 text-[11px]">
               <li>
-                <strong>במחשב (Chrome / Edge):</strong> לחץ על סמל ההתקנה בשורת הכתובת למעלה (ליד הכוכב) ובחר <strong>"התקן" (Install)</strong>.
+                <strong>במחשב (Chrome / Edge):</strong> לחץ על סמל ההתקנה בשורת הכתובת למעלה ובחר <strong>"התקן"</strong>.
               </li>
               <li>
-                <strong>באנדרואיד (Chrome):</strong> לחץ על תפריט 3 הנקודות ובחר <strong>"התקן אפליקציה" / "הוסף למסך הבית"</strong>.
+                <strong>באנדרואיד (Chrome):</strong> לחץ על תפריט 3 הנקודות ובחר <strong>"התקן אפליקציה"</strong>.
               </li>
               <li>
-                <strong>באייפון (Safari):</strong> לחץ על כפתור השיתוף בתחתית המסך ובחר <strong>"הוסף למסך הבית" (Add to Home Screen)</strong>.
+                <strong>באייפון (Safari):</strong> לחץ על כפתור השיתוף בתחתית המסך ובחר <strong>"הוסף למסך הבית"</strong>.
               </li>
             </ul>
           </div>
@@ -699,7 +875,7 @@ export function App() {
               onClick={() => setIsInstallModalOpen(false)}
               className="px-5 py-2 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-bold cursor-pointer"
             >
-              סגור
+              שמור וסגור
             </button>
           </div>
         </div>
@@ -809,11 +985,11 @@ export function App() {
             )}
 
             {showLastEventBanner && (
-              <div className="flex items-center justify-between gap-2 px-3.5 py-2.5 rounded-2xl bg-emerald-50/80 border border-emerald-200/80 text-xs text-emerald-800 font-medium shadow-2xs shrink-0">
-                <div className="flex items-center gap-1.5 min-w-0">
-                  <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600 shrink-0" />
-                  <span className="rtl-safe truncate">
-                    פעולה אחרונה: {syncStatus.lastEventText}
+              <div className="w-full sm:w-auto flex items-start sm:items-center justify-between gap-2 px-3.5 py-2.5 rounded-2xl bg-emerald-50/80 border border-emerald-200/80 text-xs text-emerald-800 font-medium shadow-2xs">
+                <div className="flex items-start sm:items-center gap-2 min-w-0 flex-1">
+                  <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0 mt-0.5 sm:mt-0" />
+                  <span className="rtl-safe leading-relaxed break-words">
+                    <strong className="font-bold">פעולה אחרונה:</strong> {syncStatus.lastEventText}
                   </span>
                 </div>
                 <button
@@ -822,7 +998,7 @@ export function App() {
                   className="p-1 rounded-lg text-emerald-600/70 hover:text-emerald-900 hover:bg-emerald-200/50 transition cursor-pointer shrink-0"
                   title="סגור חלונית פעולה אחרונה"
                 >
-                  <X className="w-3.5 h-3.5" />
+                  <X className="w-4 h-4" />
                 </button>
               </div>
             )}

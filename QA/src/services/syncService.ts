@@ -43,6 +43,22 @@ type StatusListener = (status: SyncStatusInfo) => void;
 const CLOUD_TOPIC_STATE = 'std_qa_cloud_abkss001_v2/workspace_state';
 const CLOUD_TOPIC_PRESENCE = 'std_qa_cloud_abkss001_v2/presence/';
 
+function formatLegacyAuthor(rawName: string | undefined): string {
+  if (!rawName || typeof rawName !== 'string') return 'צוות בדיקות';
+  let cleaned = rawName.trim();
+  if (cleaned === 'בודק צוות (בודק)' || cleaned === 'בודק צוות' || cleaned === 'בודק') {
+    return 'צוות בדיקות';
+  }
+  cleaned = cleaned
+    .replace(/\(\s*בודק\s*\)/g, 'צוות בדיקות')
+    .replace(/\(\s*בודקת\s*\)/g, 'צוות בדיקות')
+    .replace(/\(\s*מפתח\s*\)/g, 'צוות פיתוח')
+    .replace(/^בודק צוות\s+/, '')
+    .replace(/\s+/g, ' ')
+    .trim();
+  return cleaned || 'צוות בדיקות';
+}
+
 const INITIAL_DEMO_ISSUES: StdIssue[] = [
   {
     id: 'std-101',
@@ -57,20 +73,20 @@ const INITIAL_DEMO_ISSUES: StdIssue[] = [
     comments: [
       {
         id: 'c-1',
-        author: 'דניאל (בודק)',
+        author: 'דניאל צוות בדיקות',
         role: 'qa',
         text: 'שוחזר גם באייפון 14 וגם באייפון 15 Pro בגרסת iOS 17.4.',
         createdAt: Date.now() - 3600000 * 3
       },
       {
         id: 'c-2',
-        author: 'רועי (מפתח)',
+        author: 'רועי צוות פיתוח',
         role: 'dev',
         text: 'בודק את ה-Safe Area padding בתחתית המסך, מעלה תיקון לסביבת הבדיקות בקרוב.',
         createdAt: Date.now() - 3600000
       }
     ],
-    createdBy: 'דניאל (בודק)',
+    createdBy: 'דניאל צוות בדיקות',
     createdAt: Date.now() - 3600000 * 4,
     updatedAt: Date.now() - 3600000
   },
@@ -87,13 +103,13 @@ const INITIAL_DEMO_ISSUES: StdIssue[] = [
     comments: [
       {
         id: 'c-3',
-        author: 'מיכל (בודקת)',
+        author: 'מיכל צוות בדיקות',
         role: 'qa',
         text: 'שימו לב שזה קורה רק כשמזינים משקל עם נקודה עשרונית.',
         createdAt: Date.now() - 7200000
       }
     ],
-    createdBy: 'מיכל (בודקת)',
+    createdBy: 'מיכל צוות בדיקות',
     createdAt: Date.now() - 8600000,
     updatedAt: Date.now() - 7200000
   },
@@ -110,13 +126,13 @@ const INITIAL_DEMO_ISSUES: StdIssue[] = [
     comments: [
       {
         id: 'c-4',
-        author: 'רועי (מפתח)',
+        author: 'רועי צוות פיתוח',
         role: 'dev',
         text: 'עודכן הפונט המוטמע ב-PDF ותוקן כיוון ה-RTL. אשמח לבדיקה חוזרת ב-Safari.',
         createdAt: Date.now() - 1800000
       }
     ],
-    createdBy: 'דניאל (בודק)',
+    createdBy: 'דניאל צוות בדיקות',
     createdAt: Date.now() - 14400000,
     updatedAt: Date.now() - 1800000
   },
@@ -133,20 +149,20 @@ const INITIAL_DEMO_ISSUES: StdIssue[] = [
     comments: [
       {
         id: 'c-5',
-        author: 'אלון (מפתח)',
+        author: 'אלון צוות פיתוח',
         role: 'dev',
         text: 'נוסף אינדקס לחיפוש מהיר ובוצע Debounce לשדה החיפוש.',
         createdAt: Date.now() - 5400000
       },
       {
         id: 'c-6',
-        author: 'מיכל (בודקת)',
+        author: 'מיכל צוות בדיקות',
         role: 'qa',
         text: 'נבדק שוב – התוצאות עולות תוך פחות מ-200ms. תקין!',
         createdAt: Date.now() - 2400000
       }
     ],
-    createdBy: 'מיכל (בודקת)',
+    createdBy: 'מיכל צוות בדיקות',
     createdAt: Date.now() - 18000000,
     updatedAt: Date.now() - 2400000
   }
@@ -599,12 +615,16 @@ class RealtimeSyncService {
           : item.screenshots && typeof item.screenshots === 'object'
           ? Object.values(item.screenshots)
           : [],
-        comments: Array.isArray(item.comments)
+        comments: (Array.isArray(item.comments)
           ? item.comments
           : item.comments && typeof item.comments === 'object'
           ? Object.values(item.comments)
-          : [],
-        createdBy: String(item.createdBy || 'צוות בדיקות'),
+          : []
+        ).map((c: any) => ({
+          ...c,
+          author: formatLegacyAuthor(c?.author)
+        })),
+        createdBy: formatLegacyAuthor(item.createdBy),
         createdAt: Number(item.createdAt || Date.now()),
         updatedAt: Number(item.updatedAt || Date.now())
       }));
