@@ -1,0 +1,467 @@
+import React, { useEffect, useState, useRef } from 'react';
+import {
+  X,
+  UploadCloud,
+  ClipboardPaste,
+  Trash2,
+  Check,
+  Sparkles,
+  AlertCircle
+} from 'lucide-react';
+import {
+  PLATFORMS,
+  STATUSES,
+  STATUS_CONFIG,
+  StdIssue,
+  StdPlatform,
+  StdStatus
+} from '../types/std';
+import {
+  extractImagesFromClipboardEvent,
+  processScreenshotFile,
+  readImagesFromSystemClipboard
+} from '../utils/imageUtils';
+import { PlatformIcon } from './IssueCard';
+
+interface IssueFormModalProps {
+  systems: string[];
+  defaultSystem: string;
+  suggestedTestCaseId: string;
+  editingIssue: StdIssue | null;
+  onSave: (data: {
+    system: string;
+    testCaseId: string;
+    platform: StdPlatform;
+    subject: string;
+    description: string;
+    status: StdStatus;
+    screenshots: string[];
+    initialComment?: string;
+  }) => void;
+  onClose: () => void;
+}
+
+export const IssueFormModal: React.FC<IssueFormModalProps> = ({
+  systems,
+  defaultSystem,
+  suggestedTestCaseId,
+  editingIssue,
+  onSave,
+  onClose
+}) => {
+  const [system, setSystem] = useState(
+    editingIssue?.system || (defaultSystem === 'ALL' ? systems[0] || 'CARGO' : defaultSystem)
+  );
+  const [testCaseId, setTestCaseId] = useState(
+    editingIssue?.testCaseId || suggestedTestCaseId || '10'
+  );
+  const [platform, setPlatform] = useState<StdPlatform>(
+    editingIssue?.platform || 'אייפון'
+  );
+  const [subject, setSubject] = useState(editingIssue?.subject || '');
+  const [description, setDescription] = useState(editingIssue?.description || '');
+  const [status, setStatus] = useState<StdStatus>(editingIssue?.status || 'פתוח');
+  const [screenshots, setScreenshots] = useState<string[]>(
+    editingIssue?.screenshots || []
+  );
+  const [initialComment, setInitialComment] = useState('');
+  const [isDraggingOver, setIsDraggingOver] = useState(false);
+  const [pasteNotice, setPasteNotice] = useState(false);
+  const [clipboardHint, setClipboardHint] = useState<string | null>(null);
+
+  const fileInputRef = useRef<HTMLInputElement | null>(null);
+
+  // Sync screenshots if editingIssue was opened via global board Ctrl+V
+  useEffect(() => {
+    if (editingIssue?.screenshots && editingIssue.screenshots.length > 0) {
+      setScreenshots(editingIssue.screenshots);
+    }
+  }, [editingIssue]);
+
+  // Listen to Ctrl + V in capture phase anywhere while modal is open
+  useEffect(() => {
+    const handleGlobalPaste = async (e: ClipboardEvent) => {
+      const images = await extractImagesFromClipboardEvent(e);
+      if (images.length > 0) {
+        setClipboardHint(null);
+        setScreenshots((prev) => [...prev, ...images]);
+        setPasteNotice(true);
+        setTimeout(() => setPasteNotice(false), 2500);
+      }
+    };
+
+    document.addEventListener('paste', handleGlobalPaste, true);
+    return () => document.removeEventListener('paste', handleGlobalPaste, true);
+  }, []);
+
+  const handleDirectClipboardButtonClick = async () => {
+    setClipboardHint(null);
+    try {
+      const images = await readImagesFromSystemClipboard();
+      if (images.length > 0) {
+        setScreenshots((prev) => [...prev, ...images]);
+        setPasteNotice(true);
+        setTimeout(() => setPasteNotice(false), 2500);
+      } else {
+        setClipboardHint('לא נמצאה תמונה בלוח ההעתקה כרגע. צלם מסך או העתק תמונה ונסה שוב.');
+      }
+    } catch {
+      setClipboardHint('לחץ כעת Ctrl + V במקלדת כדי להדביק את התמונה מהלוח.');
+    }
+  };
+
+  const handleFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const files = e.target.files;
+    if (!files || files.length === 0) return;
+    const processed: string[] = [];
+    for (let i = 0; i < files.length; i++) {
+      if (files[i].type.startsWith('image/')) {
+        processed.push(await processScreenshotFile(files[i]));
+      }
+    }
+    if (processed.length > 0) {
+      setClipboardHint(null);
+      setScreenshots((prev) => [...prev, ...processed]);
+      setPasteNotice(true);
+      setTimeout(() => setPasteNotice(false), 2500);
+    }
+    e.target.value = '';
+  };
+
+  const handleDrop = async (e: React.DragEvent) => {
+    e.preventDefault();
+    setIsDraggingOver(false);
+    const files = e.dataTransfer.files;
+    if (!files || files.length === 0) return;
+
+    const processed: string[] = [];
+    for (let i = 0; i < files.length; i++) {
+      if (files[i].type.startsWith('image/')) {
+        processed.push(await processScreenshotFile(files[i]));
+      }
+    }
+    if (processed.length > 0) {
+      setClipboardHint(null);
+      setScreenshots((prev) => [...prev, ...processed]);
+      setPasteNotice(true);
+      setTimeout(() => setPasteNotice(false), 2500);
+    }
+  };
+
+  const handleSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!testCaseId.trim() || !subject.trim() || !description.trim()) return;
+
+    onSave({
+      system,
+      testCaseId: testCaseId.trim(),
+      platform,
+      subject: subject.trim(),
+      description: description.trim(),
+      status,
+      screenshots,
+      initialComment: initialComment.trim() || undefined
+    });
+  };
+
+  return (
+    <div
+      className="fixed inset-0 z-40 flex items-center justify-center bg-slate-900/60 backdrop-blur-xs p-3 sm:p-4 overflow-y-auto"
+      dir="rtl"
+    >
+      <div className="bg-white rounded-2xl shadow-2xl border border-slate-200 w-full max-w-2xl my-auto overflow-hidden">
+        {/* Modal Header */}
+        <div className="flex items-center justify-between px-5 sm:px-6 py-4 bg-slate-900 text-white">
+          <div>
+            <h2 className="text-base sm:text-lg font-extrabold">
+              {editingIssue && editingIssue.id !== '__NEW_FROM_PASTE__'
+                ? `עריכת תקלה - תסריט #${editingIssue.testCaseId}`
+                : 'דיווח תקלה חדשה'}
+            </h2>
+            <p className="text-xs text-slate-300 mt-0.5">
+              להדבקת צילום מסך לחץ{' '}
+              <kbd className="px-1.5 py-0.5 rounded bg-slate-800 text-indigo-300 font-mono">
+                Ctrl + V
+              </kbd>{' '}
+              במקלדת או לחץ על כפתור "הדבק מהלוח" למטה
+            </p>
+          </div>
+          <button
+            type="button"
+            onClick={onClose}
+            className="p-1.5 rounded-lg text-slate-400 hover:text-white hover:bg-slate-800 transition cursor-pointer"
+          >
+            <X className="w-5 h-5" />
+          </button>
+        </div>
+
+        <form onSubmit={handleSubmit} className="p-5 sm:p-6 space-y-4 max-h-[84vh] overflow-y-auto">
+          {/* Top Row: System & Test Case ID */}
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+            <div>
+              <label className="block text-xs font-bold text-slate-700 mb-1.5">
+                מערכת <span className="text-red-500">*</span>
+              </label>
+              <select
+                value={system}
+                onChange={(e) => setSystem(e.target.value)}
+                className="w-full px-3.5 py-2.5 rounded-xl border border-slate-300 bg-slate-50/70 focus:bg-white text-sm font-bold text-slate-900 focus:outline-none focus:ring-2 focus:ring-indigo-500/30 focus:border-indigo-500 transition cursor-pointer"
+              >
+                {systems.map((sys) => (
+                  <option key={sys} value={sys}>
+                    {sys}
+                  </option>
+                ))}
+              </select>
+            </div>
+
+            <div>
+              <label className="block text-xs font-bold text-slate-700 mb-1.5">
+                מזהה תסריט בדיקה (למשל: 10, 11, 12) <span className="text-red-500">*</span>
+              </label>
+              <input
+                type="text"
+                required
+                value={testCaseId}
+                onChange={(e) => setTestCaseId(e.target.value)}
+                placeholder="לדוגמה: 10"
+                className="w-full px-3.5 py-2.5 rounded-xl border border-slate-300 bg-slate-50/70 focus:bg-white text-sm font-mono font-bold text-slate-900 focus:outline-none focus:ring-2 focus:ring-indigo-500/30 focus:border-indigo-500 transition rtl-safe"
+              />
+            </div>
+          </div>
+
+          {/* Platform Selector Pills */}
+          <div>
+            <label className="block text-xs font-bold text-slate-700 mb-1.5">
+              פלטפורמה <span className="text-red-500">*</span>
+            </label>
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+              {PLATFORMS.map((p) => {
+                const isSelected = platform === p;
+                return (
+                  <button
+                    key={p}
+                    type="button"
+                    onClick={() => setPlatform(p)}
+                    className={`flex items-center justify-center gap-2 py-2.5 px-3 rounded-xl border text-xs sm:text-sm font-bold transition cursor-pointer ${
+                      isSelected
+                        ? 'bg-indigo-600 text-white border-indigo-600 shadow-sm'
+                        : 'bg-slate-50 hover:bg-slate-100 text-slate-700 border-slate-200'
+                    }`}
+                  >
+                    <PlatformIcon
+                      platform={p}
+                      className={`w-4 h-4 ${isSelected ? 'text-white' : 'text-indigo-600'}`}
+                    />
+                    <span className="bidi-isolate">{p}</span>
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+
+          {/* Status Selector Pills */}
+          <div>
+            <label className="block text-xs font-bold text-slate-700 mb-1.5">
+              סטטוס תקלה <span className="text-red-500">*</span>
+            </label>
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+              {STATUSES.map((st) => {
+                const cfg = STATUS_CONFIG[st];
+                const isSelected = status === st;
+                return (
+                  <button
+                    key={st}
+                    type="button"
+                    onClick={() => setStatus(st)}
+                    className={`flex items-center justify-center gap-2 py-2 px-3 rounded-xl border text-xs font-bold transition cursor-pointer ${
+                      isSelected
+                        ? `${cfg.bgBadge} ${cfg.textBadge} ${cfg.borderBadge} ring-2 ${cfg.activeRing}`
+                        : 'bg-white hover:bg-slate-50 text-slate-600 border-slate-200'
+                    }`}
+                  >
+                    <span className={`w-2.5 h-2.5 rounded-full ${cfg.dotColor}`} />
+                    <span>{st}</span>
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+
+          {/* Issue Subject */}
+          <div>
+            <label className="block text-xs font-bold text-slate-700 mb-1.5">
+              נושא התקלה <span className="text-red-500">*</span>
+            </label>
+            <input
+              type="text"
+              required
+              value={subject}
+              onChange={(e) => setSubject(e.target.value)}
+              placeholder="תיאור קצר וממוקד של התקלה..."
+              className="w-full px-3.5 py-2.5 rounded-xl border border-slate-300 bg-slate-50/70 focus:bg-white text-sm text-slate-900 focus:outline-none focus:ring-2 focus:ring-indigo-500/30 focus:border-indigo-500 transition rtl-safe"
+            />
+          </div>
+
+          {/* Detailed Error Description */}
+          <div>
+            <label className="block text-xs font-bold text-slate-700 mb-1.5">
+              מהות השגיאה ותיאור מפורט <span className="text-red-500">*</span>
+            </label>
+            <textarea
+              rows={4}
+              required
+              value={description}
+              onChange={(e) => setDescription(e.target.value)}
+              placeholder="פרט את שלבי השחזור, התוצאה שהתקבלה בפועל והתוצאה המצופה..."
+              className="w-full px-3.5 py-2.5 rounded-xl border border-slate-300 bg-slate-50/70 focus:bg-white text-sm text-slate-900 focus:outline-none focus:ring-2 focus:ring-indigo-500/30 focus:border-indigo-500 transition rtl-safe"
+            />
+          </div>
+
+          {/* Screenshot Paste (Ctrl+V / Direct Clipboard Button) & Drag-and-Drop Zone */}
+          <div>
+            <div className="flex items-center justify-between mb-1.5">
+              <label className="block text-xs font-bold text-slate-700">
+                צילומי מסך (הדבקה מהלוח או בחירת קובץ)
+              </label>
+              {pasteNotice && (
+                <span className="inline-flex items-center gap-1 text-xs font-bold text-emerald-600 animate-bounce">
+                  <Sparkles className="w-3.5 h-3.5" />
+                  <span>צילום מסך נוסף בהצלחה!</span>
+                </span>
+              )}
+            </div>
+
+            <div
+              tabIndex={0}
+              onDragOver={(e) => {
+                e.preventDefault();
+                setIsDraggingOver(true);
+              }}
+              onDragLeave={() => setIsDraggingOver(false)}
+              onDrop={handleDrop}
+              className={`border-2 border-dashed rounded-2xl p-4 text-center transition focus:outline-none focus:border-indigo-500 focus:bg-indigo-50/30 ${
+                isDraggingOver
+                  ? 'border-indigo-600 bg-indigo-50/80'
+                  : 'border-slate-300 bg-slate-50/60'
+              }`}
+            >
+              <input
+                ref={fileInputRef}
+                type="file"
+                accept="image/*"
+                multiple
+                onChange={handleFileChange}
+                className="hidden"
+              />
+
+              <div className="flex flex-col items-center justify-center gap-3">
+                <div className="text-xs sm:text-sm font-bold text-slate-800">
+                  הדבק צילום מסך ישירות מהלוח (<kbd className="px-1.5 py-0.5 rounded bg-slate-200 text-slate-900 font-mono text-xs">Ctrl + V</kbd>) או השתמש בכפתורים:
+                </div>
+
+                {/* Two Distinct Action Buttons: 1) Paste from Clipboard, 2) Choose File */}
+                <div className="flex flex-wrap items-center justify-center gap-2.5">
+                  <button
+                    type="button"
+                    onClick={handleDirectClipboardButtonClick}
+                    className="flex items-center gap-2 px-4 py-2 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-bold shadow-sm transition cursor-pointer"
+                  >
+                    <ClipboardPaste className="w-4 h-4" />
+                    <span>הדבק תמונה מהלוח (Clipboard)</span>
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => fileInputRef.current?.click()}
+                    className="flex items-center gap-2 px-4 py-2 rounded-xl bg-white hover:bg-slate-100 text-slate-700 border border-slate-300 text-xs font-bold transition cursor-pointer"
+                  >
+                    <UploadCloud className="w-4 h-4 text-indigo-600" />
+                    <span>בחר קובץ מהמחשב / מהנייד</span>
+                  </button>
+                </div>
+
+                {clipboardHint && (
+                  <div className="flex items-center gap-1.5 text-xs text-amber-700 bg-amber-50 px-3 py-1.5 rounded-lg border border-amber-200">
+                    <AlertCircle className="w-3.5 h-3.5 shrink-0" />
+                    <span>{clipboardHint}</span>
+                  </div>
+                )}
+
+                <div className="text-[11px] text-slate-500">
+                  ניתן גם לגרור תמונות לכאן • שומר על יחס תמונה מקורי וחדות מלאה לזום במובייל
+                </div>
+              </div>
+            </div>
+
+            {/* Pasted / Uploaded Screenshots Preview */}
+            {screenshots.length > 0 && (
+              <div className="grid grid-cols-2 sm:grid-cols-3 gap-3 mt-3">
+                {screenshots.map((src, idx) => (
+                  <div
+                    key={idx}
+                    className="relative group rounded-xl bg-slate-900 border border-slate-200 h-32 p-1.5 flex items-center justify-center overflow-hidden"
+                  >
+                    <img
+                      src={src}
+                      alt={`צילום מסך ${idx + 1}`}
+                      className="max-h-full max-w-full object-contain rounded"
+                    />
+                    <button
+                      type="button"
+                      onClick={() =>
+                        setScreenshots((prev) => prev.filter((_, i) => i !== idx))
+                      }
+                      className="absolute top-2 left-2 p-1.5 rounded-lg bg-red-600/90 hover:bg-red-700 text-white shadow transition cursor-pointer"
+                      title="הסר תמונה"
+                    >
+                      <Trash2 className="w-3.5 h-3.5" />
+                    </button>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+
+          {/* Optional Initial Comment (only when creating new issue) */}
+          {(!editingIssue || editingIssue.id === '__NEW_FROM_PASTE__') && (
+            <div>
+              <label className="block text-xs font-bold text-slate-700 mb-1.5">
+                הערה ראשונית למפתח / לצוות (אופציונלי)
+              </label>
+              <input
+                type="text"
+                value={initialComment}
+                onChange={(e) => setInitialComment(e.target.value)}
+                placeholder="למשל: משחזר רק במשתמש ללא הרשאות מנהל..."
+                className="w-full px-3.5 py-2 rounded-xl border border-slate-300 bg-slate-50/70 focus:bg-white text-sm text-slate-900 focus:outline-none focus:ring-2 focus:ring-indigo-500/30 focus:border-indigo-500 transition rtl-safe"
+              />
+            </div>
+          )}
+
+          {/* Form Footer Actions */}
+          <div className="flex items-center justify-end gap-2.5 pt-3 border-t border-slate-200">
+            <button
+              type="button"
+              onClick={onClose}
+              className="px-4 py-2.5 rounded-xl border border-slate-300 text-slate-700 hover:bg-slate-50 text-sm font-semibold transition cursor-pointer"
+            >
+              ביטול
+            </button>
+            <button
+              type="submit"
+              className="flex items-center gap-2 px-6 py-2.5 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white text-sm font-bold shadow-md shadow-indigo-600/20 transition cursor-pointer"
+            >
+              <Check className="w-4 h-4 stroke-[2.5]" />
+              <span>
+                {editingIssue && editingIssue.id !== '__NEW_FROM_PASTE__'
+                  ? 'שמור שינויים וסנכרן לצוות'
+                  : 'פרסם תקלה וסנכרן בזמן אמת'}
+              </span>
+            </button>
+          </div>
+        </form>
+      </div>
+    </div>
+  );
+};
