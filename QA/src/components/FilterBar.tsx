@@ -194,22 +194,9 @@ export const FilterBar: React.FC<FilterBarProps> = ({
             )}
           </div>
 
-          {/* Left Side: View Switcher (Cards vs Smart Table) + CSV Export */}
+          {/* Left Side: View Switcher (Smart Table Default vs Smart Cards) + CSV Export */}
           <div className="flex items-center justify-between sm:justify-end gap-2 pt-2 lg:pt-0 border-t lg:border-t-0 border-slate-100">
             <div className="flex items-center bg-slate-100 p-1 rounded-xl border border-slate-200/80">
-              <button
-                type="button"
-                onClick={() => onViewModeChange('cards')}
-                className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold transition cursor-pointer ${
-                  viewMode === 'cards'
-                    ? 'bg-white text-indigo-600 shadow-xs'
-                    : 'text-slate-600 hover:text-slate-900'
-                }`}
-              >
-                <LayoutGrid className="w-4 h-4" />
-                <span>תצוגת כרטיסיות</span>
-              </button>
-
               <button
                 type="button"
                 onClick={() => onViewModeChange('table')}
@@ -221,6 +208,19 @@ export const FilterBar: React.FC<FilterBarProps> = ({
               >
                 <Table2 className="w-4 h-4" />
                 <span>טבלה חכמה</span>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => onViewModeChange('cards')}
+                className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold transition cursor-pointer ${
+                  viewMode === 'cards'
+                    ? 'bg-white text-indigo-600 shadow-xs'
+                    : 'text-slate-600 hover:text-slate-900'
+                }`}
+              >
+                <LayoutGrid className="w-4 h-4" />
+                <span>כרטיסיות חכמות</span>
               </button>
             </div>
 

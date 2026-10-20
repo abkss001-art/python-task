@@ -93,12 +93,12 @@ export function App() {
   });
   const [isInstallModalOpen, setIsInstallModalOpen] = useState<boolean>(false);
 
-  // Filters & View Mode
+  // Filters & View Mode (Default is Smart Table 'table' for everyone)
   const [searchQuery, setSearchQuery] = useState('');
   const [testCaseFilter, setTestCaseFilter] = useState('');
   const [platformFilter, setPlatformFilter] = useState<StdPlatform | 'ALL'>('ALL');
   const [statusFilter, setStatusFilter] = useState<StdStatus | 'ALL'>('ALL');
-  const [viewMode, setViewMode] = useState<'cards' | 'table'>('cards');
+  const [viewMode, setViewMode] = useState<'cards' | 'table'>('table');
 
   // Modals State
   const [isIssueModalOpen, setIsIssueModalOpen] = useState(false);
@@ -251,7 +251,7 @@ export function App() {
           id: '__NEW_FROM_PASTE__',
           system: activeSystem === 'ALL' ? systems[0] || 'CARGO' : activeSystem,
           testCaseId: nextId,
-          platform: 'אייפון',
+          platform: 'IOS',
           subject: '',
           description: '',
           status: 'פתוח',

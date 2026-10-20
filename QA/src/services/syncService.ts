@@ -59,12 +59,24 @@ function formatLegacyAuthor(rawName: string | undefined): string {
   return cleaned || 'צוות בדיקות';
 }
 
+function normalizePlatform(rawPlatform: string | undefined): 'IOS' | 'אנדרואיד' | 'מחשב' {
+  if (!rawPlatform) return 'מחשב';
+  const trimmed = rawPlatform.trim();
+  if (trimmed === 'IOS' || trimmed.toLowerCase() === 'ios' || trimmed === 'אייפון' || trimmed === 'Safari') {
+    return 'IOS';
+  }
+  if (trimmed === 'אנדרואיד' || trimmed.toLowerCase() === 'android') {
+    return 'אנדרואיד';
+  }
+  return 'מחשב';
+}
+
 const INITIAL_DEMO_ISSUES: StdIssue[] = [
   {
     id: 'std-101',
     system: 'CARGO',
     testCaseId: '10',
-    platform: 'אייפון',
+    platform: 'IOS',
     subject: 'כפתור אישור משלוח נחתך במסך סיכום הזמנה',
     description:
       'בעת גלילה לתחתית מסך סיכום המשלוח במכשיר אייפון 15, כפתור "אשר ושלח" מוסתר חלקית על ידי סרגל הניווט התחתון ולא ניתן ללחוץ עליו במצב אנכי.',
@@ -94,7 +106,7 @@ const INITIAL_DEMO_ISSUES: StdIssue[] = [
     id: 'std-102',
     system: 'CARGO',
     testCaseId: '11',
-    platform: 'Chrome',
+    platform: 'מחשב',
     subject: 'שגיאת חישוב משקל כולל בעת הוספת מכולה שנייה',
     description:
       'כאשר מוסיפים שתי מכולות באותה תעודת משלוח, השדה "משקל כולל (ק"ג)" מציג רק את המשקל של המכולה האחרונה במקום סכום המשקלים.',
@@ -117,10 +129,10 @@ const INITIAL_DEMO_ISSUES: StdIssue[] = [
     id: 'std-103',
     system: 'CARGO',
     testCaseId: '12',
-    platform: 'Safari',
+    platform: 'אנדרואיד',
     subject: 'ייצוא תעודת משלוח ל-PDF מציג גופן הפוך בעברית',
     description:
-      'בלחיצה על "הורד PDF" בדפדפן Safari במק, כותרות הטבלה בעברית מודפסות משמאל לימין.',
+      'בלחיצה על "הורד PDF" במכשיר אנדרואיד, כותרות הטבלה בעברית מודפסות משמאל לימין.',
     status: 'ניתן לבדוק שוב',
     screenshots: [],
     comments: [
@@ -128,7 +140,7 @@ const INITIAL_DEMO_ISSUES: StdIssue[] = [
         id: 'c-4',
         author: 'רועי צוות פיתוח',
         role: 'dev',
-        text: 'עודכן הפונט המוטמע ב-PDF ותוקן כיוון ה-RTL. אשמח לבדיקה חוזרת ב-Safari.',
+        text: 'עודכן הפונט המוטמע ב-PDF ותוקן כיוון ה-RTL. אשמח לבדיקה חוזרת.',
         createdAt: Date.now() - 1800000
       }
     ],
@@ -606,7 +618,7 @@ class RealtimeSyncService {
         id: String(item.id || `std-${Date.now()}`),
         system: String(item.system || systems[0] || 'CARGO'),
         testCaseId: String(item.testCaseId || ''),
-        platform: item.platform || 'מחשב',
+        platform: normalizePlatform(item.platform),
         subject: String(item.subject || ''),
         description: String(item.description || ''),
         status: item.status || 'פתוח',

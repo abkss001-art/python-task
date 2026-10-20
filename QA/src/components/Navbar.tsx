@@ -328,7 +328,7 @@ export const Navbar: React.FC<NavbarProps> = ({
                     setAdminError(false);
                   }}
                   className="flex items-center gap-1 px-2 py-1.5 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-500 hover:text-slate-800 border border-slate-200 text-[11px] sm:text-xs font-medium transition cursor-pointer"
-                  title="כניסת מנהל (קוד 1108)"
+                  title="כניסת מנהל"
                 >
                   <Lock className="w-3.5 h-3.5" />
                 </button>

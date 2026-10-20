@@ -44,12 +44,9 @@ export const PlatformIcon: React.FC<{ platform: StdPlatform; className?: string 
   className = 'w-3.5 h-3.5'
 }) => {
   switch (platform) {
-    case 'אייפון':
+    case 'IOS':
+    case 'אנדרואיד':
       return <Smartphone className={className} />;
-    case 'Safari':
-      return <Compass className={className} />;
-    case 'Chrome':
-      return <Globe className={className} />;
     case 'מחשב':
     default:
       return <Monitor className={className} />;

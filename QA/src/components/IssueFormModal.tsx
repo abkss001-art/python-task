@@ -56,7 +56,7 @@ export const IssueFormModal: React.FC<IssueFormModalProps> = ({
     editingIssue?.testCaseId || suggestedTestCaseId || '10'
   );
   const [platform, setPlatform] = useState<StdPlatform>(
-    editingIssue?.platform || 'אייפון'
+    editingIssue?.platform || 'IOS'
   );
   const [subject, setSubject] = useState(editingIssue?.subject || '');
   const [description, setDescription] = useState(editingIssue?.description || '');
@@ -235,7 +235,7 @@ export const IssueFormModal: React.FC<IssueFormModalProps> = ({
             <label className="block text-xs font-bold text-slate-700 mb-1.5">
               פלטפורמה <span className="text-red-500">*</span>
             </label>
-            <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+            <div className="grid grid-cols-3 gap-2">
               {PLATFORMS.map((p) => {
                 const isSelected = platform === p;
                 return (

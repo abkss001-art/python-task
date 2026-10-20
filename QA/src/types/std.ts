@@ -1,4 +1,4 @@
-export type StdPlatform = 'אייפון' | 'Safari' | 'Chrome' | 'מחשב';
+export type StdPlatform = 'IOS' | 'אנדרואיד' | 'מחשב';
 
 export type StdStatus = 'פתוח' | 'בטיפול' | 'ניתן לבדוק שוב' | 'נבדק תקין';
 
@@ -51,7 +51,7 @@ export interface SyncStatusInfo {
   lastEventText?: string;
 }
 
-export const PLATFORMS: StdPlatform[] = ['אייפון', 'Safari', 'Chrome', 'מחשב'];
+export const PLATFORMS: StdPlatform[] = ['IOS', 'אנדרואיד', 'מחשב'];
 
 export const STATUSES: StdStatus[] = ['פתוח', 'בטיפול', 'ניתן לבדוק שוב', 'נבדק תקין'];
 
