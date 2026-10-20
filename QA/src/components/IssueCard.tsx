@@ -30,6 +30,8 @@ interface IssueCardProps {
   isHighlighted?: boolean;
   currentUserName: string;
   currentUserRole: TeamRole;
+  canEdit?: boolean;
+  canDelete?: boolean;
   onStatusChange: (issueId: string, newStatus: StdStatus) => void;
   onAddComment: (issueId: string, text: string, screenshot?: string) => void;
   onEditIssue: (issue: StdIssue) => void;
@@ -72,6 +74,8 @@ export const IssueCard: React.FC<IssueCardProps> = ({
   showSystemBadge = false,
   isHighlighted = false,
   currentUserName,
+  canEdit = true,
+  canDelete = false,
   onStatusChange,
   onAddComment,
   onEditIssue,
@@ -159,24 +163,28 @@ export const IssueCard: React.FC<IssueCardProps> = ({
               />
             </div>
 
-            {/* Edit & Delete Actions */}
-            <button
-              type="button"
-              onClick={() => onEditIssue(issue)}
-              className="p-1.5 rounded-lg text-slate-400 hover:text-indigo-600 hover:bg-indigo-50 transition cursor-pointer"
-              title="ערוך תקלה / הוסף צילום מסך"
-            >
-              <Edit3 className="w-4 h-4" />
-            </button>
+            {/* Edit (QA & Admin only) & Delete (Admin only) Actions */}
+            {canEdit && (
+              <button
+                type="button"
+                onClick={() => onEditIssue(issue)}
+                className="p-1.5 rounded-lg text-slate-400 hover:text-indigo-600 hover:bg-indigo-50 transition cursor-pointer"
+                title="ערוך תקלה / הוסף צילום מסך"
+              >
+                <Edit3 className="w-4 h-4" />
+              </button>
+            )}
 
-            <button
-              type="button"
-              onClick={() => onDeleteIssue(issue.id)}
-              className="p-1.5 rounded-lg text-slate-400 hover:text-red-600 hover:bg-red-50 transition cursor-pointer"
-              title="מחק תקלה"
-            >
-              <Trash2 className="w-4 h-4" />
-            </button>
+            {canDelete && (
+              <button
+                type="button"
+                onClick={() => onDeleteIssue(issue.id)}
+                className="p-1.5 rounded-lg text-slate-400 hover:text-red-600 hover:bg-red-50 transition cursor-pointer"
+                title="מחק תקלה (מנהל בלבד)"
+              >
+                <Trash2 className="w-4 h-4" />
+              </button>
+            )}
           </div>
         </div>
 

@@ -5,8 +5,7 @@ import {
   StdIssue,
   StdPlatform,
   StdStatus,
-  SyncStatusInfo,
-  TeamRole
+  SyncStatusInfo
 } from './types/std';
 import { syncService } from './services/syncService';
 import { Navbar } from './components/Navbar';
@@ -16,7 +15,14 @@ import { SmartTableView } from './components/SmartTableView';
 import { IssueFormModal } from './components/IssueFormModal';
 import { LightboxModal } from './components/LightboxModal';
 import { FirebaseSetupModal } from './components/FirebaseSetupModal';
+import { LoginScreen, AuthenticatedUser } from './components/LoginScreen';
 import { extractImagesFromClipboardEvent } from './utils/imageUtils';
+import {
+  getNotificationPermissionState,
+  registerPwaServiceWorker,
+  requestAppNotificationPermission,
+  sendSystemNotification
+} from './utils/notificationUtils';
 import {
   Plus,
   Radio,
@@ -28,10 +34,14 @@ import {
   Archive,
   RotateCcw,
   Trash2,
-  Eye
+  Eye,
+  BellRing,
+  Download,
+  Smartphone
 } from 'lucide-react';
 
 const ADMIN_CODES = ['1108'];
+const AUTH_STORAGE_KEY = 'std_qa_auth_user_v1';
 
 export function App() {
   const [systems, setSystems] = useState<string[]>(DEFAULT_SYSTEMS);
@@ -40,31 +50,32 @@ export function App() {
   const [issues, setIssues] = useState<StdIssue[]>([]);
   const [syncStatus, setSyncStatus] = useState<SyncStatusInfo>(syncService.getStatus());
 
+  // Authenticated User State (First Name + Last Name + Role from Password)
+  const [authUser, setAuthUser] = useState<AuthenticatedUser | null>(() => {
+    try {
+      const saved = localStorage.getItem(AUTH_STORAGE_KEY);
+      if (saved) {
+        const parsed = JSON.parse(saved) as AuthenticatedUser;
+        if (parsed && parsed.fullName && parsed.role) {
+          return parsed;
+        }
+      }
+    } catch {
+      // ignore
+    }
+    return null;
+  });
+
   // Dismissible banners state (shown on entry, each has its own X button)
   const [showShortcutBanner, setShowShortcutBanner] = useState<boolean>(true);
   const [dismissedLastEventText, setDismissedLastEventText] = useState<string | null>(null);
 
-  // Admin state (persisted only on the manager's browser)
-  const [isAdmin, setIsAdmin] = useState<boolean>(() => {
-    try {
-      const params = new URLSearchParams(window.location.search);
-      if (ADMIN_CODES.includes(params.get('admin') || '')) {
-        localStorage.setItem('std_qa_is_admin_1108', 'true');
-        return true;
-      }
-      return localStorage.getItem('std_qa_is_admin_1108') === 'true';
-    } catch {
-      return false;
-    }
+  // PWA Install Prompt & Notification Permission State
+  const [deferredInstallPrompt, setDeferredInstallPrompt] = useState<any>(null);
+  const [notificationsEnabled, setNotificationsEnabled] = useState<boolean>(() => {
+    return getNotificationPermissionState() === 'granted';
   });
-
-  // User Profile (persisted per browser so comments carry tester/dev name)
-  const [currentUserName, setCurrentUserName] = useState<string>(() => {
-    return localStorage.getItem('std_qa_user_name') || 'בודק צוות';
-  });
-  const [currentUserRole, setCurrentUserRole] = useState<TeamRole>(() => {
-    return (localStorage.getItem('std_qa_user_role') as TeamRole) || 'qa';
-  });
+  const [isInstallModalOpen, setIsInstallModalOpen] = useState<boolean>(false);
 
   // Filters & View Mode
   const [searchQuery, setSearchQuery] = useState('');
@@ -92,26 +103,62 @@ export function App() {
   const [liveToast, setLiveToast] = useState<string | null>(null);
   const [highlightedIssueId, setHighlightedIssueId] = useState<string | null>(null);
   const prevIssuesRef = useRef<StdIssue[]>([]);
+  const hasLoadedInitialStateRef = useRef<boolean>(false);
+
+  const isAdmin = Boolean(authUser?.isAdmin);
+  const currentUserName = authUser?.fullName || 'חבר צוות';
+  const currentUserRole = authUser?.role || 'qa';
+  // QA testers and Admins can create/edit issues; Developers (1111) only update status and add comments
+  const canCreateOrEdit = Boolean(authUser && (authUser.isAdmin || authUser.role === 'qa'));
+
+  // Register Service Worker and capture PWA install prompt
+  useEffect(() => {
+    registerPwaServiceWorker();
+
+    const handleBeforeInstallPrompt = (e: Event) => {
+      e.preventDefault();
+      setDeferredInstallPrompt(e);
+    };
+
+    window.addEventListener('beforeinstallprompt', handleBeforeInstallPrompt);
+    return () => window.removeEventListener('beforeinstallprompt', handleBeforeInstallPrompt);
+  }, []);
 
   useEffect(() => {
     syncService.init();
 
     const unsubState = syncService.subscribeState((state, isRemoteUpdate) => {
-      if (isRemoteUpdate && state.issues.length > 0) {
-        const changed = state.issues.find((incoming) => {
-          const prev = prevIssuesRef.current.find((p) => p.id === incoming.id);
-          return !prev || prev.updatedAt !== incoming.updatedAt;
-        });
-        if (changed) {
-          setHighlightedIssueId(changed.id);
-          setTimeout(() => setHighlightedIssueId(null), 3000);
+      if (isRemoteUpdate && hasLoadedInitialStateRef.current && state.issues.length > 0) {
+        // Detect if a brand new issue was added!
+        const newlyAddedIssue = state.issues.find(
+          (incoming) => !prevIssuesRef.current.some((p) => p.id === incoming.id)
+        );
+
+        if (newlyAddedIssue) {
+          setHighlightedIssueId(newlyAddedIssue.id);
+          setTimeout(() => setHighlightedIssueId(null), 3500);
+          sendSystemNotification(
+            `🚨 תקלה חדשה עלתה ב"צב מן" (${newlyAddedIssue.system})`,
+            `תסריט #${newlyAddedIssue.testCaseId}: ${newlyAddedIssue.subject} • דווח ע"י ${newlyAddedIssue.createdBy}`
+          );
+        } else {
+          const changed = state.issues.find((incoming) => {
+            const prev = prevIssuesRef.current.find((p) => p.id === incoming.id);
+            return prev && prev.updatedAt !== incoming.updatedAt;
+          });
+          if (changed) {
+            setHighlightedIssueId(changed.id);
+            setTimeout(() => setHighlightedIssueId(null), 3000);
+          }
         }
+
         if (state.lastAction) {
           setLiveToast(`${state.lastUpdatedBy || 'חבר צוות'}: ${state.lastAction}`);
           setTimeout(() => setLiveToast(null), 4000);
         }
       }
 
+      hasLoadedInitialStateRef.current = true;
       prevIssuesRef.current = state.issues;
       setSystems(state.systems);
       setArchivedSystems(state.archivedSystems || []);
@@ -128,16 +175,18 @@ export function App() {
     };
   }, []);
 
-  // Quick global Ctrl+V paste on the main board: opens New Issue Modal with the pasted screenshot!
+  // Quick global Ctrl+V paste on the main board (Only for QA testers & Admin!)
   useEffect(() => {
     const handleBoardPaste = async (e: ClipboardEvent) => {
+      if (!authUser || !canCreateOrEdit) return;
       if (
         isIssueModalOpen ||
         isFirebaseModalOpen ||
         lightboxData ||
         issueToDelete ||
         systemToRemove ||
-        isArchiveModalOpen
+        isArchiveModalOpen ||
+        isInstallModalOpen
       ) {
         return;
       }
@@ -176,28 +225,46 @@ export function App() {
     return () => window.removeEventListener('paste', handleBoardPaste);
   });
 
+  const handleLoginSuccess = (user: AuthenticatedUser) => {
+    setAuthUser(user);
+    localStorage.setItem(AUTH_STORAGE_KEY, JSON.stringify(user));
+  };
+
+  const handleLogoutUser = () => {
+    setAuthUser(null);
+    localStorage.removeItem(AUTH_STORAGE_KEY);
+  };
+
   const handleToggleAdmin = (code: string): boolean => {
-    if (ADMIN_CODES.includes(code)) {
-      setIsAdmin(true);
-      localStorage.setItem('std_qa_is_admin_1108', 'true');
+    if (ADMIN_CODES.includes(code) && authUser) {
+      const updatedUser: AuthenticatedUser = {
+        ...authUser,
+        isAdmin: true
+      };
+      setAuthUser(updatedUser);
+      localStorage.setItem(AUTH_STORAGE_KEY, JSON.stringify(updatedUser));
       return true;
     }
     return false;
   };
 
-  const handleLogoutAdmin = () => {
-    setIsAdmin(false);
-    localStorage.removeItem('std_qa_is_admin_1108');
-    if (archivedSystems.includes(activeSystem)) {
-      setActiveSystem(systems[0] || 'ALL');
-    }
-  };
+  const handleInstallAndNotify = async () => {
+    const granted = await requestAppNotificationPermission();
+    setNotificationsEnabled(granted);
 
-  const handleUpdateUser = (name: string, role: TeamRole) => {
-    setCurrentUserName(name);
-    setCurrentUserRole(role);
-    localStorage.setItem('std_qa_user_name', name);
-    localStorage.setItem('std_qa_user_role', role);
+    if (deferredInstallPrompt) {
+      try {
+        deferredInstallPrompt.prompt();
+        const choice = await deferredInstallPrompt.userChoice;
+        if (choice.outcome === 'accepted') {
+          setDeferredInstallPrompt(null);
+        }
+      } catch {
+        setIsInstallModalOpen(true);
+      }
+    } else {
+      setIsInstallModalOpen(true);
+    }
   };
 
   const handleAddSystem = (newSys: string) => {
@@ -206,7 +273,6 @@ export function App() {
       setActiveSystem(newSys);
       return;
     }
-    // If it was in archive, remove from archive and restore to active
     const nextArchived = archivedSystems.filter((s) => s !== newSys);
     const nextSystems = [...systems, newSys];
     setSystems(nextSystems);
@@ -345,8 +411,12 @@ export function App() {
     screenshots: string[];
     initialComment?: string;
   }) => {
+    if (!canCreateOrEdit) return;
+
     const isEditingExisting =
       editingIssue && editingIssue.id !== '__NEW_FROM_PASTE__';
+
+    const roleLabel = isAdmin ? 'מנהל' : currentUserRole === 'dev' ? 'מפתח' : 'בודק';
 
     if (isEditingExisting) {
       const nextIssues = issues.map((item) =>
@@ -374,7 +444,7 @@ export function App() {
       if (formData.initialComment) {
         comments.push({
           id: `c-${Date.now()}`,
-          author: `${currentUserName} (${currentUserRole === 'dev' ? 'מפתח' : 'בודק'})`,
+          author: `${currentUserName} (${roleLabel})`,
           role: currentUserRole,
           text: formData.initialComment,
           createdAt: Date.now()
@@ -391,7 +461,7 @@ export function App() {
         status: formData.status,
         screenshots: formData.screenshots,
         comments,
-        createdBy: `${currentUserName} (${currentUserRole === 'dev' ? 'מפתח' : 'בודק'})`,
+        createdBy: `${currentUserName} (${roleLabel})`,
         createdAt: Date.now(),
         updatedAt: Date.now()
       };
@@ -431,9 +501,10 @@ export function App() {
 
   const handleAddComment = (issueId: string, text: string, screenshot?: string) => {
     const target = issues.find((i) => i.id === issueId);
+    const roleLabel = isAdmin ? 'מנהל' : currentUserRole === 'dev' ? 'מפתח' : 'בודק';
     const newComment: StdComment = {
       id: `c-${Date.now()}-${Math.random().toString(36).substring(2, 5)}`,
-      author: `${currentUserName} (${currentUserRole === 'dev' ? 'מפתח' : 'בודק'})`,
+      author: `${currentUserName} (${roleLabel})`,
       role: currentUserRole,
       text,
       screenshot,
@@ -457,8 +528,9 @@ export function App() {
     );
   };
 
-  // Opens confirmation modal instead of deleting immediately!
+  // Opens confirmation modal instead of deleting immediately (Admin only!)
   const handleRequestDeleteIssue = (issueId: string) => {
+    if (!isAdmin) return;
     const target = issues.find((i) => i.id === issueId);
     if (target) {
       setIssueToDelete(target);
@@ -466,7 +538,7 @@ export function App() {
   };
 
   const handleConfirmDeleteIssue = () => {
-    if (!issueToDelete) return;
+    if (!issueToDelete || !isAdmin) return;
     const nextIssues = issues.filter((i) => i.id !== issueToDelete.id);
     syncService.pushStateToCloud(
       { systems, archivedSystems, issues: nextIssues },
@@ -529,6 +601,126 @@ export function App() {
     Boolean(syncStatus.lastEventText) &&
     syncStatus.lastEventText !== dismissedLastEventText;
 
+  // Render App Installation & Push Notification Instructions Modal
+  const renderInstallModal = () => {
+    if (!isInstallModalOpen) return null;
+    return (
+      <div
+        className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/60 backdrop-blur-xs p-4"
+        dir="rtl"
+      >
+        <div className="bg-white rounded-2xl shadow-2xl border border-slate-200 w-full max-w-md overflow-hidden p-6 space-y-4">
+          <div className="flex items-start justify-between gap-3">
+            <div className="flex items-center gap-3">
+              <div className="w-11 h-11 rounded-2xl bg-indigo-50 border border-indigo-200 flex items-center justify-center text-indigo-600 shrink-0">
+                <Smartphone className="w-6 h-6" />
+              </div>
+              <div>
+                <h3 className="text-base font-extrabold text-slate-900">
+                  התקנת אפליקציית "צב מן" והתראות
+                </h3>
+                <p className="text-xs text-slate-500 mt-0.5">
+                  קבלת התראות מיידיות למכשיר בכל פעם שעולה תקלה חדשה
+                </p>
+              </div>
+            </div>
+            <button
+              type="button"
+              onClick={() => setIsInstallModalOpen(false)}
+              className="p-1 rounded-lg text-slate-400 hover:text-slate-700 cursor-pointer"
+            >
+              <X className="w-5 h-5" />
+            </button>
+          </div>
+
+          <div
+            className={`p-3.5 rounded-xl border text-xs font-semibold flex items-center justify-between ${
+              notificationsEnabled
+                ? 'bg-emerald-50 border-emerald-200 text-emerald-800'
+                : 'bg-amber-50 border-amber-200 text-amber-800'
+            }`}
+          >
+            <div className="flex items-center gap-2">
+              <BellRing className="w-4 h-4 shrink-0" />
+              <span>
+                {notificationsEnabled
+                  ? 'התראות על תקלות חדשות מופעלות במכשיר זה!'
+                  : 'התראות טרם אושרו בדפדפן שלך'}
+              </span>
+            </div>
+            {!notificationsEnabled ? (
+              <button
+                type="button"
+                onClick={async () => {
+                  const ok = await requestAppNotificationPermission();
+                  setNotificationsEnabled(ok);
+                }}
+                className="px-3 py-1.5 rounded-lg bg-amber-600 hover:bg-amber-700 text-white text-xs font-bold cursor-pointer shrink-0"
+              >
+                אשר התראות
+              </button>
+            ) : (
+              <button
+                type="button"
+                onClick={() =>
+                  sendSystemNotification(
+                    '🚨 בדיקת התראה - צב מן',
+                    'המערכת מחוברת! כך תיראה ההתראה כשתעלה תקלה חדשה.'
+                  )
+                }
+                className="px-2.5 py-1 rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white text-[11px] font-bold cursor-pointer shrink-0"
+              >
+                שלח התראת בדיקה
+              </button>
+            )}
+          </div>
+
+          <div className="space-y-2.5 text-xs text-slate-600 bg-slate-50 p-4 rounded-xl border border-slate-200/80 leading-relaxed">
+            <div className="font-bold text-slate-900 flex items-center gap-1.5">
+              <Download className="w-4 h-4 text-indigo-600" />
+              <span>איך מתקינים את האפליקציה למסך הבית / שולחן העבודה?</span>
+            </div>
+            <ul className="list-disc list-inside space-y-1.5">
+              <li>
+                <strong>במחשב (Chrome / Edge):</strong> לחץ על סמל ההתקנה בשורת הכתובת למעלה (ליד הכוכב) ובחר <strong>"התקן" (Install)</strong>.
+              </li>
+              <li>
+                <strong>באנדרואיד (Chrome):</strong> לחץ על תפריט 3 הנקודות ובחר <strong>"התקן אפליקציה" / "הוסף למסך הבית"</strong>.
+              </li>
+              <li>
+                <strong>באייפון (Safari):</strong> לחץ על כפתור השיתוף בתחתית המסך ובחר <strong>"הוסף למסך הבית" (Add to Home Screen)</strong>.
+              </li>
+            </ul>
+          </div>
+
+          <div className="flex justify-end pt-2 border-t border-slate-100">
+            <button
+              type="button"
+              onClick={() => setIsInstallModalOpen(false)}
+              className="px-5 py-2 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-bold cursor-pointer"
+            >
+              סגור
+            </button>
+          </div>
+        </div>
+      </div>
+    );
+  };
+
+  // If user is not logged in yet, show the Login Screen!
+  if (!authUser) {
+    return (
+      <>
+        <LoginScreen
+          onLoginSuccess={handleLoginSuccess}
+          onInstallAndNotify={handleInstallAndNotify}
+          notificationsEnabled={notificationsEnabled}
+        />
+        {renderInstallModal()}
+      </>
+    );
+  }
+
   return (
     <div className="min-h-screen flex flex-col bg-slate-50 text-slate-900" dir="rtl">
       {/* Top Navigation & System Bar */}
@@ -544,8 +736,9 @@ export function App() {
         syncStatus={syncStatus}
         currentUserName={currentUserName}
         currentUserRole={currentUserRole}
-        onUpdateUser={handleUpdateUser}
+        canCreateOrEdit={canCreateOrEdit}
         onOpenNewIssue={() => {
+          if (!canCreateOrEdit) return;
           setEditingIssue(null);
           setIsIssueModalOpen(true);
         }}
@@ -554,7 +747,9 @@ export function App() {
         }}
         isAdmin={isAdmin}
         onToggleAdmin={handleToggleAdmin}
-        onLogoutAdmin={handleLogoutAdmin}
+        onLogoutUser={handleLogoutUser}
+        notificationsEnabled={notificationsEnabled}
+        onInstallAndNotify={handleInstallAndNotify}
       />
 
       {/* Floating Real-Time Event Toast (when another team member updates something) */}
@@ -588,9 +783,9 @@ export function App() {
         )}
 
         {/* Dismissible Info Banners (Shortcut Tip & Last Action - each with its own X button) */}
-        {(showShortcutBanner || showLastEventBanner) && (
+        {((showShortcutBanner && canCreateOrEdit) || showLastEventBanner) && (
           <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2.5 mb-4">
-            {showShortcutBanner && (
+            {showShortcutBanner && canCreateOrEdit && (
               <div className="flex-1 flex items-center justify-between gap-2 px-3.5 py-2.5 rounded-2xl bg-gradient-to-l from-indigo-50 via-white to-violet-50 border border-indigo-100 text-xs text-slate-600 shadow-2xs">
                 <div className="flex items-center gap-2 min-w-0">
                   <ClipboardPaste className="w-4 h-4 text-indigo-600 shrink-0" />
@@ -663,11 +858,7 @@ export function App() {
               לא נמצאו תקלות התואמות לסינון
             </h3>
             <p className="text-sm text-slate-500 mb-6">
-              נסה לשנות את מילות החיפוש או לדווח על תקלה חדשה במערכת{' '}
-              <span className="font-bold text-slate-800 bidi-isolate">
-                {activeSystem === 'ALL' ? 'כל המערכות' : activeSystem}
-              </span>
-              .
+              נסה לשנות את מילות החיפוש או לבחור מערכת אחרת.
             </p>
             <div className="flex items-center justify-center gap-3">
               <button
@@ -677,17 +868,19 @@ export function App() {
               >
                 איפוס סינונים
               </button>
-              <button
-                type="button"
-                onClick={() => {
-                  setEditingIssue(null);
-                  setIsIssueModalOpen(true);
-                }}
-                className="flex items-center gap-1.5 px-5 py-2.5 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-bold shadow-md shadow-indigo-500/20 transition cursor-pointer"
-              >
-                <Plus className="w-4 h-4" />
-                <span>דווח תקלה חדשה</span>
-              </button>
+              {canCreateOrEdit && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    setEditingIssue(null);
+                    setIsIssueModalOpen(true);
+                  }}
+                  className="flex items-center gap-1.5 px-5 py-2.5 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-bold shadow-md shadow-indigo-500/20 transition cursor-pointer"
+                >
+                  <Plus className="w-4 h-4" />
+                  <span>דווח תקלה חדשה</span>
+                </button>
+              )}
             </div>
           </div>
         ) : viewMode === 'cards' ? (
@@ -700,9 +893,12 @@ export function App() {
                 isHighlighted={highlightedIssueId === issue.id}
                 currentUserName={currentUserName}
                 currentUserRole={currentUserRole}
+                canEdit={canCreateOrEdit}
+                canDelete={isAdmin}
                 onStatusChange={handleStatusChange}
                 onAddComment={handleAddComment}
                 onEditIssue={(iss) => {
+                  if (!canCreateOrEdit) return;
                   setEditingIssue(iss);
                   setIsIssueModalOpen(true);
                 }}
@@ -720,9 +916,12 @@ export function App() {
             highlightedId={highlightedIssueId}
             currentUserName={currentUserName}
             currentUserRole={currentUserRole}
+            canEdit={canCreateOrEdit}
+            canDelete={isAdmin}
             onStatusChange={handleStatusChange}
             onAddComment={(id, text) => handleAddComment(id, text)}
             onEditIssue={(iss) => {
+              if (!canCreateOrEdit) return;
               setEditingIssue(iss);
               setIsIssueModalOpen(true);
             }}
@@ -734,8 +933,8 @@ export function App() {
         )}
       </main>
 
-      {/* Create / Edit Issue Modal */}
-      {isIssueModalOpen && (
+      {/* Create / Edit Issue Modal (QA & Admin only) */}
+      {isIssueModalOpen && canCreateOrEdit && (
         <IssueFormModal
           systems={systems}
           defaultSystem={activeSystem}
@@ -749,8 +948,8 @@ export function App() {
         />
       )}
 
-      {/* Popup Confirmation Modal Before Deleting an Issue (Row or Card) */}
-      {issueToDelete && (
+      {/* Popup Confirmation Modal Before Deleting an Issue (Admin Only) */}
+      {issueToDelete && isAdmin && (
         <div
           className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/60 backdrop-blur-xs p-4"
           dir="rtl"
@@ -1002,6 +1201,9 @@ export function App() {
           onClose={() => setIsFirebaseModalOpen(false)}
         />
       )}
+
+      {/* App Install & Notifications Modal */}
+      {renderInstallModal()}
     </div>
   );
 }

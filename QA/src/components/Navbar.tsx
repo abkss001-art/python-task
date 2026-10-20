@@ -12,7 +12,10 @@ import {
   ShieldCheck,
   Settings,
   Trash2,
-  Archive
+  Archive,
+  BellRing,
+  Download,
+  LogOut
 } from 'lucide-react';
 import { StdIssue, SyncStatusInfo, TeamRole } from '../types/std';
 
@@ -28,12 +31,14 @@ interface NavbarProps {
   syncStatus: SyncStatusInfo;
   currentUserName: string;
   currentUserRole: TeamRole;
-  onUpdateUser: (name: string, role: TeamRole) => void;
+  canCreateOrEdit: boolean;
   onOpenNewIssue: () => void;
   onOpenFirebaseModal: () => void;
   isAdmin: boolean;
   onToggleAdmin: (code: string) => boolean;
-  onLogoutAdmin: () => void;
+  onLogoutUser: () => void;
+  notificationsEnabled: boolean;
+  onInstallAndNotify: () => void;
 }
 
 /**
@@ -121,20 +126,19 @@ export const Navbar: React.FC<NavbarProps> = ({
   syncStatus,
   currentUserName,
   currentUserRole,
-  onUpdateUser,
+  canCreateOrEdit,
   onOpenNewIssue,
   onOpenFirebaseModal,
   isAdmin,
   onToggleAdmin,
-  onLogoutAdmin
+  onLogoutUser,
+  notificationsEnabled,
+  onInstallAndNotify
 }) => {
   const [isAddingSystem, setIsAddingSystem] = useState(false);
   const [newSystemName, setNewSystemName] = useState('');
-  const [isEditingUser, setIsEditingUser] = useState(false);
-  const [tempName, setTempName] = useState(currentUserName);
-  const [tempRole, setTempRole] = useState<TeamRole>(currentUserRole);
 
-  // Admin Login Input State
+  // Admin Quick Elevate Input State
   const [isEnteringAdmin, setIsEnteringAdmin] = useState(false);
   const [adminCodeInput, setAdminCodeInput] = useState('');
   const [adminError, setAdminError] = useState(false);
@@ -146,14 +150,6 @@ export const Navbar: React.FC<NavbarProps> = ({
     onAddSystem(cleaned);
     setNewSystemName('');
     setIsAddingSystem(false);
-  };
-
-  const handleSaveUser = (e: React.FormEvent) => {
-    e.preventDefault();
-    if (tempName.trim()) {
-      onUpdateUser(tempName.trim(), tempRole);
-    }
-    setIsEditingUser(false);
   };
 
   const handleAdminSubmit = (e: React.FormEvent) => {
@@ -210,15 +206,17 @@ export const Navbar: React.FC<NavbarProps> = ({
                 </div>
               </div>
 
-              {/* Mobile New Bug CTA (Aligned with logo & 'צב מן' so it never crowds the subtitle below!) */}
-              <button
-                type="button"
-                onClick={onOpenNewIssue}
-                className="lg:hidden flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-indigo-600 hover:bg-indigo-700 active:scale-[0.98] text-white font-bold text-xs shadow-md shadow-indigo-600/20 transition cursor-pointer shrink-0"
-              >
-                <Plus className="w-4 h-4 stroke-[2.5]" />
-                <span>תקלה חדשה</span>
-              </button>
+              {/* Mobile New Bug CTA (Only for QA & Admin) */}
+              {canCreateOrEdit && (
+                <button
+                  type="button"
+                  onClick={onOpenNewIssue}
+                  className="lg:hidden flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-indigo-600 hover:bg-indigo-700 active:scale-[0.98] text-white font-bold text-xs shadow-md shadow-indigo-600/20 transition cursor-pointer shrink-0"
+                >
+                  <Plus className="w-4 h-4 stroke-[2.5]" />
+                  <span>תקלה חדשה</span>
+                </button>
+              )}
             </div>
 
             {/* Mobile Full-Width Subtitle: Never truncated or overlapped by '+ תקלה חדשה' */}
@@ -231,9 +229,9 @@ export const Navbar: React.FC<NavbarProps> = ({
             </p>
           </div>
 
-          {/* Row 2 on Mobile (Inline on Desktop): Sync Badge + User Identity + Admin Lock + Desktop CTA */}
-          <div className="flex items-center justify-between lg:justify-end gap-1.5 sm:gap-2.5 overflow-x-auto no-scrollbar pt-1 lg:pt-0 border-t lg:border-t-0 border-slate-100">
-            {/* Live Sync Indicator */}
+          {/* Row 2 on Mobile (Inline on Desktop): Sync Badge + Install/Notify + User Identity + Admin + Desktop CTA */}
+          <div className="flex items-center justify-between lg:justify-end gap-1.5 sm:gap-2 overflow-x-auto no-scrollbar pt-1 lg:pt-0 border-t lg:border-t-0 border-slate-100">
+            {/* Live Sync Indicator & App Download / Notifications */}
             <div className="flex items-center gap-1.5 shrink-0">
               <div
                 className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl border text-[11px] sm:text-xs font-semibold ${
@@ -255,18 +253,32 @@ export const Navbar: React.FC<NavbarProps> = ({
                   />
                 </span>
                 <Cloud className="w-3.5 h-3.5 shrink-0 hidden sm:inline" />
-                <span>
-                  {syncStatus.mode === 'firebase-rtdb'
-                    ? `Firebase (${syncStatus.projectId})`
-                    : syncStatus.mode === 'firebase-firestore'
-                    ? `Firestore (${syncStatus.projectId})`
-                    : 'סנכרון חי'}
-                </span>
+                <span>סנכרון חי</span>
                 <span className="flex items-center gap-1 px-1.5 py-0.2 rounded-md bg-white/90 text-slate-700 border border-slate-200/60 text-[10px] sm:text-[11px]">
                   <Users className="w-3 h-3 text-indigo-600" />
                   <span dir="ltr">{syncStatus.onlineCount}</span>
                 </span>
               </div>
+
+              {/* Install App & Enable Notifications Button */}
+              <button
+                type="button"
+                onClick={onInstallAndNotify}
+                className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl border text-[11px] sm:text-xs font-bold transition cursor-pointer shrink-0 ${
+                  notificationsEnabled
+                    ? 'bg-indigo-50 hover:bg-indigo-100 text-indigo-700 border-indigo-200'
+                    : 'bg-amber-50 hover:bg-amber-100 text-amber-900 border-amber-300'
+                }`}
+                title="הורד אפליקציה והפעל התראות על תקלות חדשות"
+              >
+                <Download className="w-3.5 h-3.5 text-indigo-600" />
+                <BellRing
+                  className={`w-3.5 h-3.5 ${
+                    notificationsEnabled ? 'text-emerald-600' : 'text-amber-600 animate-bounce'
+                  }`}
+                />
+                <span>{notificationsEnabled ? 'אפליקציה והתראות' : 'הורד אפליקציה + התראות'}</span>
+              </button>
 
               {/* Admin-Only Cloud Settings Button */}
               {isAdmin && (
@@ -283,94 +295,41 @@ export const Navbar: React.FC<NavbarProps> = ({
             </div>
 
             <div className="flex items-center gap-1.5 sm:gap-2 shrink-0">
-              {/* User Identity Switcher */}
-              {!isEditingUser ? (
-                <button
-                  type="button"
-                  onClick={() => {
-                    setTempName(currentUserName);
-                    setTempRole(currentUserRole);
-                    setIsEditingUser(true);
-                  }}
-                  className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl bg-slate-100 hover:bg-slate-200/80 border border-slate-200 text-[11px] sm:text-xs font-medium text-slate-700 transition cursor-pointer"
-                  title="לחץ לשינוי שם הבודק/מפתח"
+              {/* Logged-In User Badge */}
+              <div className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl bg-slate-100 border border-slate-200 text-[11px] sm:text-xs font-medium text-slate-700">
+                <UserCheck className="w-3.5 h-3.5 text-indigo-600 shrink-0" />
+                <span className="font-bold text-slate-900 max-w-[100px] sm:max-w-[130px] truncate rtl-safe">
+                  {currentUserName}
+                </span>
+                <span
+                  className={`px-1.5 py-0.2 rounded text-[10px] font-bold ${
+                    isAdmin
+                      ? 'bg-amber-100 text-amber-800'
+                      : currentUserRole === 'dev'
+                      ? 'bg-purple-100 text-purple-700'
+                      : 'bg-sky-100 text-sky-700'
+                  }`}
                 >
-                  <UserCheck className="w-3.5 h-3.5 text-indigo-600 shrink-0" />
-                  <span className="font-semibold text-slate-900 max-w-[85px] sm:max-w-[110px] truncate rtl-safe">
-                    {currentUserName}
-                  </span>
-                  <span
-                    className={`px-1.5 py-0.2 rounded text-[10px] font-bold ${
-                      currentUserRole === 'dev'
-                        ? 'bg-purple-100 text-purple-700'
-                        : 'bg-sky-100 text-sky-700'
-                    }`}
-                  >
-                    {currentUserRole === 'dev' ? 'מפתח' : 'QA'}
-                  </span>
-                </button>
-              ) : (
-                <form
-                  onSubmit={handleSaveUser}
-                  className="flex items-center gap-1 bg-white p-1 rounded-xl border border-indigo-300 shadow-sm"
-                >
-                  <input
-                    type="text"
-                    value={tempName}
-                    onChange={(e) => setTempName(e.target.value)}
-                    placeholder="השם שלך..."
-                    autoFocus
-                    className="w-24 sm:w-28 px-2 py-1 text-xs rounded-lg border border-slate-200 focus:outline-none focus:border-indigo-500 rtl-safe"
-                  />
-                  <select
-                    value={tempRole}
-                    onChange={(e) => setTempRole(e.target.value as TeamRole)}
-                    className="text-xs px-1 py-1 rounded-lg border border-slate-200 bg-slate-50 focus:outline-none"
-                  >
-                    <option value="qa">QA</option>
-                    <option value="dev">מפתח</option>
-                  </select>
-                  <button
-                    type="submit"
-                    className="p-1 rounded-lg bg-indigo-600 text-white hover:bg-indigo-700 cursor-pointer"
-                  >
-                    <Check className="w-3.5 h-3.5" />
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => setIsEditingUser(false)}
-                    className="p-1 rounded-lg bg-slate-100 text-slate-500 hover:bg-slate-200 cursor-pointer"
-                  >
-                    <X className="w-3.5 h-3.5" />
-                  </button>
-                </form>
-              )}
+                  {isAdmin ? 'מנהל' : currentUserRole === 'dev' ? 'מפתח' : 'בודק QA'}
+                </span>
+              </div>
 
-              {/* Admin Lock / Unlock Control */}
-              {isAdmin ? (
-                <button
-                  type="button"
-                  onClick={onLogoutAdmin}
-                  className="flex items-center gap-1 px-2.5 py-1.5 rounded-xl bg-amber-50 hover:bg-amber-100 text-amber-800 border border-amber-300 text-[11px] sm:text-xs font-bold transition cursor-pointer"
-                  title="לחץ ליציאה ממצב מנהל"
-                >
-                  <ShieldCheck className="w-3.5 h-3.5 text-amber-600" />
-                  <span>מנהל</span>
-                </button>
-              ) : !isEnteringAdmin ? (
+              {/* Admin Elevate Button (if not already Admin) */}
+              {!isAdmin && !isEnteringAdmin && (
                 <button
                   type="button"
                   onClick={() => {
                     setIsEnteringAdmin(true);
                     setAdminError(false);
                   }}
-                  className="flex items-center gap-1 px-2.5 py-1.5 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-500 hover:text-slate-800 border border-slate-200 text-[11px] sm:text-xs font-medium transition cursor-pointer"
-                  title="כניסת מנהל (להוספת מערכות, ארכיון והגדרת ענן)"
+                  className="flex items-center gap-1 px-2 py-1.5 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-500 hover:text-slate-800 border border-slate-200 text-[11px] sm:text-xs font-medium transition cursor-pointer"
+                  title="כניסת מנהל (קוד 1108)"
                 >
                   <Lock className="w-3.5 h-3.5" />
-                  <span>מנהל</span>
                 </button>
-              ) : (
+              )}
+
+              {isEnteringAdmin && (
                 <form
                   onSubmit={handleAdminSubmit}
                   className="flex items-center gap-1 bg-white p-1 rounded-xl border border-indigo-300 shadow-sm"
@@ -385,7 +344,7 @@ export const Navbar: React.FC<NavbarProps> = ({
                     }}
                     placeholder="קוד מנהל..."
                     autoFocus
-                    className={`w-20 sm:w-24 px-2 py-1 text-xs rounded-lg border focus:outline-none ${
+                    className={`w-20 px-2 py-1 text-xs rounded-lg border focus:outline-none ${
                       adminError
                         ? 'border-red-500 bg-red-50 text-red-900'
                         : 'border-slate-200 focus:border-indigo-500'
@@ -408,15 +367,28 @@ export const Navbar: React.FC<NavbarProps> = ({
                 </form>
               )}
 
-              {/* Desktop New Bug CTA */}
+              {/* Switch User / Logout Button */}
               <button
                 type="button"
-                onClick={onOpenNewIssue}
-                className="hidden lg:flex items-center gap-2 px-4 py-2 rounded-xl bg-indigo-600 hover:bg-indigo-700 active:scale-[0.99] text-white font-bold text-sm shadow-md shadow-indigo-600/20 transition cursor-pointer"
+                onClick={onLogoutUser}
+                className="flex items-center gap-1 px-2.5 py-1.5 rounded-xl bg-slate-100 hover:bg-red-50 text-slate-600 hover:text-red-600 border border-slate-200 hover:border-red-200 text-[11px] sm:text-xs font-semibold transition cursor-pointer"
+                title="התנתק / החלף משתמש"
               >
-                <Plus className="w-4 h-4 stroke-[2.5]" />
-                <span>תקלה חדשה</span>
+                <LogOut className="w-3.5 h-3.5" />
+                <span className="hidden sm:inline">החלף משתמש</span>
               </button>
+
+              {/* Desktop New Bug CTA (Only for QA & Admin) */}
+              {canCreateOrEdit && (
+                <button
+                  type="button"
+                  onClick={onOpenNewIssue}
+                  className="hidden lg:flex items-center gap-2 px-4 py-2 rounded-xl bg-indigo-600 hover:bg-indigo-700 active:scale-[0.99] text-white font-bold text-sm shadow-md shadow-indigo-600/20 transition cursor-pointer"
+                >
+                  <Plus className="w-4 h-4 stroke-[2.5]" />
+                  <span>תקלה חדשה</span>
+                </button>
+              )}
             </div>
           </div>
         </div>

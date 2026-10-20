@@ -25,6 +25,8 @@ interface SmartTableViewProps {
   highlightedId: string | null;
   currentUserName: string;
   currentUserRole: TeamRole;
+  canEdit?: boolean;
+  canDelete?: boolean;
   onStatusChange: (issueId: string, newStatus: StdStatus) => void;
   onAddComment: (issueId: string, text: string) => void;
   onEditIssue: (issue: StdIssue) => void;
@@ -39,6 +41,8 @@ export const SmartTableView: React.FC<SmartTableViewProps> = ({
   showSystemColumn,
   highlightedId,
   currentUserName,
+  canEdit = true,
+  canDelete = false,
   onStatusChange,
   onAddComment,
   onEditIssue,
@@ -136,7 +140,9 @@ export const SmartTableView: React.FC<SmartTableViewProps> = ({
                   <ArrowUpDown className="w-3.5 h-3.5 opacity-70" />
                 </button>
               </th>
-              <th className="py-3.5 px-4 text-center whitespace-nowrap">פעולות</th>
+              {(canEdit || canDelete) && (
+                <th className="py-3.5 px-4 text-center whitespace-nowrap">פעולות</th>
+              )}
             </tr>
           </thead>
           <tbody className="divide-y divide-slate-200/80 text-sm">
@@ -295,27 +301,33 @@ export const SmartTableView: React.FC<SmartTableViewProps> = ({
                       <div className="text-[11px] text-slate-400 rtl-safe">{issue.createdBy}</div>
                     </td>
 
-                    {/* Actions */}
-                    <td className="py-3.5 px-4 align-top whitespace-nowrap text-center">
-                      <div className="flex items-center justify-center gap-1">
-                        <button
-                          type="button"
-                          onClick={() => onEditIssue(issue)}
-                          className="p-1.5 rounded-lg text-slate-500 hover:text-indigo-600 hover:bg-indigo-50 transition cursor-pointer"
-                          title="ערוך תקלה"
-                        >
-                          <Edit3 className="w-4 h-4" />
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => onDeleteIssue(issue.id)}
-                          className="p-1.5 rounded-lg text-slate-500 hover:text-red-600 hover:bg-red-50 transition cursor-pointer"
-                          title="מחק תקלה"
-                        >
-                          <Trash2 className="w-4 h-4" />
-                        </button>
-                      </div>
-                    </td>
+                    {/* Actions (QA/Admin Edit, Admin Delete) */}
+                    {(canEdit || canDelete) && (
+                      <td className="py-3.5 px-4 align-top whitespace-nowrap text-center">
+                        <div className="flex items-center justify-center gap-1">
+                          {canEdit && (
+                            <button
+                              type="button"
+                              onClick={() => onEditIssue(issue)}
+                              className="p-1.5 rounded-lg text-slate-500 hover:text-indigo-600 hover:bg-indigo-50 transition cursor-pointer"
+                              title="ערוך תקלה"
+                            >
+                              <Edit3 className="w-4 h-4" />
+                            </button>
+                          )}
+                          {canDelete && (
+                            <button
+                              type="button"
+                              onClick={() => onDeleteIssue(issue.id)}
+                              className="p-1.5 rounded-lg text-slate-500 hover:text-red-600 hover:bg-red-50 transition cursor-pointer"
+                              title="מחק תקלה (מנהל בלבד)"
+                            >
+                              <Trash2 className="w-4 h-4" />
+                            </button>
+                          )}
+                        </div>
+                      </td>
+                    )}
                   </tr>
 
                   {/* Expandable Comments Drawer inside Smart Table */}
