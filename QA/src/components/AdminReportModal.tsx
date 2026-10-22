@@ -700,13 +700,14 @@ export const AdminReportModal: React.FC<AdminReportModalProps> = ({
                       <th className="py-2.5 px-3">נושא</th>
                       <th className="py-2.5 px-3">תיאור הבעיה</th>
                       <th className="py-2.5 px-3">מדווח</th>
-                      <th className="py-2.5 px-3 rounded-tl-xl text-center">סטטוס עבודה</th>
+                      <th className="py-2.5 px-3 text-center">סטטוס עבודה</th>
+                      <th className="py-2.5 px-3 rounded-tl-xl text-center">חומרה</th>
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-slate-100 text-xs">
                     {scopedIssues.length === 0 ? (
                       <tr>
-                        <td colSpan={7} className="py-8 text-center text-slate-400">
+                        <td colSpan={8} className="py-8 text-center text-slate-400">
                           אין תקלות מתועדות במערכת זו כעת.
                         </td>
                       </tr>
@@ -720,6 +721,14 @@ export const AdminReportModal: React.FC<AdminReportModalProps> = ({
                             : iss.status === 'בטיפול'
                             ? 'bg-amber-100 text-amber-800 border-amber-200'
                             : 'bg-red-100 text-red-800 border-red-200';
+
+                        const sev = iss.severity || 'בינונית';
+                        const sevBadge =
+                          sev === 'קריטית' || sev === 'גבוהה'
+                            ? 'bg-rose-100 text-rose-800 border-rose-200'
+                            : sev === 'בינונית'
+                            ? 'bg-amber-100 text-amber-800 border-amber-200'
+                            : 'bg-emerald-100 text-emerald-800 border-emerald-200';
 
                         return (
                           <tr key={iss.id} className="hover:bg-slate-50/90 transition">
@@ -754,6 +763,13 @@ export const AdminReportModal: React.FC<AdminReportModalProps> = ({
                                 className={`inline-block px-2.5 py-1 rounded-full border text-[11px] font-extrabold ${badgeStyle}`}
                               >
                                 {iss.status}
+                              </span>
+                            </td>
+                            <td className="py-2.5 px-3 text-center whitespace-nowrap">
+                              <span
+                                className={`inline-block px-2.5 py-1 rounded-full border text-[11px] font-extrabold ${sevBadge}`}
+                              >
+                                {sev}
                               </span>
                             </td>
                           </tr>

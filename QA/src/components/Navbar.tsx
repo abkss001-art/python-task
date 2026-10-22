@@ -16,7 +16,8 @@ import {
   BellRing,
   Download,
   LogOut,
-  BarChart3
+  BarChart3,
+  DatabaseBackup
 } from 'lucide-react';
 import { StdIssue, SyncStatusInfo, TeamRole } from '../types/std';
 
@@ -29,6 +30,7 @@ interface NavbarProps {
   onRequestRemoveSystem?: (sys: string) => void;
   onOpenArchiveModal?: () => void;
   onOpenAdminReport?: () => void;
+  onOpenAdminBackup?: () => void;
   issues: StdIssue[];
   syncStatus: SyncStatusInfo;
   currentUserName: string;
@@ -125,6 +127,7 @@ export const Navbar: React.FC<NavbarProps> = ({
   onRequestRemoveSystem,
   onOpenArchiveModal,
   onOpenAdminReport,
+  onOpenAdminBackup,
   issues,
   syncStatus,
   currentUserName,
@@ -288,7 +291,7 @@ export const Navbar: React.FC<NavbarProps> = ({
                 </button>
               )}
 
-              {/* Admin-Only Progress Report & Cloud Settings Buttons */}
+              {/* Admin-Only Progress Report, Backup/Import & Cloud Settings Buttons */}
               {isAdmin && (
                 <>
                   <button
@@ -299,6 +302,16 @@ export const Navbar: React.FC<NavbarProps> = ({
                   >
                     <BarChart3 className="w-3.5 h-3.5" />
                     <span>דוח התקדמות</span>
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={onOpenAdminBackup}
+                    className="flex items-center gap-1 px-2.5 py-1.5 rounded-xl bg-emerald-50 hover:bg-emerald-100 text-emerald-800 border border-emerald-200 text-[11px] sm:text-xs font-bold transition cursor-pointer shrink-0"
+                    title="גיבוי מלא, שחזור וייבוא מאקסל/CSV (זמין למנהל בלבד)"
+                  >
+                    <DatabaseBackup className="w-3.5 h-3.5 text-emerald-600" />
+                    <span>גיבוי / ייבוא</span>
                   </button>
 
                   <button

@@ -6,14 +6,19 @@ import {
   Trash2,
   Check,
   Sparkles,
-  AlertCircle
+  AlertCircle,
+  PenTool,
+  Flame
 } from 'lucide-react';
 import {
   PLATFORMS,
+  SEVERITIES,
+  SEVERITY_CONFIG,
   STATUSES,
   STATUS_CONFIG,
   StdIssue,
   StdPlatform,
+  StdSeverity,
   StdStatus
 } from '../types/std';
 import {
@@ -22,6 +27,7 @@ import {
   readImagesFromSystemClipboard
 } from '../utils/imageUtils';
 import { PlatformIcon } from './IssueCard';
+import { ScreenshotAnnotatorModal } from './ScreenshotAnnotatorModal';
 
 interface IssueFormModalProps {
   systems: string[];
@@ -32,6 +38,7 @@ interface IssueFormModalProps {
     system: string;
     testCaseId: string;
     platform: StdPlatform;
+    severity: StdSeverity;
     subject: string;
     description: string;
     status: StdStatus;
@@ -58,12 +65,16 @@ export const IssueFormModal: React.FC<IssueFormModalProps> = ({
   const [platform, setPlatform] = useState<StdPlatform>(
     editingIssue?.platform || 'IOS'
   );
+  const [severity, setSeverity] = useState<StdSeverity>(
+    editingIssue?.severity || 'בינונית'
+  );
   const [subject, setSubject] = useState(editingIssue?.subject || '');
   const [description, setDescription] = useState(editingIssue?.description || '');
   const [status, setStatus] = useState<StdStatus>(editingIssue?.status || 'פתוח');
   const [screenshots, setScreenshots] = useState<string[]>(
     editingIssue?.screenshots || []
   );
+  const [annotatingIndex, setAnnotatingIndex] = useState<number | null>(null);
   const [initialComment, setInitialComment] = useState('');
   const [isDraggingOver, setIsDraggingOver] = useState(false);
   const [pasteNotice, setPasteNotice] = useState(false);
@@ -156,6 +167,7 @@ export const IssueFormModal: React.FC<IssueFormModalProps> = ({
       system,
       testCaseId: testCaseId.trim(),
       platform,
+      severity,
       subject: subject.trim(),
       description: description.trim(),
       status,
@@ -260,31 +272,66 @@ export const IssueFormModal: React.FC<IssueFormModalProps> = ({
             </div>
           </div>
 
-          {/* Status Selector Pills */}
-          <div>
-            <label className="block text-xs font-bold text-slate-700 mb-1.5">
-              סטטוס תקלה <span className="text-red-500">*</span>
-            </label>
-            <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
-              {STATUSES.map((st) => {
-                const cfg = STATUS_CONFIG[st];
-                const isSelected = status === st;
-                return (
-                  <button
-                    key={st}
-                    type="button"
-                    onClick={() => setStatus(st)}
-                    className={`flex items-center justify-center gap-2 py-2 px-3 rounded-xl border text-xs font-bold transition cursor-pointer ${
-                      isSelected
-                        ? `${cfg.bgBadge} ${cfg.textBadge} ${cfg.borderBadge} ring-2 ${cfg.activeRing}`
-                        : 'bg-white hover:bg-slate-50 text-slate-600 border-slate-200'
-                    }`}
-                  >
-                    <span className={`w-2.5 h-2.5 rounded-full ${cfg.dotColor}`} />
-                    <span>{st}</span>
-                  </button>
-                );
-              })}
+          {/* Status & Severity Row */}
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+            {/* Status Selector Pills */}
+            <div>
+              <label className="block text-xs font-bold text-slate-700 mb-1.5">
+                סטטוס תקלה <span className="text-red-500">*</span>
+              </label>
+              <div className="grid grid-cols-2 gap-2">
+                {STATUSES.map((st) => {
+                  const cfg = STATUS_CONFIG[st];
+                  const isSelected = status === st;
+                  return (
+                    <button
+                      key={st}
+                      type="button"
+                      onClick={() => setStatus(st)}
+                      className={`flex items-center justify-center gap-1.5 py-2 px-2.5 rounded-xl border text-xs font-bold transition cursor-pointer ${
+                        isSelected
+                          ? `${cfg.bgBadge} ${cfg.textBadge} ${cfg.borderBadge} ring-2 ${cfg.activeRing}`
+                          : 'bg-white hover:bg-slate-50 text-slate-600 border-slate-200'
+                      }`}
+                    >
+                      <span className={`w-2 h-2 rounded-full ${cfg.dotColor}`} />
+                      <span>{st}</span>
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+
+            {/* Severity Selector Pills */}
+            <div>
+              <label className="block text-xs font-bold text-slate-700 mb-1.5">
+                חומרת תקלה / עדיפות <span className="text-red-500">*</span>
+              </label>
+              <div className="grid grid-cols-2 gap-2">
+                {SEVERITIES.map((sev) => {
+                  const sCfg = SEVERITY_CONFIG[sev];
+                  const isSelected = severity === sev;
+                  return (
+                    <button
+                      key={sev}
+                      type="button"
+                      onClick={() => setSeverity(sev)}
+                      className={`flex items-center justify-center gap-1.5 py-2 px-2.5 rounded-xl border text-xs font-bold transition cursor-pointer ${
+                        isSelected
+                          ? `${sCfg.bgBadge} ${sCfg.textBadge} ${sCfg.borderBadge} ring-2 ring-indigo-500/20`
+                          : 'bg-white hover:bg-slate-50 text-slate-600 border-slate-200'
+                      }`}
+                    >
+                      {sev === 'קריטית' ? (
+                        <Flame className="w-3.5 h-3.5 text-rose-600" />
+                      ) : (
+                        <span className={`w-2 h-2 rounded-full ${sCfg.dotColor}`} />
+                      )}
+                      <span>{sev}</span>
+                    </button>
+                  );
+                })}
+              </div>
             </div>
           </div>
 
@@ -322,7 +369,7 @@ export const IssueFormModal: React.FC<IssueFormModalProps> = ({
           <div>
             <div className="flex items-center justify-between mb-1.5">
               <label className="block text-xs font-bold text-slate-700">
-                צילומי מסך (הדבקה מהלוח או בחירת קובץ)
+                צילומי מסך (הדבקה מהלוח או בחירת קובץ • ניתן לסמן חצים על התמונה)
               </label>
               {pasteNotice && (
                 <span className="inline-flex items-center gap-1 text-xs font-bold text-emerald-600 animate-bounce">
@@ -389,34 +436,46 @@ export const IssueFormModal: React.FC<IssueFormModalProps> = ({
                 )}
 
                 <div className="text-[11px] text-slate-500">
-                  ניתן גם לגרור תמונות לכאן • שומר על יחס תמונה מקורי וחדות מלאה לזום במובייל
+                  ניתן גם לגרור תמונות לכאן • לחץ על "סמן על התמונה" כדי לצייר חץ או להקיף את השגיאה
                 </div>
               </div>
             </div>
 
-            {/* Pasted / Uploaded Screenshots Preview */}
+            {/* Pasted / Uploaded Screenshots Preview with Built-In Annotator Button */}
             {screenshots.length > 0 && (
               <div className="grid grid-cols-2 sm:grid-cols-3 gap-3 mt-3">
                 {screenshots.map((src, idx) => (
                   <div
                     key={idx}
-                    className="relative group rounded-xl bg-slate-900 border border-slate-200 h-32 p-1.5 flex items-center justify-center overflow-hidden"
+                    className="relative group rounded-xl bg-slate-900 border border-slate-200 h-36 p-1.5 flex items-center justify-center overflow-hidden"
                   >
                     <img
                       src={src}
                       alt={`צילום מסך ${idx + 1}`}
                       className="max-h-full max-w-full object-contain rounded"
                     />
-                    <button
-                      type="button"
-                      onClick={() =>
-                        setScreenshots((prev) => prev.filter((_, i) => i !== idx))
-                      }
-                      className="absolute top-2 left-2 p-1.5 rounded-lg bg-red-600/90 hover:bg-red-700 text-white shadow transition cursor-pointer"
-                      title="הסר תמונה"
-                    >
-                      <Trash2 className="w-3.5 h-3.5" />
-                    </button>
+                    <div className="absolute top-2 left-2 right-2 flex items-center justify-between gap-1">
+                      <button
+                        type="button"
+                        onClick={() => setAnnotatingIndex(idx)}
+                        className="flex items-center gap-1 px-2.5 py-1 rounded-lg bg-indigo-600/95 hover:bg-indigo-700 text-white text-[11px] font-bold shadow transition cursor-pointer"
+                        title="צייר חץ, עיגול או הדגשה על צילום המסך"
+                      >
+                        <PenTool className="w-3 h-3" />
+                        <span>סמן על התמונה</span>
+                      </button>
+
+                      <button
+                        type="button"
+                        onClick={() =>
+                          setScreenshots((prev) => prev.filter((_, i) => i !== idx))
+                        }
+                        className="p-1.5 rounded-lg bg-red-600/90 hover:bg-red-700 text-white shadow transition cursor-pointer"
+                        title="הסר תמונה"
+                      >
+                        <Trash2 className="w-3.5 h-3.5" />
+                      </button>
+                    </div>
                   </div>
                 ))}
               </div>
@@ -462,6 +521,20 @@ export const IssueFormModal: React.FC<IssueFormModalProps> = ({
           </div>
         </form>
       </div>
+
+      {/* Built-in Screenshot Annotator Modal */}
+      {annotatingIndex !== null && screenshots[annotatingIndex] && (
+        <ScreenshotAnnotatorModal
+          imageSrc={screenshots[annotatingIndex]}
+          onSave={(annotatedUrl) => {
+            setScreenshots((prev) =>
+              prev.map((item, i) => (i === annotatingIndex ? annotatedUrl : item))
+            );
+            setAnnotatingIndex(null);
+          }}
+          onCancel={() => setAnnotatingIndex(null)}
+        />
+      )}
     </div>
   );
 };

@@ -2,6 +2,8 @@ export type StdPlatform = 'IOS' | 'אנדרואיד' | 'מחשב';
 
 export type StdStatus = 'פתוח' | 'בטיפול' | 'ניתן לבדוק שוב' | 'נבדק תקין';
 
+export type StdSeverity = 'קריטית' | 'גבוהה' | 'בינונית' | 'נמוכה';
+
 export type TeamRole = 'qa' | 'dev';
 
 export interface StdComment {
@@ -13,16 +15,25 @@ export interface StdComment {
   createdAt: number;
 }
 
+export interface StdAuditEntry {
+  id: string;
+  actor: string;
+  action: string;
+  timestamp: number;
+}
+
 export interface StdIssue {
   id: string;
   system: string; // e.g., 'CARGO' | 'נשקי ערד'
   testCaseId: string; // e.g., '10', '11', '12'
   platform: StdPlatform;
+  severity?: StdSeverity;
   subject: string;
   description: string;
   status: StdStatus;
   screenshots: string[]; // Base64/DataURL or Cloud URLs
   comments: StdComment[];
+  auditLog?: StdAuditEntry[];
   createdBy: string;
   createdAt: number;
   updatedAt: number;
@@ -55,7 +66,49 @@ export const PLATFORMS: StdPlatform[] = ['IOS', 'אנדרואיד', 'מחשב'];
 
 export const STATUSES: StdStatus[] = ['פתוח', 'בטיפול', 'ניתן לבדוק שוב', 'נבדק תקין'];
 
+export const SEVERITIES: StdSeverity[] = ['קריטית', 'גבוהה', 'בינונית', 'נמוכה'];
+
 export const DEFAULT_SYSTEMS: string[] = ['CARGO', 'נשקי ערד'];
+
+export const SEVERITY_CONFIG: Record<
+  StdSeverity,
+  {
+    label: StdSeverity;
+    bgBadge: string;
+    textBadge: string;
+    borderBadge: string;
+    dotColor: string;
+  }
+> = {
+  'קריטית': {
+    label: 'קריטית',
+    bgBadge: 'bg-rose-100',
+    textBadge: 'text-rose-800',
+    borderBadge: 'border-rose-300',
+    dotColor: 'bg-rose-600'
+  },
+  'גבוהה': {
+    label: 'גבוהה',
+    bgBadge: 'bg-red-50',
+    textBadge: 'text-red-700',
+    borderBadge: 'border-red-200',
+    dotColor: 'bg-red-500'
+  },
+  'בינונית': {
+    label: 'בינונית',
+    bgBadge: 'bg-amber-50',
+    textBadge: 'text-amber-800',
+    borderBadge: 'border-amber-200',
+    dotColor: 'bg-amber-500'
+  },
+  'נמוכה': {
+    label: 'נמוכה',
+    bgBadge: 'bg-emerald-50',
+    textBadge: 'text-emerald-700',
+    borderBadge: 'border-emerald-200',
+    dotColor: 'bg-emerald-500'
+  }
+};
 
 export const STATUS_CONFIG: Record<
   StdStatus,

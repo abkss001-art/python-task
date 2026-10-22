@@ -233,6 +233,19 @@ function realtimeSyncServerPlugin(): Plugin {
 export default defineConfig({
   base: './',
   plugins: [react(), tailwindcss(), realtimeSyncServerPlugin()],
+  build: {
+    chunkSizeWarningLimit: 700,
+    rollupOptions: {
+      output: {
+        manualChunks: {
+          'vendor-react': ['react', 'react-dom'],
+          'vendor-firebase': ['firebase/app', 'firebase/database', 'firebase/firestore'],
+          'vendor-mqtt': ['mqtt'],
+          'vendor-icons': ['lucide-react']
+        }
+      }
+    }
+  },
   server: {
     port: 5173,
     host: true,

@@ -12,9 +12,11 @@ import {
   Clock,
   ImagePlus,
   Hash,
-  User
+  User,
+  Flame
 } from 'lucide-react';
 import {
+  SEVERITY_CONFIG,
   STATUSES,
   STATUS_CONFIG,
   StdIssue,
@@ -85,6 +87,8 @@ export const IssueCard: React.FC<IssueCardProps> = ({
   const [confirmDelete, setConfirmDelete] = useState(false);
 
   const statusStyle = STATUS_CONFIG[issue.status] || STATUS_CONFIG['פתוח'];
+  const sev = issue.severity || 'בינונית';
+  const sevStyle = SEVERITY_CONFIG[sev] || SEVERITY_CONFIG['בינונית'];
 
   const handleSendComment = (e: React.FormEvent) => {
     e.preventDefault();
@@ -131,6 +135,19 @@ export const IssueCard: React.FC<IssueCardProps> = ({
             <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-slate-100 text-slate-700 border border-slate-200/80 text-xs font-semibold">
               <PlatformIcon platform={issue.platform} className="w-3.5 h-3.5 text-indigo-600" />
               <span className="bidi-isolate">{issue.platform}</span>
+            </span>
+
+            {/* Severity Badge */}
+            <span
+              className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-lg border text-xs font-extrabold ${sevStyle.bgBadge} ${sevStyle.textBadge} ${sevStyle.borderBadge}`}
+              title="חומרת תקלה"
+            >
+              {sev === 'קריטית' ? (
+                <Flame className="w-3.5 h-3.5 text-rose-600" />
+              ) : (
+                <span className={`w-1.5 h-1.5 rounded-full ${sevStyle.dotColor}`} />
+              )}
+              <span>{sev}</span>
             </span>
 
             {showSystemBadge && (

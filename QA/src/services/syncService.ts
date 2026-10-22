@@ -18,7 +18,10 @@ import mqtt, { MqttClient } from 'mqtt';
 import {
   DEFAULT_SYSTEMS,
   FirebaseConfigData,
+  StdAuditEntry,
+  StdComment,
   StdIssue,
+  StdSeverity,
   SyncStatusInfo
 } from '../types/std';
 import {
@@ -26,10 +29,15 @@ import {
   loadActiveFirebaseConfig,
   saveFirebaseConfigLocally
 } from '../firebaseConfig';
+import {
+  loadWorkspaceFromIndexedDB,
+  saveWorkspaceToIndexedDB
+} from '../utils/idbStorage';
 
 export interface SyncStatePayload {
   systems: string[];
   archivedSystems?: string[];
+  deletedIssueIds?: string[];
   issues: StdIssue[];
   lastUpdatedBy?: string;
   lastAction?: string;
@@ -456,7 +464,7 @@ class RealtimeSyncService {
       errorMessage: undefined
     });
 
-    // Load cached state first if available
+    // Load cached state first from IndexedDB (unlimited capacity) or localStorage fallback
     const cached = localStorage.getItem('std_qa_fallback_cache');
     if (cached) {
       try {
@@ -466,6 +474,13 @@ class RealtimeSyncService {
         // ignore
       }
     }
+
+    loadWorkspaceFromIndexedDB<SyncStatePayload>().then((idbState) => {
+      if (idbState && idbState.updatedAt && idbState.updatedAt >= (this.currentState.updatedAt || 0)) {
+        this.currentState = this.normalizePayload(idbState);
+        this.notifyState(false);
+      }
+    });
 
     // 1. Connect to built-in Cloud WebSocket Broker (works globally 24/7 on GitHub Pages!)
     try {
@@ -509,28 +524,23 @@ class RealtimeSyncService {
             const normalized = this.normalizePayload(parsed);
             const isRemote = Boolean(normalized.clientId && normalized.clientId !== this.clientId);
 
-            // Update if remote or newer
-            if (
-              !this.currentState.updatedAt ||
-              !normalized.updatedAt ||
-              normalized.updatedAt >= (this.currentState.updatedAt || 0)
-            ) {
-              this.currentState = normalized;
-              try {
-                localStorage.setItem('std_qa_fallback_cache', JSON.stringify(normalized));
-              } catch {
-                // ignore
-              }
-              this.updateStatus({
-                mode: 'live-server',
-                connected: true,
-                lastSyncAt: Date.now(),
-                lastEventText: normalized.lastAction
-                  ? `${normalized.lastUpdatedBy || 'צוות'}: ${normalized.lastAction}`
-                  : undefined
-              });
-              this.notifyState(isRemote);
-            }
+            // Smart Merge so concurrent edits never overwrite each other
+            const merged = isRemote
+              ? this.mergeStates(this.currentState, normalized)
+              : normalized;
+
+            this.currentState = merged;
+            this.persistCacheLocally(merged);
+
+            this.updateStatus({
+              mode: 'live-server',
+              connected: true,
+              lastSyncAt: Date.now(),
+              lastEventText: normalized.lastAction
+                ? `${normalized.lastUpdatedBy || 'צוות'}: ${normalized.lastAction}`
+                : undefined
+            });
+            this.notifyState(isRemote);
           } else if (topic.startsWith(CLOUD_TOPIC_PRESENCE)) {
             const peerId = topic.replace(CLOUD_TOPIC_PRESENCE, '');
             const data = JSON.parse(message.toString());
@@ -564,6 +574,7 @@ class RealtimeSyncService {
         }
         const normalized = this.normalizePayload(data);
         this.currentState = normalized;
+        this.persistCacheLocally(normalized);
         this.updateStatus({
           mode: 'live-server',
           connected: true,
@@ -580,7 +591,9 @@ class RealtimeSyncService {
             if (msg.type === 'SYNC_STATE' && msg.payload) {
               const norm = this.normalizePayload(msg.payload);
               const isRemote = Boolean(norm.clientId && norm.clientId !== this.clientId);
-              this.currentState = norm;
+              const merged = isRemote ? this.mergeStates(this.currentState, norm) : norm;
+              this.currentState = merged;
+              this.persistCacheLocally(merged);
               this.notifyState(isRemote);
             }
           } catch {
@@ -591,6 +604,82 @@ class RealtimeSyncService {
       .catch(() => {
         // Running on GitHub Pages (static) - MQTT WebSocket cloud handles real-time sync!
       });
+  }
+
+  private persistCacheLocally(payload: SyncStatePayload) {
+    saveWorkspaceToIndexedDB(payload);
+    try {
+      localStorage.setItem('std_qa_fallback_cache', JSON.stringify(payload));
+    } catch {
+      // IndexedDB handles large payloads when localStorage reaches 5MB
+    }
+  }
+
+  /**
+   * מיזוג חכם (Smart Merge) ברמת תקלה בודדת וברמת הערה/היסטוריה
+   * מונע דריסת נתונים כאשר בודק ומפתח שומרים שינוי באותה שנייה במקביל
+   */
+  public mergeStates(local: SyncStatePayload, incoming: SyncStatePayload): SyncStatePayload {
+    const incomingNewer = (incoming.updatedAt || 0) >= (local.updatedAt || 0);
+    const primary = incomingNewer ? incoming : local;
+
+    const deletedSet = new Set<string>([
+      ...(local.deletedIssueIds || []),
+      ...(incoming.deletedIssueIds || [])
+    ]);
+
+    const issueMap = new Map<string, StdIssue>();
+    for (const iss of local.issues || []) {
+      if (!deletedSet.has(iss.id)) {
+        issueMap.set(iss.id, iss);
+      }
+    }
+
+    for (const inc of incoming.issues || []) {
+      if (deletedSet.has(inc.id)) continue;
+      const existing = issueMap.get(inc.id);
+      if (!existing) {
+        issueMap.set(inc.id, inc);
+      } else {
+        // Merge comments by ID
+        const commentMap = new Map<string, StdComment>();
+        for (const c of existing.comments || []) commentMap.set(c.id, c);
+        for (const c of inc.comments || []) commentMap.set(c.id, c);
+        const mergedComments = Array.from(commentMap.values()).sort(
+          (a, b) => a.createdAt - b.createdAt
+        );
+
+        // Merge auditLog by ID
+        const auditMap = new Map<string, StdAuditEntry>();
+        for (const a of existing.auditLog || []) auditMap.set(a.id, a);
+        for (const a of inc.auditLog || []) auditMap.set(a.id, a);
+        const mergedAudit = Array.from(auditMap.values()).sort(
+          (a, b) => a.timestamp - b.timestamp
+        );
+
+        const winner = (inc.updatedAt || 0) >= (existing.updatedAt || 0) ? inc : existing;
+        issueMap.set(inc.id, {
+          ...winner,
+          comments: mergedComments,
+          auditLog: mergedAudit
+        });
+      }
+    }
+
+    const mergedIssues = Array.from(issueMap.values()).sort(
+      (a, b) => b.updatedAt - a.updatedAt
+    );
+
+    return {
+      systems: primary.systems,
+      archivedSystems: primary.archivedSystems || [],
+      deletedIssueIds: Array.from(deletedSet).slice(-200),
+      issues: mergedIssues,
+      lastUpdatedBy: incoming.lastUpdatedBy || local.lastUpdatedBy,
+      lastAction: incoming.lastAction || local.lastAction,
+      updatedAt: Math.max(local.updatedAt || 0, incoming.updatedAt || 0),
+      clientId: incoming.clientId
+    };
   }
 
   private normalizePayload(raw: any): SyncStatePayload {
@@ -605,12 +694,20 @@ class RealtimeSyncService {
       ? Object.values(raw.archivedSystems)
       : [];
 
+    const deletedIssueIds: string[] = Array.isArray(raw?.deletedIssueIds)
+      ? raw.deletedIssueIds
+      : raw?.deletedIssueIds && typeof raw.deletedIssueIds === 'object'
+      ? Object.values(raw.deletedIssueIds)
+      : [];
+
     let rawIssues: any[] = [];
     if (Array.isArray(raw?.issues)) {
       rawIssues = raw.issues;
     } else if (raw?.issues && typeof raw.issues === 'object') {
       rawIssues = Object.values(raw.issues);
     }
+
+    const validSeverities: StdSeverity[] = ['קריטית', 'גבוהה', 'בינונית', 'נמוכה'];
 
     const issues: StdIssue[] = rawIssues
       .filter(Boolean)
@@ -619,6 +716,7 @@ class RealtimeSyncService {
         system: String(item.system || systems[0] || 'CARGO'),
         testCaseId: String(item.testCaseId || ''),
         platform: normalizePlatform(item.platform),
+        severity: validSeverities.includes(item.severity) ? item.severity : 'בינונית',
         subject: String(item.subject || ''),
         description: String(item.description || ''),
         status: item.status || 'פתוח',
@@ -636,6 +734,11 @@ class RealtimeSyncService {
           ...c,
           author: formatLegacyAuthor(c?.author)
         })),
+        auditLog: Array.isArray(item.auditLog)
+          ? item.auditLog
+          : item.auditLog && typeof item.auditLog === 'object'
+          ? Object.values(item.auditLog)
+          : [],
         createdBy: formatLegacyAuthor(item.createdBy),
         createdAt: Number(item.createdAt || Date.now()),
         updatedAt: Number(item.updatedAt || Date.now())
@@ -644,6 +747,7 @@ class RealtimeSyncService {
     return {
       systems,
       archivedSystems,
+      deletedIssueIds,
       issues,
       lastUpdatedBy: raw?.lastUpdatedBy,
       lastAction: raw?.lastAction,
@@ -653,13 +757,19 @@ class RealtimeSyncService {
   }
 
   public async pushStateToCloud(
-    nextState: { systems: string[]; archivedSystems?: string[]; issues: StdIssue[] },
+    nextState: {
+      systems: string[];
+      archivedSystems?: string[];
+      deletedIssueIds?: string[];
+      issues: StdIssue[];
+    },
     actionSummary: string,
     actorName = 'חבר צוות'
   ) {
     const payload: SyncStatePayload = {
       systems: nextState.systems,
       archivedSystems: nextState.archivedSystems ?? this.currentState.archivedSystems ?? [],
+      deletedIssueIds: nextState.deletedIssueIds ?? this.currentState.deletedIssueIds ?? [],
       issues: nextState.issues,
       lastUpdatedBy: actorName,
       lastAction: actionSummary,
@@ -669,12 +779,7 @@ class RealtimeSyncService {
 
     this.currentState = payload;
     this.notifyState(false);
-
-    try {
-      localStorage.setItem('std_qa_fallback_cache', JSON.stringify(payload));
-    } catch {
-      // ignore quota errors
-    }
+    this.persistCacheLocally(payload);
 
     if (this.broadcastChannel) {
       try {

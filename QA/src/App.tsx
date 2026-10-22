@@ -1,9 +1,11 @@
 import React, { useEffect, useMemo, useState, useRef } from 'react';
 import {
   DEFAULT_SYSTEMS,
+  StdAuditEntry,
   StdComment,
   StdIssue,
   StdPlatform,
+  StdSeverity,
   StdStatus,
   SyncStatusInfo
 } from './types/std';
@@ -16,6 +18,7 @@ import { IssueFormModal } from './components/IssueFormModal';
 import { LightboxModal } from './components/LightboxModal';
 import { FirebaseSetupModal } from './components/FirebaseSetupModal';
 import { AdminReportModal } from './components/AdminReportModal';
+import { AdminBackupModal } from './components/AdminBackupModal';
 import { LoginScreen, AuthenticatedUser } from './components/LoginScreen';
 import { extractImagesFromClipboardEvent } from './utils/imageUtils';
 import {
@@ -111,11 +114,12 @@ export function App() {
     title: string;
   } | null>(null);
 
-  // Confirmation, Archive & Admin Report Modals
+  // Confirmation, Archive, Admin Report & Backup Modals
   const [issueToDelete, setIssueToDelete] = useState<StdIssue | null>(null);
   const [systemToRemove, setSystemToRemove] = useState<string | null>(null);
   const [isArchiveModalOpen, setIsArchiveModalOpen] = useState<boolean>(false);
   const [isAdminReportOpen, setIsAdminReportOpen] = useState<boolean>(false);
+  const [isAdminBackupOpen, setIsAdminBackupOpen] = useState<boolean>(false);
 
   // Live Notification Toast & Highlight
   const [liveToast, setLiveToast] = useState<string | null>(null);
@@ -451,6 +455,7 @@ export function App() {
     system: string;
     testCaseId: string;
     platform: StdPlatform;
+    severity: StdSeverity;
     subject: string;
     description: string;
     status: StdStatus;
@@ -463,6 +468,16 @@ export function App() {
       editingIssue && editingIssue.id !== '__NEW_FROM_PASTE__';
 
     if (isEditingExisting) {
+      const auditEntry: StdAuditEntry = {
+        id: `aud-${Date.now()}-${Math.random().toString(36).substring(2, 5)}`,
+        actor: formattedUserDisplay,
+        action:
+          editingIssue.status !== formData.status
+            ? `ערך תקלה והעביר סטטוס מ-"${editingIssue.status}" ל-"${formData.status}"`
+            : 'ערך פרטי תקלה / צילום מסך',
+        timestamp: Date.now()
+      };
+
       const nextIssues = issues.map((item) =>
         item.id === editingIssue.id
           ? {
@@ -470,10 +485,12 @@ export function App() {
               system: formData.system,
               testCaseId: formData.testCaseId,
               platform: formData.platform,
+              severity: formData.severity,
               subject: formData.subject,
               description: formData.description,
               status: formData.status,
               screenshots: formData.screenshots,
+              auditLog: [...(item.auditLog || []), auditEntry],
               updatedAt: Date.now()
             }
           : item
@@ -500,11 +517,20 @@ export function App() {
         system: formData.system,
         testCaseId: formData.testCaseId,
         platform: formData.platform,
+        severity: formData.severity,
         subject: formData.subject,
         description: formData.description,
         status: formData.status,
         screenshots: formData.screenshots,
         comments,
+        auditLog: [
+          {
+            id: `aud-${Date.now()}`,
+            actor: formattedUserDisplay,
+            action: `פתח תקלה חדשה בסטטוס "${formData.status}" (חומרה: ${formData.severity})`,
+            timestamp: Date.now()
+          }
+        ],
         createdBy: formattedUserDisplay,
         createdAt: Date.now(),
         updatedAt: Date.now()
@@ -530,9 +556,21 @@ export function App() {
 
   const handleStatusChange = (issueId: string, newStatus: StdStatus) => {
     const target = issues.find((i) => i.id === issueId);
+    const auditEntry: StdAuditEntry = {
+      id: `aud-${Date.now()}-${Math.random().toString(36).substring(2, 5)}`,
+      actor: formattedUserDisplay,
+      action: `שינה סטטוס מ-"${target?.status || ''}" ל-"${newStatus}"`,
+      timestamp: Date.now()
+    };
+
     const nextIssues = issues.map((item) =>
       item.id === issueId
-        ? { ...item, status: newStatus, updatedAt: Date.now() }
+        ? {
+            ...item,
+            status: newStatus,
+            auditLog: [...(item.auditLog || []), auditEntry],
+            updatedAt: Date.now()
+          }
         : item
     );
 
@@ -583,8 +621,10 @@ export function App() {
   const handleConfirmDeleteIssue = () => {
     if (!issueToDelete || !isAdmin) return;
     const nextIssues = issues.filter((i) => i.id !== issueToDelete.id);
+    const prevDeleted = syncService.getState().deletedIssueIds || [];
+    const nextDeleted = Array.from(new Set([...prevDeleted, issueToDelete.id]));
     syncService.pushStateToCloud(
-      { systems, archivedSystems, issues: nextIssues },
+      { systems, archivedSystems, deletedIssueIds: nextDeleted, issues: nextIssues },
       `מחיקת תסריט #${issueToDelete.testCaseId}`,
       currentUserName
     );
@@ -913,6 +953,9 @@ export function App() {
         onOpenAdminReport={() => {
           if (isAdmin) setIsAdminReportOpen(true);
         }}
+        onOpenAdminBackup={() => {
+          if (isAdmin) setIsAdminBackupOpen(true);
+        }}
         issues={issues}
         syncStatus={syncStatus}
         currentUserName={currentUserName}
@@ -1100,7 +1143,7 @@ export function App() {
             canEdit={canCreateOrEdit}
             canDelete={isAdmin}
             onStatusChange={handleStatusChange}
-            onAddComment={(id, text) => handleAddComment(id, text)}
+            onAddComment={(id, text, screenshot) => handleAddComment(id, text, screenshot)}
             onEditIssue={(iss) => {
               if (!canCreateOrEdit) return;
               setEditingIssue(iss);
@@ -1369,6 +1412,42 @@ export function App() {
           onOpenLightbox={(images, index, title) =>
             setLightboxData({ images, index, title })
           }
+        />
+      )}
+
+      {/* Admin Backup, Restore & CSV Import Modal (Admin Only) */}
+      {isAdminBackupOpen && isAdmin && (
+        <AdminBackupModal
+          systems={systems}
+          archivedSystems={archivedSystems}
+          issues={issues}
+          activeSystem={activeSystem}
+          currentUserDisplay={formattedUserDisplay}
+          onRestoreBackup={(restored) => {
+            setSystems(restored.systems);
+            setArchivedSystems(restored.archivedSystems);
+            setIssues(restored.issues);
+            syncService.pushStateToCloud(
+              {
+                systems: restored.systems,
+                archivedSystems: restored.archivedSystems,
+                deletedIssueIds: [],
+                issues: restored.issues
+              },
+              `שחזור מסד נתונים מקובץ גיבוי (${restored.issues.length} תקלות)`,
+              currentUserName
+            );
+          }}
+          onImportIssues={(imported) => {
+            const nextIssues = [...imported, ...issues];
+            setIssues(nextIssues);
+            syncService.pushStateToCloud(
+              { systems, archivedSystems, issues: nextIssues },
+              `ייבוא ${imported.length} תסריטים מקובץ CSV`,
+              currentUserName
+            );
+          }}
+          onClose={() => setIsAdminBackupOpen(false)}
         />
       )}
 
