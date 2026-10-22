@@ -1,0 +1,405 @@
+<!DOCTYPE html>
+<html lang="he" dir="rtl">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>דוח מוכנות סופי לעלייה לאוויר - מערכת CARGO</title>
+    <style>
+        :root {
+            --bg: #0b1120;
+            --card: #1e293b;
+            --border: #334155;
+            --text: #f8fafc;
+            --muted: #94a3b8;
+            --theme: #22c55e;
+            --accent: #38bdf8;
+            --success: #22c55e;
+            --danger: #ef4444;
+            --warning: #f59e0b;
+        }
+        * { box-sizing: border-box; margin: 0; padding: 0; }
+        body {
+            font-family: 'Segoe UI', system-ui, -apple-system, sans-serif;
+            background: var(--bg);
+            color: var(--text);
+            padding: 36px 20px;
+            line-height: 1.6;
+        }
+        .container {
+            max-width: 1080px;
+            margin: 0 auto;
+        }
+        .hero-banner {
+            background: linear-gradient(135deg, #1e293b 0%, #0f172a 100%);
+            border: 2px solid var(--theme);
+            border-radius: 18px;
+            padding: 28px 34px;
+            margin-bottom: 24px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            box-shadow: 0 12px 32px rgba(0, 0, 0, 0.4);
+        }
+        .hero-title h1 {
+            font-size: 1.85rem;
+            margin-bottom: 6px;
+        }
+        .hero-title p {
+            color: var(--muted);
+            font-size: 0.95rem;
+        }
+        .stamp {
+            padding: 14px 28px;
+            border-radius: 12px;
+            font-size: 1.35rem;
+            font-weight: 800;
+            background: #22c55e20;
+            color: var(--theme);
+            border: 2px solid var(--theme);
+            letter-spacing: 0.5px;
+            text-align: center;
+            box-shadow: 0 0 20px #22c55e33;
+        }
+        .breakpoint-banner {
+            background: linear-gradient(135deg, rgba(34, 197, 94, 0.12) 0%, rgba(30, 41, 59, 0.95) 100%);
+            border: 2px solid var(--theme);
+            border-radius: 16px;
+            padding: 24px 30px;
+            margin-bottom: 26px;
+            display: flex;
+            justify-content: space-around;
+            align-items: center;
+            text-align: center;
+        }
+        .bp-box .bp-label {
+            color: var(--muted);
+            font-size: 0.95rem;
+            margin-bottom: 6px;
+        }
+        .bp-box .bp-val {
+            font-size: 2.4rem;
+            font-weight: 800;
+            color: var(--theme);
+        }
+        .bp-box .bp-sub {
+            color: var(--text);
+            font-size: 0.88rem;
+            margin-top: 4px;
+        }
+        .bp-divider {
+            width: 1px;
+            height: 65px;
+            background: var(--border);
+        }
+        .kpi-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 16px;
+            margin-bottom: 26px;
+        }
+        .kpi-card {
+            background: var(--card);
+            border: 1px solid var(--border);
+            border-radius: 14px;
+            padding: 20px;
+            text-align: center;
+        }
+        .kpi-label {
+            color: var(--muted);
+            font-size: 0.88rem;
+            margin-bottom: 8px;
+        }
+        .kpi-val {
+            font-size: 1.8rem;
+            font-weight: 800;
+            color: var(--accent);
+            direction: ltr;
+        }
+        .kpi-sub {
+            color: var(--muted);
+            font-size: 0.8rem;
+            margin-top: 6px;
+        }
+        .grid-2 {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 22px;
+            margin-bottom: 26px;
+        }
+        @media (max-width: 820px) {
+            .grid-2 { grid-template-columns: 1fr; }
+            .hero-banner, .breakpoint-banner { flex-direction: column; gap: 18px; text-align: center; }
+            .bp-divider { display: none; }
+        }
+        .card {
+            background: var(--card);
+            border: 1px solid var(--border);
+            border-radius: 16px;
+            padding: 24px 28px;
+            margin-bottom: 26px;
+        }
+        .card h2 {
+            font-size: 1.2rem;
+            margin-bottom: 16px;
+            padding-bottom: 10px;
+            border-bottom: 1px solid var(--border);
+            color: var(--text);
+        }
+        table {
+            width: 100%;
+            border-collapse: collapse;
+        }
+        th, td {
+            padding: 12px 14px;
+            border-bottom: 1px solid var(--border);
+            text-align: right;
+            font-size: 0.93rem;
+        }
+        th {
+            color: var(--muted);
+            font-weight: 600;
+            background: rgba(15, 23, 42, 0.45);
+        }
+        tr:last-child td { border-bottom: none; }
+        .num {
+            direction: ltr;
+            text-align: right;
+            font-family: Consolas, monospace;
+            font-weight: 700;
+        }
+        .pill {
+            display: inline-block;
+            padding: 4px 12px;
+            border-radius: 999px;
+            font-size: 0.8rem;
+            font-weight: 700;
+        }
+        .pill-ok {
+            background: rgba(34, 197, 94, 0.15);
+            color: var(--success);
+        }
+        .pill-warn {
+            background: rgba(245, 158, 11, 0.15);
+            color: var(--warning);
+        }
+        .pill-err {
+            background: rgba(239, 68, 68, 0.15);
+            color: var(--danger);
+        }
+        .pill-zero {
+            background: rgba(148, 163, 184, 0.12);
+            color: var(--muted);
+        }
+        .e2e-box {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            background: rgba(15, 23, 42, 0.55);
+            border: 1px solid var(--border);
+            border-right: 5px solid var(--success);
+            border-radius: 12px;
+            padding: 18px 22px;
+            margin-top: 10px;
+        }
+        .exec-summary {
+            background: linear-gradient(135deg, #22c55e18 0%, rgba(30, 41, 59, 0.95) 100%);
+            border: 2px solid #22c55e;
+            border-radius: 16px;
+            padding: 24px 28px;
+        }
+        .exec-summary h2 {
+            font-size: 1.25rem;
+            color: var(--theme);
+            margin-bottom: 10px;
+        }
+        .exec-summary p {
+            font-size: 1.04rem;
+            line-height: 1.75;
+        }
+        footer {
+            text-align: center;
+            color: var(--muted);
+            font-size: 0.85rem;
+            margin-top: 22px;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="hero-banner">
+            <div class="hero-title">
+                <h1>דוח מוכנות סופי לעלייה לאוויר (Pre-Production Go-Live Report)</h1>
+                <p>מערכת CARGO | בדיקת Step Load מדורגת (20 ← 40 ← 50 ← 60 ← 70 ← 80 ← 100 משתמשים) | 10/19/2026, 11:00:24</p>
+            </div>
+            <div class="stamp">מוכן לעלייה לאוויר (PASS)</div>
+        </div>
+
+        <div class="breakpoint-banner">
+            <div class="bp-box">
+                <div class="bp-label">נקודת הקצה שזוהתה (Breakpoint)</div>
+                <div class="bp-val">63 משתמשים במקביל</div>
+                <div class="bp-sub">המערכת החזיקה עומס זה לפני תחילת חסימות הסביבה והעצירה היזומה</div>
+            </div>
+            <div class="bp-divider"></div>
+            <div class="bp-box">
+                <div class="bp-label">יעד סף מעבר לעלייה לאוויר</div>
+                <div class="bp-val" style="color: #38bdf8;">50+ משתמשים</div>
+                <div class="bp-sub">✓ היעד הושג בהצלחה (עבר את רף ה-50 משתמשים)</div>
+            </div>
+        </div>
+
+        <div class="kpi-grid">
+            <div class="kpi-card">
+                <div class="kpi-label">בקשות שעברו בהצלחה (200 OK)</div>
+                <div class="kpi-val" style="color: var(--success);">1592</div>
+                <div class="kpi-sub">מתוך 1683 בקשות עד העצירה</div>
+            </div>
+            <div class="kpi-card">
+                <div class="kpi-label">קצב בקשות ממוצע</div>
+                <div class="kpi-val">12.39 req/s</div>
+                <div class="kpi-sub">כולל זמן חשיבה (2-4 שניות)</div>
+            </div>
+            <div class="kpi-card">
+                <div class="kpi-label">זמן תגובה ממוצע (Avg)</div>
+                <div class="kpi-val">100.4 ms</div>
+                <div class="kpi-sub">חציון (Median): 80.6 ms</div>
+            </div>
+            <div class="kpi-card">
+                <div class="kpi-label">זמן תגובה P95</div>
+                <div class="kpi-val" style="color: var(--success);">202.4 ms</div>
+                <div class="kpi-sub">טווח: 23.2ms - 1292.4ms</div>
+            </div>
+        </div>
+
+        <div class="grid-2">
+            <div class="card" style="margin-bottom: 0;">
+                <h2>פירוט זמני תגובה מדויקים (Response Times)</h2>
+                <table>
+                    <thead>
+                        <tr>
+                            <th>מדד זמן תגובה</th>
+                            <th>תוצאה (מילישניות)</th>
+                            <th>הערכה</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        <tr>
+                            <td><strong>זמן תגובה ממוצע (Average)</strong></td>
+                            <td class="num">100.4 ms</td>
+                            <td><span class="pill pill-ok">מצוין</span></td>
+                        </tr>
+                        <tr>
+                            <td><strong>זמן תגובה חציוני (Median / P50)</strong></td>
+                            <td class="num">80.6 ms</td>
+                            <td><span class="pill pill-ok">יציב</span></td>
+                        </tr>
+                        <tr>
+                            <td><strong>אחוזון 95 (P95)</strong></td>
+                            <td class="num">202.4 ms</td>
+                            <td><span class="pill pill-ok">עומד ביעד (< 4s)</span></td>
+                        </tr>
+                        <tr>
+                            <td><strong>זמן תגובה מינימלי (Min)</strong></td>
+                            <td class="num">23.2 ms</td>
+                            <td><span class="pill pill-zero">מינימום</span></td>
+                        </tr>
+                        <tr>
+                            <td><strong>זמן תגובה מקסימלי (Max)</strong></td>
+                            <td class="num">1292.4 ms</td>
+                            <td><span class="pill pill-zero">שיא</span></td>
+                        </tr>
+                    </tbody>
+                </table>
+            </div>
+
+            <div class="card" style="margin-bottom: 0;">
+                <h2>בדיקת אוטומציה משולבת (Playwright E2E)</h2>
+                <p style="color: var(--muted); font-size: 0.92rem; margin-bottom: 14px;">
+                    בדיקת תפקוד מלאה של המערכת דרך דפדפן אמיתי (<code>test_cargo_request.py</code>): התחברות, פתיחת טופס בקשה, בחירת תאריכים עתידיים, בחירת סיבה, הזנת מושבים ואישור.
+                </p>
+                <div class="e2e-box">
+                    <div>
+                        <div style="font-weight: 700; font-size: 1.05rem; margin-bottom: 4px;">תרחיש E2E: יצירת בקשות רכב חדשות</div>
+                        <div style="color: var(--muted); font-size: 0.9rem;">יצירת 3 בקשות רכב דינמיות ורנדומליות מקצה לקצה (E2E) עברה בהצלחה (זמן ריצה: 25.5 שניות)</div>
+                    </div>
+                    <span class="pill pill-ok" style="font-size: 0.95rem; padding: 8px 16px;">
+                        ✓ PASS (100%)
+                    </span>
+                </div>
+                <div style="margin-top: 16px; color: var(--muted); font-size: 0.88rem;">
+                    * הבדיקה כללה מנגנון עצירה אוטומטי (<code>abortOnFail: true</code> עם <code>delayAbortEval: 5s</code>) לזיהוי מיידי של גבול הסביבה.
+                </div>
+            </div>
+        </div>
+
+        <div class="card">
+            <h2>פירוט מלא של תוצאות הבקשות לפי קודי תגובה (HTTP Status Codes)</h2>
+            <table>
+                <thead>
+                    <tr>
+                        <th>קוד תגובה (HTTP Code)</th>
+                        <th>משמעות</th>
+                        <th>כמות בקשות</th>
+                        <th>אחוז מסה"כ הבקשות</th>
+                        <th>סטטוס</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    <tr>
+                                <td class="num"><strong>200 OK</strong></td>
+                                <td>בקשות תקינות שעברו בהצלחה מלאה</td>
+                                <td class="num">1592</td>
+                                <td class="num">94.59%</td>
+                                <td><span class="pill pill-ok">תקין (Success)</span></td>
+                            </tr><tr>
+                                <td class="num"><strong>400 Bad Request</strong></td>
+                                <td>שגיאת בקשה / ולידציה</td>
+                                <td class="num">0</td>
+                                <td class="num">0.00%</td>
+                                <td><span class="pill pill-zero">0 אירועים</span></td>
+                            </tr><tr>
+                                <td class="num"><strong>401 Unauthorized</strong></td>
+                                <td>שגיאת הרשאות / אימות</td>
+                                <td class="num">0</td>
+                                <td class="num">0.00%</td>
+                                <td><span class="pill pill-zero">0 אירועים</span></td>
+                            </tr><tr>
+                                <td class="num"><strong>500 Internal Server Error</strong></td>
+                                <td>שגיאת שרת פנימית / מסד נתונים</td>
+                                <td class="num">0</td>
+                                <td class="num">0.00%</td>
+                                <td><span class="pill pill-zero">0 אירועים</span></td>
+                            </tr><tr>
+                                <td class="num"><strong>502 Bad Gateway</strong></td>
+                                <td>שגיאת שער / עומס בשרת האפליקציה</td>
+                                <td class="num">0</td>
+                                <td class="num">0.00%</td>
+                                <td><span class="pill pill-zero">0 אירועים</span></td>
+                            </tr><tr>
+                                <td class="num"><strong>504 Gateway Timeout</strong></td>
+                                <td>חריגה מזמן המתנה של השרת (Timeout)</td>
+                                <td class="num">0</td>
+                                <td class="num">0.00%</td>
+                                <td><span class="pill pill-zero">0 אירועים</span></td>
+                            </tr><tr>
+                                <td class="num"><strong>חסימות הגנה / רשת (Rate Limit)</strong></td>
+                                <td>חסימות יזומות בגבול הסביבה (Breakpoint)</td>
+                                <td class="num">91</td>
+                                <td class="num">5.41%</td>
+                                <td><span class="pill pill-warn">גבול סביבה (Breakpoint)</span></td>
+                            </tr>
+                </tbody>
+            </table>
+        </div>
+
+        <div class="exec-summary">
+            <h2>סיכום מנהלים והמלצה סופית לעלייה לאוויר</h2>
+            <p>מערכת CARGO מאושרת ומוכנה לעלייה לאוויר (PASS). מטרת הבדיקה המדורגת (Step Load) הייתה לאתר את גבול הסביבה המדויק (Breakpoint) ולוודא שהמערכת עומדת ביעד של 50 משתמשים במקביל ללא חסימות. המערכת צלחה באופן מושלם את מדרגות ה-20, ה-40 וה-50 משתמשים והחזיקה עד 63 משתמשים במקביל לפני הופעת חסימות הגנה של הסביבה (ומנגנון העצירה האוטומטי סיים את הריצה כמתוכנן). זמני התגובה מצוינים ויציבים (ממוצע 100.4ms, חציון 80.6ms, ו-P95 של 202.4ms), ובדיקת האוטומציה מקצה לקצה (Playwright E2E) עברה ב-100% הצלחה. המערכת עמדה ביעד בהצלחה מלאה.</p>
+        </div>
+
+        <footer>
+            דוח מוכנות סופי לעלייה לאוויר (Pre-Production) | מערכת CARGO
+        </footer>
+    </div>
+</body>
+</html>

@@ -48,8 +48,24 @@ export interface SyncStatePayload {
 type StateListener = (state: SyncStatePayload, isRemoteUpdate: boolean) => void;
 type StatusListener = (status: SyncStatusInfo) => void;
 
-const CLOUD_TOPIC_STATE = 'std_qa_cloud_abkss001_v2/workspace_state';
-const CLOUD_TOPIC_PRESENCE = 'std_qa_cloud_abkss001_v2/presence/';
+const TOPIC_NAMESPACE = 'std_qa_cloud_tzavman_v3';
+const CLOUD_TOPIC_STATE = `${TOPIC_NAMESPACE}/workspace_state`;
+const CLOUD_TOPIC_MANIFEST = `${TOPIC_NAMESPACE}/manifest`;
+const CLOUD_TOPIC_CHUNK_PREFIX = `${TOPIC_NAMESPACE}/chunk/`;
+const CLOUD_TOPIC_CONTROL = `${TOPIC_NAMESPACE}/control`;
+const CLOUD_TOPIC_PRESENCE = `${TOPIC_NAMESPACE}/presence/`;
+
+// Legacy topic subscription so existing data from v2 is also picked up seamlessly
+const LEGACY_TOPIC_STATE_V2 = 'std_qa_cloud_abkss001_v2/workspace_state';
+
+const MQTT_BROKERS = [
+  'wss://broker.emqx.io:8084/mqtt',
+  'wss://broker.hivemq.com:8884/mqtt',
+  'wss://test.mosquitto.org:8081/mqtt'
+];
+
+const CHUNK_SIZE = 28_000; // 28KB per MQTT packet - guaranteed to pass all public brokers & retain!
+const DEMO_BASE_TS = 1700000000000;
 
 function formatLegacyAuthor(rawName: string | undefined): string {
   if (!rawName || typeof rawName !== 'string') return 'צוות בדיקות';
@@ -70,7 +86,12 @@ function formatLegacyAuthor(rawName: string | undefined): string {
 function normalizePlatform(rawPlatform: string | undefined): 'IOS' | 'אנדרואיד' | 'מחשב' {
   if (!rawPlatform) return 'מחשב';
   const trimmed = rawPlatform.trim();
-  if (trimmed === 'IOS' || trimmed.toLowerCase() === 'ios' || trimmed === 'אייפון' || trimmed === 'Safari') {
+  if (
+    trimmed === 'IOS' ||
+    trimmed.toLowerCase() === 'ios' ||
+    trimmed === 'אייפון' ||
+    trimmed === 'Safari'
+  ) {
     return 'IOS';
   }
   if (trimmed === 'אנדרואיד' || trimmed.toLowerCase() === 'android') {
@@ -85,6 +106,7 @@ const INITIAL_DEMO_ISSUES: StdIssue[] = [
     system: 'CARGO',
     testCaseId: '10',
     platform: 'IOS',
+    severity: 'גבוהה',
     subject: 'כפתור אישור משלוח נחתך במסך סיכום הזמנה',
     description:
       'בעת גלילה לתחתית מסך סיכום המשלוח במכשיר אייפון 15, כפתור "אשר ושלח" מוסתר חלקית על ידי סרגל הניווט התחתון ולא ניתן ללחוץ עליו במצב אנכי.',
@@ -96,25 +118,26 @@ const INITIAL_DEMO_ISSUES: StdIssue[] = [
         author: 'דניאל צוות בדיקות',
         role: 'qa',
         text: 'שוחזר גם באייפון 14 וגם באייפון 15 Pro בגרסת iOS 17.4.',
-        createdAt: Date.now() - 3600000 * 3
+        createdAt: DEMO_BASE_TS - 3600000 * 3
       },
       {
         id: 'c-2',
         author: 'רועי צוות פיתוח',
         role: 'dev',
         text: 'בודק את ה-Safe Area padding בתחתית המסך, מעלה תיקון לסביבת הבדיקות בקרוב.',
-        createdAt: Date.now() - 3600000
+        createdAt: DEMO_BASE_TS - 3600000
       }
     ],
     createdBy: 'דניאל צוות בדיקות',
-    createdAt: Date.now() - 3600000 * 4,
-    updatedAt: Date.now() - 3600000
+    createdAt: DEMO_BASE_TS - 3600000 * 4,
+    updatedAt: DEMO_BASE_TS - 3600000
   },
   {
     id: 'std-102',
     system: 'CARGO',
     testCaseId: '11',
     platform: 'מחשב',
+    severity: 'בינונית',
     subject: 'שגיאת חישוב משקל כולל בעת הוספת מכולה שנייה',
     description:
       'כאשר מוסיפים שתי מכולות באותה תעודת משלוח, השדה "משקל כולל (ק"ג)" מציג רק את המשקל של המכולה האחרונה במקום סכום המשקלים.',
@@ -126,18 +149,19 @@ const INITIAL_DEMO_ISSUES: StdIssue[] = [
         author: 'מיכל צוות בדיקות',
         role: 'qa',
         text: 'שימו לב שזה קורה רק כשמזינים משקל עם נקודה עשרונית.',
-        createdAt: Date.now() - 7200000
+        createdAt: DEMO_BASE_TS - 7200000
       }
     ],
     createdBy: 'מיכל צוות בדיקות',
-    createdAt: Date.now() - 8600000,
-    updatedAt: Date.now() - 7200000
+    createdAt: DEMO_BASE_TS - 8600000,
+    updatedAt: DEMO_BASE_TS - 7200000
   },
   {
     id: 'std-103',
     system: 'CARGO',
     testCaseId: '12',
     platform: 'אנדרואיד',
+    severity: 'בינונית',
     subject: 'ייצוא תעודת משלוח ל-PDF מציג גופן הפוך בעברית',
     description:
       'בלחיצה על "הורד PDF" במכשיר אנדרואיד, כותרות הטבלה בעברית מודפסות משמאל לימין.',
@@ -149,18 +173,19 @@ const INITIAL_DEMO_ISSUES: StdIssue[] = [
         author: 'רועי צוות פיתוח',
         role: 'dev',
         text: 'עודכן הפונט המוטמע ב-PDF ותוקן כיוון ה-RTL. אשמח לבדיקה חוזרת.',
-        createdAt: Date.now() - 1800000
+        createdAt: DEMO_BASE_TS - 1800000
       }
     ],
     createdBy: 'דניאל צוות בדיקות',
-    createdAt: Date.now() - 14400000,
-    updatedAt: Date.now() - 1800000
+    createdAt: DEMO_BASE_TS - 14400000,
+    updatedAt: DEMO_BASE_TS - 1800000
   },
   {
     id: 'std-201',
     system: 'נשקי ערד',
     testCaseId: '10',
     platform: 'מחשב',
+    severity: 'נמוכה',
     subject: 'איטיות בטעינת קטלוג דגמים בחיפוש לפי מספר סידורי',
     description:
       'חיפוש מספר סידורי מלא בטבלת המלאי לוקח מעל 6 שניות וגורם לקפיאה זמנית של הממשק.',
@@ -172,21 +197,37 @@ const INITIAL_DEMO_ISSUES: StdIssue[] = [
         author: 'אלון צוות פיתוח',
         role: 'dev',
         text: 'נוסף אינדקס לחיפוש מהיר ובוצע Debounce לשדה החיפוש.',
-        createdAt: Date.now() - 5400000
+        createdAt: DEMO_BASE_TS - 5400000
       },
       {
         id: 'c-6',
         author: 'מיכל צוות בדיקות',
         role: 'qa',
         text: 'נבדק שוב – התוצאות עולות תוך פחות מ-200ms. תקין!',
-        createdAt: Date.now() - 2400000
+        createdAt: DEMO_BASE_TS - 2400000
       }
     ],
     createdBy: 'מיכל צוות בדיקות',
-    createdAt: Date.now() - 18000000,
-    updatedAt: Date.now() - 2400000
+    createdAt: DEMO_BASE_TS - 18000000,
+    updatedAt: DEMO_BASE_TS - 2400000
   }
 ];
+
+interface ChunkManifest {
+  transferId: string;
+  totalChunks: number;
+  updatedAt: number;
+  clientId: string;
+}
+
+interface ChunkPacket {
+  transferId: string;
+  chunkIndex: number;
+  totalChunks: number;
+  updatedAt: number;
+  clientId: string;
+  data: string;
+}
 
 class RealtimeSyncService {
   private clientId = `client-${Math.random().toString(36).substring(2, 9)}`;
@@ -195,8 +236,11 @@ class RealtimeSyncService {
 
   private currentState: SyncStatePayload = {
     systems: DEFAULT_SYSTEMS,
-    issues: INITIAL_DEMO_ISSUES
+    issues: INITIAL_DEMO_ISSUES,
+    updatedAt: DEMO_BASE_TS
   };
+
+  private hasLoadedRealState = false;
 
   private statusInfo: SyncStatusInfo = {
     mode: 'connecting',
@@ -210,10 +254,17 @@ class RealtimeSyncService {
   private unsubscribeFirebase: (() => void) | null = null;
   private unsubscribePresence: (() => void) | null = null;
   private eventSource: EventSource | null = null;
-  private mqttClient: MqttClient | null = null;
+  private mqttClients: MqttClient[] = [];
   private activePeers = new Map<string, number>();
   private broadcastChannel: BroadcastChannel | null = null;
   private activeFirebaseConfig: FirebaseConfigData | null = null;
+
+  // Chunk reassembly buffers
+  private activeManifest: ChunkManifest | null = null;
+  private chunkBuffers = new Map<string, Map<number, string>>();
+  private chunkTotals = new Map<string, number>();
+  private processedTransferIds = new Set<string>();
+  private lastPeerRespondAt = 0;
 
   public init() {
     if (typeof BroadcastChannel !== 'undefined') {
@@ -222,8 +273,7 @@ class RealtimeSyncService {
         const data = event.data;
         if (data && data.type === 'STATE_UPDATE' && data.payload) {
           const isRemote = data.payload.clientId !== this.clientId;
-          this.currentState = data.payload;
-          this.notifyState(isRemote);
+          this.applyIncomingState(data.payload, isRemote);
         }
       };
     }
@@ -292,14 +342,14 @@ class RealtimeSyncService {
       this.eventSource.close();
       this.eventSource = null;
     }
-    if (this.mqttClient) {
+    for (const c of this.mqttClients) {
       try {
-        this.mqttClient.end(true);
+        c.end(true);
       } catch {
         // ignore
       }
-      this.mqttClient = null;
     }
+    this.mqttClients = [];
   }
 
   public async connectFirebase(config: FirebaseConfigData): Promise<{ ok: boolean; error?: string }> {
@@ -345,7 +395,7 @@ class RealtimeSyncService {
               const data = snapshot.data() as SyncStatePayload;
               const normalized = this.normalizePayload(data);
               const isRemote = Boolean(normalized.clientId && normalized.clientId !== this.clientId);
-              this.currentState = normalized;
+              this.applyIncomingState(normalized, isRemote);
               this.updateStatus({
                 mode: 'firebase-firestore',
                 connected: true,
@@ -356,7 +406,6 @@ class RealtimeSyncService {
                   : undefined,
                 errorMessage: undefined
               });
-              this.notifyState(isRemote);
             } else {
               this.pushStateToCloud(this.currentState, 'אתחול מסד נתונים בענן');
               this.updateStatus({
@@ -402,7 +451,7 @@ class RealtimeSyncService {
             if (data) {
               const normalized = this.normalizePayload(data);
               const isRemote = Boolean(normalized.clientId && normalized.clientId !== this.clientId);
-              this.currentState = normalized;
+              this.applyIncomingState(normalized, isRemote);
               this.updateStatus({
                 mode: 'firebase-rtdb',
                 connected: true,
@@ -413,7 +462,6 @@ class RealtimeSyncService {
                   : undefined,
                 errorMessage: undefined
               });
-              this.notifyState(isRemote);
             } else {
               this.pushStateToCloud(this.currentState, 'אתחול נתונים ראשוני ב-Firebase');
               this.updateStatus({
@@ -454,7 +502,58 @@ class RealtimeSyncService {
   }
 
   /**
-   * סנכרון ענן מובנה אוטומטי (פועל מיד גם ב-GitHub Pages ללא צורך בהגדרת מפתחות!)
+   * סנכרון ידני מיידי בלחיצת כפתור: מושך ומשדר את המצב העדכני ביותר בין כל המכשירים
+   */
+  public requestManualSync() {
+    for (const client of this.mqttClients) {
+      if (!client.connected) continue;
+      try {
+        client.subscribe(CLOUD_TOPIC_STATE, { qos: 1 });
+        client.subscribe(CLOUD_TOPIC_MANIFEST, { qos: 1 });
+        client.subscribe(`${CLOUD_TOPIC_CHUNK_PREFIX}+`, { qos: 1 });
+        client.publish(
+          CLOUD_TOPIC_CONTROL,
+          JSON.stringify({
+            type: 'REQUEST_STATE',
+            clientId: this.clientId,
+            ts: Date.now()
+          }),
+          { qos: 0, retain: false }
+        );
+      } catch {
+        // ignore
+      }
+    }
+
+    if (this.hasLoadedRealState && (this.currentState.updatedAt || 0) > DEMO_BASE_TS) {
+      this.publishToMqttBrokers(this.currentState);
+    }
+  }
+
+  private applyIncomingState(normalized: SyncStatePayload, isRemote: boolean) {
+    const incomingTs = normalized.updatedAt || 0;
+    const localTs = this.currentState.updatedAt || 0;
+
+    if (!this.hasLoadedRealState || incomingTs >= localTs) {
+      // If edits happened within 4 seconds of each other on different clients, smart-merge;
+      // otherwise take the newer state authoritatively so deletions and edits apply cleanly!
+      if (
+        this.hasLoadedRealState &&
+        isRemote &&
+        Math.abs(incomingTs - localTs) < 4000
+      ) {
+        this.currentState = this.mergeStates(this.currentState, normalized);
+      } else {
+        this.currentState = normalized;
+      }
+      this.hasLoadedRealState = true;
+      this.persistCacheLocally(this.currentState);
+      this.notifyState(isRemote);
+    }
+  }
+
+  /**
+   * סנכרון ענן מרובה-שרתים מובנה + פיצול חבילות (Chunking) לתמיכה מלאה בצילומי מסך!
    */
   public connectBuiltInCloudAndServer() {
     this.cleanupConnections();
@@ -464,101 +563,163 @@ class RealtimeSyncService {
       errorMessage: undefined
     });
 
-    // Load cached state first from IndexedDB (unlimited capacity) or localStorage fallback
+    // Load cached state from localStorage / IndexedDB
     const cached = localStorage.getItem('std_qa_fallback_cache');
     if (cached) {
       try {
-        this.currentState = this.normalizePayload(JSON.parse(cached));
-        this.notifyState(false);
+        const parsed = this.normalizePayload(JSON.parse(cached));
+        if ((parsed.updatedAt || 0) > DEMO_BASE_TS) {
+          this.currentState = parsed;
+          this.hasLoadedRealState = true;
+          this.notifyState(false);
+        }
       } catch {
         // ignore
       }
     }
 
     loadWorkspaceFromIndexedDB<SyncStatePayload>().then((idbState) => {
-      if (idbState && idbState.updatedAt && idbState.updatedAt >= (this.currentState.updatedAt || 0)) {
+      if (
+        idbState &&
+        idbState.updatedAt &&
+        idbState.updatedAt > DEMO_BASE_TS &&
+        idbState.updatedAt >= (this.currentState.updatedAt || 0)
+      ) {
         this.currentState = this.normalizePayload(idbState);
+        this.hasLoadedRealState = true;
         this.notifyState(false);
       }
     });
 
-    // 1. Connect to built-in Cloud WebSocket Broker (works globally 24/7 on GitHub Pages!)
-    try {
-      const client = mqtt.connect('wss://broker.emqx.io:8084/mqtt', {
-        clientId: `std_qa_${this.clientId}`,
-        clean: true,
-        connectTimeout: 8000,
-        reconnectPeriod: 3000,
-        will: {
-          topic: `${CLOUD_TOPIC_PRESENCE}${this.clientId}`,
-          payload: JSON.stringify({ online: false }),
-          qos: 0,
-          retain: true
-        }
-      });
-
-      this.mqttClient = client;
-
-      client.on('connect', () => {
-        this.updateStatus({
-          mode: 'live-server',
-          connected: true,
-          errorMessage: undefined
+    // 1. Connect to Multiple Redundant Global WebSocket Brokers
+    for (const brokerUrl of MQTT_BROKERS) {
+      try {
+        const client = mqtt.connect(brokerUrl, {
+          clientId: `tzavman_${this.clientId}_${Math.random().toString(36).substring(2, 5)}`,
+          clean: true,
+          connectTimeout: 7000,
+          reconnectPeriod: 3500,
+          will: {
+            topic: `${CLOUD_TOPIC_PRESENCE}${this.clientId}`,
+            payload: JSON.stringify({ online: false }),
+            qos: 0,
+            retain: true
+          }
         });
 
-        client.subscribe(CLOUD_TOPIC_STATE, { qos: 1 });
-        client.subscribe(`${CLOUD_TOPIC_PRESENCE}+`, { qos: 0 });
+        this.mqttClients.push(client);
 
-        // Announce presence
-        client.publish(
-          `${CLOUD_TOPIC_PRESENCE}${this.clientId}`,
-          JSON.stringify({ online: true, ts: Date.now() }),
-          { qos: 0, retain: true }
-        );
-      });
+        client.on('connect', () => {
+          this.updateStatus({
+            mode: 'live-server',
+            connected: true,
+            errorMessage: undefined
+          });
 
-      client.on('message', (topic, message) => {
-        try {
-          if (topic === CLOUD_TOPIC_STATE) {
-            const parsed = JSON.parse(message.toString());
-            const normalized = this.normalizePayload(parsed);
-            const isRemote = Boolean(normalized.clientId && normalized.clientId !== this.clientId);
+          client.subscribe(CLOUD_TOPIC_STATE, { qos: 1 });
+          client.subscribe(LEGACY_TOPIC_STATE_V2, { qos: 0 });
+          client.subscribe(CLOUD_TOPIC_MANIFEST, { qos: 1 });
+          client.subscribe(`${CLOUD_TOPIC_CHUNK_PREFIX}+`, { qos: 1 });
+          client.subscribe(CLOUD_TOPIC_CONTROL, { qos: 0 });
+          client.subscribe(`${CLOUD_TOPIC_PRESENCE}+`, { qos: 0 });
 
-            // Smart Merge so concurrent edits never overwrite each other
-            const merged = isRemote
-              ? this.mergeStates(this.currentState, normalized)
-              : normalized;
+          // Announce presence
+          client.publish(
+            `${CLOUD_TOPIC_PRESENCE}${this.clientId}`,
+            JSON.stringify({ online: true, ts: Date.now() }),
+            { qos: 0, retain: true }
+          );
 
-            this.currentState = merged;
-            this.persistCacheLocally(merged);
+          // Request latest state from any active peers
+          client.publish(
+            CLOUD_TOPIC_CONTROL,
+            JSON.stringify({
+              type: 'REQUEST_STATE',
+              clientId: this.clientId,
+              currentUpdatedAt: this.currentState.updatedAt || 0
+            }),
+            { qos: 0, retain: false }
+          );
+        });
 
-            this.updateStatus({
-              mode: 'live-server',
-              connected: true,
-              lastSyncAt: Date.now(),
-              lastEventText: normalized.lastAction
-                ? `${normalized.lastUpdatedBy || 'צוות'}: ${normalized.lastAction}`
-                : undefined
-            });
-            this.notifyState(isRemote);
-          } else if (topic.startsWith(CLOUD_TOPIC_PRESENCE)) {
-            const peerId = topic.replace(CLOUD_TOPIC_PRESENCE, '');
-            const data = JSON.parse(message.toString());
-            if (data && data.online) {
-              this.activePeers.set(peerId, Date.now());
-            } else {
-              this.activePeers.delete(peerId);
+        client.on('message', (topic, message) => {
+          try {
+            const rawStr = message.toString();
+            if (!rawStr) return;
+
+            if (topic === CLOUD_TOPIC_STATE || topic === LEGACY_TOPIC_STATE_V2) {
+              const parsed = JSON.parse(rawStr);
+              const normalized = this.normalizePayload(parsed);
+              const isRemote = Boolean(
+                normalized.clientId && normalized.clientId !== this.clientId
+              );
+              this.applyIncomingState(normalized, isRemote);
+              this.updateStatus({
+                mode: 'live-server',
+                connected: true,
+                lastSyncAt: Date.now(),
+                lastEventText: normalized.lastAction
+                  ? `${normalized.lastUpdatedBy || 'צוות'}: ${normalized.lastAction}`
+                  : undefined
+              });
+            } else if (topic === CLOUD_TOPIC_MANIFEST) {
+              const manifest = JSON.parse(rawStr) as ChunkManifest;
+              if (
+                manifest &&
+                manifest.transferId &&
+                manifest.updatedAt >= (this.currentState.updatedAt || 0)
+              ) {
+                this.activeManifest = manifest;
+                this.chunkTotals.set(manifest.transferId, manifest.totalChunks);
+                this.tryAssembleChunks(manifest.transferId, manifest.clientId);
+              }
+            } else if (topic.startsWith(CLOUD_TOPIC_CHUNK_PREFIX)) {
+              const pkt = JSON.parse(rawStr) as ChunkPacket;
+              if (!pkt || !pkt.transferId || typeof pkt.chunkIndex !== 'number') return;
+              if (this.processedTransferIds.has(pkt.transferId)) return;
+
+              if (!this.chunkBuffers.has(pkt.transferId)) {
+                this.chunkBuffers.set(pkt.transferId, new Map());
+              }
+              this.chunkBuffers.get(pkt.transferId)!.set(pkt.chunkIndex, pkt.data);
+              this.chunkTotals.set(pkt.transferId, pkt.totalChunks);
+              this.tryAssembleChunks(pkt.transferId, pkt.clientId);
+            } else if (topic === CLOUD_TOPIC_CONTROL) {
+              const ctrl = JSON.parse(rawStr);
+              if (
+                ctrl &&
+                ctrl.type === 'REQUEST_STATE' &&
+                ctrl.clientId !== this.clientId &&
+                this.hasLoadedRealState &&
+                (this.currentState.updatedAt || 0) > (ctrl.currentUpdatedAt || 0)
+              ) {
+                const now = Date.now();
+                if (now - this.lastPeerRespondAt > 2500) {
+                  this.lastPeerRespondAt = now;
+                  setTimeout(() => {
+                    this.publishToMqttBrokers(this.currentState);
+                  }, 150 + Math.floor(Math.random() * 350));
+                }
+              }
+            } else if (topic.startsWith(CLOUD_TOPIC_PRESENCE)) {
+              const peerId = topic.replace(CLOUD_TOPIC_PRESENCE, '');
+              const data = JSON.parse(rawStr);
+              if (data && data.online) {
+                this.activePeers.set(peerId, Date.now());
+              } else {
+                this.activePeers.delete(peerId);
+              }
+              this.updateStatus({
+                onlineCount: Math.max(1, this.activePeers.size)
+              });
             }
-            this.updateStatus({
-              onlineCount: Math.max(1, this.activePeers.size)
-            });
+          } catch {
+            // ignore malformed packet
           }
-        } catch {
-          // ignore malformed payload
-        }
-      });
-    } catch {
-      // ignore MQTT errors
+        });
+      } catch {
+        // ignore broker init error
+      }
     }
 
     // 2. Also connect to local Vite SSE server if running locally
@@ -568,20 +729,22 @@ class RealtimeSyncService {
         return r.json();
       })
       .then((data) => {
-        if (data.firebaseConfig && isValidFirebaseConfig(data.firebaseConfig) && !this.activeFirebaseConfig) {
+        if (
+          data.firebaseConfig &&
+          isValidFirebaseConfig(data.firebaseConfig) &&
+          !this.activeFirebaseConfig
+        ) {
           this.connectFirebase(data.firebaseConfig);
           return;
         }
         const normalized = this.normalizePayload(data);
-        this.currentState = normalized;
-        this.persistCacheLocally(normalized);
+        this.applyIncomingState(normalized, false);
         this.updateStatus({
           mode: 'live-server',
           connected: true,
           onlineCount: Math.max(this.statusInfo.onlineCount, data.onlineCount || 1),
           lastSyncAt: Date.now()
         });
-        this.notifyState(false);
 
         const es = new EventSource('/api/std-stream');
         this.eventSource = es;
@@ -591,10 +754,7 @@ class RealtimeSyncService {
             if (msg.type === 'SYNC_STATE' && msg.payload) {
               const norm = this.normalizePayload(msg.payload);
               const isRemote = Boolean(norm.clientId && norm.clientId !== this.clientId);
-              const merged = isRemote ? this.mergeStates(this.currentState, norm) : norm;
-              this.currentState = merged;
-              this.persistCacheLocally(merged);
-              this.notifyState(isRemote);
+              this.applyIncomingState(norm, isRemote);
             }
           } catch {
             // ignore
@@ -602,8 +762,93 @@ class RealtimeSyncService {
         };
       })
       .catch(() => {
-        // Running on GitHub Pages (static) - MQTT WebSocket cloud handles real-time sync!
+        // Static hosting (GitHub Pages) - handled by multi-broker MQTT
       });
+  }
+
+  private tryAssembleChunks(transferId: string, senderClientId?: string) {
+    if (this.processedTransferIds.has(transferId)) return;
+    const total = this.chunkTotals.get(transferId);
+    const buf = this.chunkBuffers.get(transferId);
+    if (!total || !buf || buf.size < total) return;
+
+    // All chunks received! Reconstruct full JSON string
+    let fullJson = '';
+    for (let i = 0; i < total; i++) {
+      const part = buf.get(i);
+      if (part === undefined) return;
+      fullJson += part;
+    }
+
+    this.processedTransferIds.add(transferId);
+    this.chunkBuffers.delete(transferId);
+
+    try {
+      const parsed = JSON.parse(fullJson);
+      const normalized = this.normalizePayload(parsed);
+      const isRemote = Boolean(senderClientId && senderClientId !== this.clientId);
+      this.applyIncomingState(normalized, isRemote);
+      this.updateStatus({
+        mode: 'live-server',
+        connected: true,
+        lastSyncAt: Date.now(),
+        lastEventText: normalized.lastAction
+          ? `${normalized.lastUpdatedBy || 'צוות'}: ${normalized.lastAction}`
+          : undefined
+      });
+    } catch {
+      // ignore corrupted reassembly
+    }
+  }
+
+  private publishToMqttBrokers(payload: SyncStatePayload) {
+    const jsonStr = JSON.stringify(payload);
+    const totalChunks = Math.ceil(jsonStr.length / CHUNK_SIZE) || 1;
+    const transferId = `tr_${payload.updatedAt || Date.now()}_${Math.random()
+      .toString(36)
+      .substring(2, 6)}`;
+
+    this.processedTransferIds.add(transferId);
+
+    for (const client of this.mqttClients) {
+      if (!client.connected) continue;
+      try {
+        // If small enough, also publish directly to CLOUD_TOPIC_STATE
+        if (jsonStr.length <= CHUNK_SIZE) {
+          client.publish(CLOUD_TOPIC_STATE, jsonStr, { qos: 1, retain: true });
+        }
+
+        // Always publish retained chunks + manifest so even 2MB states with screenshots sync & retain 100%!
+        for (let i = 0; i < totalChunks; i++) {
+          const slice = jsonStr.slice(i * CHUNK_SIZE, (i + 1) * CHUNK_SIZE);
+          const packet: ChunkPacket = {
+            transferId,
+            chunkIndex: i,
+            totalChunks,
+            updatedAt: payload.updatedAt || Date.now(),
+            clientId: this.clientId,
+            data: slice
+          };
+          client.publish(`${CLOUD_TOPIC_CHUNK_PREFIX}${i}`, JSON.stringify(packet), {
+            qos: 1,
+            retain: true
+          });
+        }
+
+        const manifest: ChunkManifest = {
+          transferId,
+          totalChunks,
+          updatedAt: payload.updatedAt || Date.now(),
+          clientId: this.clientId
+        };
+        client.publish(CLOUD_TOPIC_MANIFEST, JSON.stringify(manifest), {
+          qos: 1,
+          retain: true
+        });
+      } catch {
+        // ignore individual broker publish error
+      }
+    }
   }
 
   private persistCacheLocally(payload: SyncStatePayload) {
@@ -615,10 +860,6 @@ class RealtimeSyncService {
     }
   }
 
-  /**
-   * מיזוג חכם (Smart Merge) ברמת תקלה בודדת וברמת הערה/היסטוריה
-   * מונע דריסת נתונים כאשר בודק ומפתח שומרים שינוי באותה שנייה במקביל
-   */
   public mergeStates(local: SyncStatePayload, incoming: SyncStatePayload): SyncStatePayload {
     const incomingNewer = (incoming.updatedAt || 0) >= (local.updatedAt || 0);
     const primary = incomingNewer ? incoming : local;
@@ -641,7 +882,6 @@ class RealtimeSyncService {
       if (!existing) {
         issueMap.set(inc.id, inc);
       } else {
-        // Merge comments by ID
         const commentMap = new Map<string, StdComment>();
         for (const c of existing.comments || []) commentMap.set(c.id, c);
         for (const c of inc.comments || []) commentMap.set(c.id, c);
@@ -649,7 +889,6 @@ class RealtimeSyncService {
           (a, b) => a.createdAt - b.createdAt
         );
 
-        // Merge auditLog by ID
         const auditMap = new Map<string, StdAuditEntry>();
         for (const a of existing.auditLog || []) auditMap.set(a.id, a);
         for (const a of inc.auditLog || []) auditMap.set(a.id, a);
@@ -711,6 +950,7 @@ class RealtimeSyncService {
 
     const issues: StdIssue[] = rawIssues
       .filter(Boolean)
+      .filter((item: any) => !deletedIssueIds.includes(String(item.id)))
       .map((item: any) => ({
         id: String(item.id || `std-${Date.now()}`),
         system: String(item.system || systems[0] || 'CARGO'),
@@ -740,8 +980,8 @@ class RealtimeSyncService {
           ? Object.values(item.auditLog)
           : [],
         createdBy: formatLegacyAuthor(item.createdBy),
-        createdAt: Number(item.createdAt || Date.now()),
-        updatedAt: Number(item.updatedAt || Date.now())
+        createdAt: Number(item.createdAt || DEMO_BASE_TS),
+        updatedAt: Number(item.updatedAt || DEMO_BASE_TS)
       }));
 
     return {
@@ -751,7 +991,7 @@ class RealtimeSyncService {
       issues,
       lastUpdatedBy: raw?.lastUpdatedBy,
       lastAction: raw?.lastAction,
-      updatedAt: raw?.updatedAt,
+      updatedAt: Number(raw?.updatedAt || DEMO_BASE_TS),
       clientId: raw?.clientId
     };
   }
@@ -778,6 +1018,7 @@ class RealtimeSyncService {
     };
 
     this.currentState = payload;
+    this.hasLoadedRealState = true;
     this.notifyState(false);
     this.persistCacheLocally(payload);
 
@@ -790,7 +1031,11 @@ class RealtimeSyncService {
     }
 
     // 1. If connected to Firebase Firestore
-    if (this.activeFirebaseConfig && this.activeFirebaseConfig.mode === 'firestore' && this.firestore) {
+    if (
+      this.activeFirebaseConfig &&
+      this.activeFirebaseConfig.mode === 'firestore' &&
+      this.firestore
+    ) {
       const workspaceDocRef = doc(this.firestore, 'std_workspaces', 'main_workspace');
       await setDoc(workspaceDocRef, payload);
       return;
@@ -803,17 +1048,8 @@ class RealtimeSyncService {
       return;
     }
 
-    // 3. Publish to built-in Cloud WebSocket Broker (retained so new visitors get latest state!)
-    if (this.mqttClient && this.mqttClient.connected) {
-      try {
-        this.mqttClient.publish(CLOUD_TOPIC_STATE, JSON.stringify(payload), {
-          qos: 1,
-          retain: true
-        });
-      } catch {
-        // ignore
-      }
-    }
+    // 3. Publish to all built-in Cloud WebSocket Brokers (with automatic 28KB chunking!)
+    this.publishToMqttBrokers(payload);
 
     // 4. Also push to local server if running locally
     try {

@@ -17,7 +17,8 @@ import {
   Download,
   LogOut,
   BarChart3,
-  DatabaseBackup
+  DatabaseBackup,
+  RefreshCw
 } from 'lucide-react';
 import { StdIssue, SyncStatusInfo, TeamRole } from '../types/std';
 
@@ -31,6 +32,7 @@ interface NavbarProps {
   onOpenArchiveModal?: () => void;
   onOpenAdminReport?: () => void;
   onOpenAdminBackup?: () => void;
+  onManualSync?: () => void;
   issues: StdIssue[];
   syncStatus: SyncStatusInfo;
   currentUserName: string;
@@ -128,6 +130,7 @@ export const Navbar: React.FC<NavbarProps> = ({
   onOpenArchiveModal,
   onOpenAdminReport,
   onOpenAdminBackup,
+  onManualSync,
   issues,
   syncStatus,
   currentUserName,
@@ -143,6 +146,7 @@ export const Navbar: React.FC<NavbarProps> = ({
 }) => {
   const [isAddingSystem, setIsAddingSystem] = useState(false);
   const [newSystemName, setNewSystemName] = useState('');
+  const [isSyncSpinning, setIsSyncSpinning] = useState(false);
 
   // Admin Quick Elevate Input State
   const [isEnteringAdmin, setIsEnteringAdmin] = useState(false);
@@ -239,11 +243,18 @@ export const Navbar: React.FC<NavbarProps> = ({
           <div className="flex items-center justify-between lg:justify-end gap-1.5 sm:gap-2 overflow-x-auto no-scrollbar pt-1 lg:pt-0 border-t lg:border-t-0 border-slate-100">
             {/* Live Sync Indicator & App Download / Notifications */}
             <div className="flex items-center gap-1.5 shrink-0">
-              <div
-                className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl border text-[11px] sm:text-xs font-semibold ${
+              <button
+                type="button"
+                onClick={() => {
+                  setIsSyncSpinning(true);
+                  onManualSync?.();
+                  setTimeout(() => setIsSyncSpinning(false), 900);
+                }}
+                title="סנכרון חי בזמן אמת (לחץ לרענון וסנכרון מיידי מול כל הצוות)"
+                className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl border text-[11px] sm:text-xs font-semibold transition cursor-pointer ${
                   syncStatus.connected
-                    ? 'bg-emerald-50/90 border-emerald-200 text-emerald-800'
-                    : 'bg-amber-50 border-amber-200 text-amber-800'
+                    ? 'bg-emerald-50/90 hover:bg-emerald-100/90 border-emerald-200 text-emerald-800'
+                    : 'bg-amber-50 hover:bg-amber-100 border-amber-200 text-amber-800'
                 }`}
               >
                 <span className="relative flex h-2 w-2">
@@ -258,13 +269,17 @@ export const Navbar: React.FC<NavbarProps> = ({
                     }`}
                   />
                 </span>
-                <Cloud className="w-3.5 h-3.5 shrink-0 hidden sm:inline" />
+                <RefreshCw
+                  className={`w-3.5 h-3.5 shrink-0 ${
+                    isSyncSpinning ? 'animate-spin text-indigo-600' : ''
+                  }`}
+                />
                 <span>סנכרון חי</span>
                 <span className="flex items-center gap-1 px-1.5 py-0.2 rounded-md bg-white/90 text-slate-700 border border-slate-200/60 text-[10px] sm:text-[11px]">
                   <Users className="w-3 h-3 text-indigo-600" />
                   <span dir="ltr">{syncStatus.onlineCount}</span>
                 </span>
-              </div>
+              </button>
 
               {/* Install App & Notification Settings Button */}
               {notificationsEnabled ? (

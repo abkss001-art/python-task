@@ -11,7 +11,7 @@ export async function processScreenshotFile(file: File | Blob): Promise<string> 
       const img = new Image();
       img.onerror = () => resolve(dataUrl);
       img.onload = () => {
-        const MAX_DIM = 1600;
+        const MAX_DIM = 1280;
         let { width, height } = img;
 
         if (width > MAX_DIM || height > MAX_DIM) {
@@ -37,9 +37,12 @@ export async function processScreenshotFile(file: File | Blob): Promise<string> 
         ctx.imageSmoothingQuality = 'high';
         ctx.drawImage(img, 0, 0, width, height);
 
-        let compressed = canvas.toDataURL('image/webp', 0.86);
-        if (compressed.length > 750_000) {
-          compressed = canvas.toDataURL('image/jpeg', 0.8);
+        let compressed = canvas.toDataURL('image/webp', 0.8);
+        if (compressed.length > 180_000) {
+          compressed = canvas.toDataURL('image/webp', 0.68);
+        }
+        if (compressed.length > 220_000) {
+          compressed = canvas.toDataURL('image/jpeg', 0.65);
         }
         resolve(compressed);
       };

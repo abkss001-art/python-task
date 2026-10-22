@@ -956,6 +956,11 @@ export function App() {
         onOpenAdminBackup={() => {
           if (isAdmin) setIsAdminBackupOpen(true);
         }}
+        onManualSync={() => {
+          syncService.requestManualSync();
+          setLiveToast('🔄 מבצע סנכרון מיידי מול הענן וכל המכשירים...');
+          setTimeout(() => setLiveToast(null), 3000);
+        }}
         issues={issues}
         syncStatus={syncStatus}
         currentUserName={currentUserName}
