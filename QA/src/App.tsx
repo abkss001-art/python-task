@@ -1444,10 +1444,17 @@ export function App() {
             );
           }}
           onImportIssues={(imported) => {
+            const nextSystems = [...systems];
+            for (const item of imported) {
+              if (item.system && !nextSystems.includes(item.system)) {
+                nextSystems.push(item.system);
+              }
+            }
             const nextIssues = [...imported, ...issues];
+            setSystems(nextSystems);
             setIssues(nextIssues);
             syncService.pushStateToCloud(
-              { systems, archivedSystems, issues: nextIssues },
+              { systems: nextSystems, archivedSystems, issues: nextIssues },
               `ייבוא ${imported.length} תסריטים מקובץ CSV`,
               currentUserName
             );

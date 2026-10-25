@@ -27,6 +27,10 @@ import {
   loadActiveFirebaseConfig,
   saveFirebaseConfigLocally
 } from '../firebaseConfig';
+import {
+  loadWorkspaceFromIndexedDB,
+  saveWorkspaceToIndexedDB
+} from '../utils/idbStorage';
 
 export interface SyncStatePayload {
   systems: string[];
@@ -36,14 +40,26 @@ export interface SyncStatePayload {
   lastUpdatedBy?: string;
   lastAction?: string;
   updatedAt?: number;
+  revision?: number;
   clientId?: string;
+  bytebinKey?: string;
 }
 
 type StateListener = (state: SyncStatePayload, isRemoteUpdate: boolean) => void;
 type StatusListener = (status: SyncStatusInfo) => void;
 
 const CLOUD_TOPIC_STATE = 'std_qa_cloud_abkss001_v2/workspace_state';
+const CLOUD_TOPIC_STATE_V3 = 'std_qa_cloud_tzavman_v3/workspace_state';
 const CLOUD_TOPIC_PRESENCE = 'std_qa_cloud_abkss001_v2/presence_active/';
+const CLOUD_TOPIC_PRESENCE_LEGACY = 'std_qa_cloud_abkss001_v2/presence/';
+const CLOUD_TOPIC_PRESENCE_V3 = 'std_qa_cloud_tzavman_v3/presence/';
+const CLOUD_TOPIC_PING = 'std_qa_cloud_abkss001_v2/presence_ping';
+
+const MAX_SAFE_MQTT_BYTES = 210_000; // Well below broker.emqx.io 256KB packet limit
+const BYTEBIN_POST_URL = 'https://bytebin.lucko.me/post';
+const BYTEBIN_GET_BASE = 'https://bytebin.lucko.me/';
+
+const DEMO_IDS = new Set(['std-101', 'std-102', 'std-103', 'std-201']);
 
 function getPersistentClientId(): string {
   try {
@@ -55,6 +71,20 @@ function getPersistentClientId(): string {
   } catch {
     return `client-${Math.random().toString(36).substring(2, 9)}`;
   }
+}
+
+function isDefaultDemoState(state: SyncStatePayload | null | undefined): boolean {
+  if (!state) return true;
+  if ((state.archivedSystems || []).length > 0) return false;
+  if (state.systems.length !== 2 || state.systems[0] !== 'CARGO' || state.systems[1] !== 'נשקי ערד') {
+    return false;
+  }
+  if (state.issues.length !== 4) return false;
+  for (const iss of state.issues) {
+    if (!DEMO_IDS.has(iss.id)) return false;
+    if ((iss.screenshots || []).length > 0) return false;
+  }
+  return true;
 }
 
 function formatLegacyAuthor(rawName: string | undefined): string {
@@ -108,19 +138,19 @@ const INITIAL_DEMO_ISSUES: StdIssue[] = [
         author: 'דניאל צוות בדיקות',
         role: 'qa',
         text: 'שוחזר גם באייפון 14 וגם באייפון 15 Pro בגרסת iOS 17.4.',
-        createdAt: Date.now() - 3600000 * 3
+        createdAt: 1700000000000 - 3600000 * 3
       },
       {
         id: 'c-2',
         author: 'רועי צוות פיתוח',
         role: 'dev',
         text: 'בודק את ה-Safe Area padding בתחתית המסך, מעלה תיקון לסביבת הבדיקות בקרוב.',
-        createdAt: Date.now() - 3600000
+        createdAt: 1700000000000 - 3600000
       }
     ],
     createdBy: 'דניאל צוות בדיקות',
-    createdAt: Date.now() - 3600000 * 4,
-    updatedAt: Date.now() - 3600000
+    createdAt: 1700000000000 - 3600000 * 4,
+    updatedAt: 1700000000000 - 3600000
   },
   {
     id: 'std-102',
@@ -139,12 +169,12 @@ const INITIAL_DEMO_ISSUES: StdIssue[] = [
         author: 'מיכל צוות בדיקות',
         role: 'qa',
         text: 'שימו לב שזה קורה רק כשמזינים משקל עם נקודה עשרונית.',
-        createdAt: Date.now() - 7200000
+        createdAt: 1700000000000 - 7200000
       }
     ],
     createdBy: 'מיכל צוות בדיקות',
-    createdAt: Date.now() - 8600000,
-    updatedAt: Date.now() - 7200000
+    createdAt: 1700000000000 - 8600000,
+    updatedAt: 1700000000000 - 7200000
   },
   {
     id: 'std-103',
@@ -163,12 +193,12 @@ const INITIAL_DEMO_ISSUES: StdIssue[] = [
         author: 'רועי צוות פיתוח',
         role: 'dev',
         text: 'עודכן הפונט המוטמע ב-PDF ותוקן כיוון ה-RTL. אשמח לבדיקה חוזרת.',
-        createdAt: Date.now() - 1800000
+        createdAt: 1700000000000 - 1800000
       }
     ],
     createdBy: 'דניאל צוות בדיקות',
-    createdAt: Date.now() - 14400000,
-    updatedAt: Date.now() - 1800000
+    createdAt: 1700000000000 - 14400000,
+    updatedAt: 1700000000000 - 1800000
   },
   {
     id: 'std-201',
@@ -187,19 +217,19 @@ const INITIAL_DEMO_ISSUES: StdIssue[] = [
         author: 'אלון צוות פיתוח',
         role: 'dev',
         text: 'נוסף אינדקס לחיפוש מהיר ובוצע Debounce לשדה החיפוש.',
-        createdAt: Date.now() - 5400000
+        createdAt: 1700000000000 - 5400000
       },
       {
         id: 'c-6',
         author: 'מיכל צוות בדיקות',
         role: 'qa',
         text: 'נבדק שוב – התוצאות עולות תוך פחות מ-200ms. תקין!',
-        createdAt: Date.now() - 2400000
+        createdAt: 1700000000000 - 2400000
       }
     ],
     createdBy: 'מיכל צוות בדיקות',
-    createdAt: Date.now() - 18000000,
-    updatedAt: Date.now() - 2400000
+    createdAt: 1700000000000 - 18000000,
+    updatedAt: 1700000000000 - 2400000
   }
 ];
 
@@ -212,6 +242,9 @@ class RealtimeSyncService {
     systems: DEFAULT_SYSTEMS,
     issues: INITIAL_DEMO_ISSUES
   };
+
+  private hasReceivedInitialCloud = false;
+  private lastBytebinFetched = '';
 
   private statusInfo: SyncStatusInfo = {
     mode: 'connecting',
@@ -226,6 +259,7 @@ class RealtimeSyncService {
   private unsubscribePresence: (() => void) | null = null;
   private eventSource: EventSource | null = null;
   private mqttClient: MqttClient | null = null;
+  // Maps peerId -> local timestamp (Date.now() on THIS device when peer was seen)
   private activePeers = new Map<string, number>();
   private heartbeatTimer: ReturnType<typeof setInterval> | null = null;
   private broadcastChannel: BroadcastChannel | null = null;
@@ -245,19 +279,29 @@ class RealtimeSyncService {
     }
 
     if (typeof window !== 'undefined') {
-      window.addEventListener('beforeunload', () => {
+      const announceOffline = () => {
         if (this.mqttClient && this.mqttClient.connected) {
           try {
-            this.mqttClient.publish(
-              `${CLOUD_TOPIC_PRESENCE}${this.clientId}`,
-              JSON.stringify({ online: false, ts: Date.now() }),
-              { qos: 0, retain: true }
-            );
+            const offMsg = JSON.stringify({ online: false });
+            this.mqttClient.publish(`${CLOUD_TOPIC_PRESENCE}${this.clientId}`, offMsg, {
+              qos: 0,
+              retain: true
+            });
+            this.mqttClient.publish(`${CLOUD_TOPIC_PRESENCE_LEGACY}${this.clientId}`, offMsg, {
+              qos: 0,
+              retain: true
+            });
+            this.mqttClient.publish(`${CLOUD_TOPIC_PRESENCE_V3}${this.clientId}`, offMsg, {
+              qos: 0,
+              retain: true
+            });
           } catch {
             // ignore
           }
         }
-      });
+      };
+      window.addEventListener('beforeunload', announceOffline);
+      window.addEventListener('pagehide', announceOffline);
     }
 
     const initialFbConfig = loadActiveFirebaseConfig();
@@ -308,6 +352,15 @@ class RealtimeSyncService {
     this.statusInfo = { ...this.statusInfo, ...partial };
     for (const listener of this.statusListeners) {
       listener(this.statusInfo);
+    }
+  }
+
+  private persistLocally(payload: SyncStatePayload) {
+    saveWorkspaceToIndexedDB(payload);
+    try {
+      localStorage.setItem('std_qa_fallback_cache', JSON.stringify(payload));
+    } catch {
+      // If > 5MB, IndexedDB stores the full state seamlessly
     }
   }
 
@@ -384,6 +437,7 @@ class RealtimeSyncService {
               const normalized = this.normalizePayload(data);
               const isRemote = Boolean(normalized.clientId && normalized.clientId !== this.clientId);
               this.currentState = normalized;
+              this.persistLocally(normalized);
               this.updateStatus({
                 mode: 'firebase-firestore',
                 connected: true,
@@ -441,6 +495,7 @@ class RealtimeSyncService {
               const normalized = this.normalizePayload(data);
               const isRemote = Boolean(normalized.clientId && normalized.clientId !== this.clientId);
               this.currentState = normalized;
+              this.persistLocally(normalized);
               this.updateStatus({
                 mode: 'firebase-rtdb',
                 connected: true,
@@ -491,16 +546,20 @@ class RealtimeSyncService {
     this.connectBuiltInCloudAndServer();
   }
 
+  /**
+   * לחיצה על כפתור "סנכרון חי": משדר מיד את כל הנתונים המקומיים (כולל אקסל שיובא) לכל המכשירים!
+   */
   public requestManualSync() {
+    if (!isDefaultDemoState(this.currentState)) {
+      this.publishStateToMqtt(this.currentState);
+    }
     if (this.mqttClient && this.mqttClient.connected) {
       try {
-        this.mqttClient.subscribe(CLOUD_TOPIC_STATE, { qos: 1 });
-        if (this.currentState.updatedAt) {
-          this.mqttClient.publish(CLOUD_TOPIC_STATE, JSON.stringify(this.currentState), {
-            qos: 1,
-            retain: true
-          });
-        }
+        this.mqttClient.publish(
+          CLOUD_TOPIC_PING,
+          JSON.stringify({ type: 'PING', clientId: this.clientId }),
+          { qos: 0, retain: false }
+        );
       } catch {
         // ignore
       }
@@ -508,17 +567,18 @@ class RealtimeSyncService {
   }
 
   /**
-   * סנכרון ענן מובנה אוטומטי (פועל מיד גם ב-GitHub Pages ללא צורך בהגדרת מפתחות!)
+   * סנכרון ענן מובנה אוטומטי (פועל מיד גם ב-GitHub Pages וגם במחשב ללא תלות בשעון המכשיר!)
    */
   public connectBuiltInCloudAndServer() {
     this.cleanupConnections();
+    this.hasReceivedInitialCloud = false;
     this.updateStatus({
       mode: 'live-server',
       connected: false,
       errorMessage: undefined
     });
 
-    // Load cached state first if available
+    // 1. Load cached state from localStorage and IndexedDB (supports large Excel imports)
     const cached = localStorage.getItem('std_qa_fallback_cache');
     if (cached) {
       try {
@@ -529,7 +589,24 @@ class RealtimeSyncService {
       }
     }
 
-    // 1. Connect to built-in Cloud WebSocket Broker (works globally 24/7 on GitHub Pages!)
+    loadWorkspaceFromIndexedDB<SyncStatePayload>().then((idbState) => {
+      if (idbState && Array.isArray(idbState.issues)) {
+        const normIdb = this.normalizePayload(idbState);
+        if (
+          !this.hasReceivedInitialCloud ||
+          normIdb.issues.length > this.currentState.issues.length
+        ) {
+          this.currentState = normIdb;
+          this.notifyState(false);
+          // If IndexedDB had a larger state (e.g. Excel import), push it to cloud once connected
+          if (this.mqttClient && this.mqttClient.connected && !isDefaultDemoState(normIdb)) {
+            this.publishStateToMqtt(normIdb);
+          }
+        }
+      }
+    });
+
+    // 2. Connect to built-in Cloud WebSocket Broker (wss://broker.emqx.io:8084/mqtt)
     try {
       const mqttSessionId = `std_qa_${this.clientId}_${Math.random().toString(36).substring(2, 6)}`;
       const client = mqtt.connect('wss://broker.emqx.io:8084/mqtt', {
@@ -539,7 +616,7 @@ class RealtimeSyncService {
         reconnectPeriod: 3000,
         will: {
           topic: `${CLOUD_TOPIC_PRESENCE}${this.clientId}`,
-          payload: JSON.stringify({ online: false, ts: Date.now() }),
+          payload: JSON.stringify({ online: false }),
           qos: 0,
           retain: true
         }
@@ -547,14 +624,26 @@ class RealtimeSyncService {
 
       this.mqttClient = client;
 
-      const publishPresence = () => {
+      const publishPresenceOnline = () => {
         if (!client.connected) return;
         this.activePeers.set(this.clientId, Date.now());
-        client.publish(
-          `${CLOUD_TOPIC_PRESENCE}${this.clientId}`,
-          JSON.stringify({ online: true, ts: Date.now() }),
-          { qos: 0, retain: true }
-        );
+        const onMsg = JSON.stringify({ online: true, clientId: this.clientId });
+        // Publish to all presence topics so both v2 and v3 cached clients see us online!
+        client.publish(`${CLOUD_TOPIC_PRESENCE}${this.clientId}`, onMsg, {
+          qos: 0,
+          retain: true
+        });
+        client.publish(`${CLOUD_TOPIC_PRESENCE_LEGACY}${this.clientId}`, onMsg, {
+          qos: 0,
+          retain: true
+        });
+        client.publish(`${CLOUD_TOPIC_PRESENCE_V3}${this.clientId}`, onMsg, {
+          qos: 0,
+          retain: true
+        });
+        this.updateStatus({
+          onlineCount: Math.max(1, this.activePeers.size)
+        });
       };
 
       client.on('connect', () => {
@@ -565,59 +654,116 @@ class RealtimeSyncService {
         });
 
         client.subscribe(CLOUD_TOPIC_STATE, { qos: 1 });
+        client.subscribe(CLOUD_TOPIC_STATE_V3, { qos: 1 });
         client.subscribe(`${CLOUD_TOPIC_PRESENCE}+`, { qos: 0 });
+        client.subscribe(`${CLOUD_TOPIC_PRESENCE_LEGACY}+`, { qos: 0 });
+        client.subscribe(`${CLOUD_TOPIC_PRESENCE_V3}+`, { qos: 0 });
+        client.subscribe(CLOUD_TOPIC_PING, { qos: 0 });
 
-        publishPresence();
+        publishPresenceOnline();
+
+        // Ping all currently connected browsers so everyone's online counter syncs immediately
+        client.publish(
+          CLOUD_TOPIC_PING,
+          JSON.stringify({ type: 'PING', clientId: this.clientId }),
+          { qos: 0, retain: false }
+        );
       });
 
       this.heartbeatTimer = setInterval(() => {
-        publishPresence();
-        const now = Date.now();
-        for (const [id, seenAt] of this.activePeers.entries()) {
-          if (id !== this.clientId && now - seenAt > 65000) {
+        publishPresenceOnline();
+        // Prune using ONLY local receiver clock (100% immune to clock skew between PC & phone!)
+        const nowLocal = Date.now();
+        for (const [id, seenAtLocal] of this.activePeers.entries()) {
+          if (id !== this.clientId && nowLocal - seenAtLocal > 70000) {
             this.activePeers.delete(id);
           }
         }
         this.updateStatus({
           onlineCount: Math.max(1, this.activePeers.size)
         });
-      }, 25000);
+      }, 22000);
 
       client.on('message', (topic, message) => {
         try {
-          if (topic === CLOUD_TOPIC_STATE) {
-            const parsed = JSON.parse(message.toString());
+          const rawStr = message.toString();
+          if (!rawStr) return;
+
+          if (topic === CLOUD_TOPIC_STATE || topic === CLOUD_TOPIC_STATE_V3) {
+            const parsed = JSON.parse(rawStr);
             const normalized = this.normalizePayload(parsed);
             const isRemote = Boolean(normalized.clientId && normalized.clientId !== this.clientId);
 
-            // Update if remote or newer (exact proven logic from before the 5 updates!)
+            // On initial connect retained message: if this computer has an unsynced Excel import
+            // (more issues locally than in the cloud), push the computer's fuller state to the cloud!
             if (
-              !this.currentState.updatedAt ||
-              !normalized.updatedAt ||
-              isRemote ||
-              normalized.updatedAt >= (this.currentState.updatedAt || 0)
+              !this.hasReceivedInitialCloud &&
+              !isDefaultDemoState(this.currentState) &&
+              this.currentState.issues.length > normalized.issues.length
             ) {
-              this.currentState = normalized;
-              try {
-                localStorage.setItem('std_qa_fallback_cache', JSON.stringify(normalized));
-              } catch {
-                // ignore
-              }
-              this.updateStatus({
-                mode: 'live-server',
-                connected: true,
-                lastSyncAt: Date.now(),
-                lastEventText: normalized.lastAction
-                  ? `${normalized.lastUpdatedBy || 'צוות'}: ${normalized.lastAction}`
-                  : undefined
-              });
-              this.notifyState(isRemote);
+              this.hasReceivedInitialCloud = true;
+              this.publishStateToMqtt(this.currentState);
+              return;
             }
-          } else if (topic.startsWith(CLOUD_TOPIC_PRESENCE)) {
-            const peerId = topic.replace(CLOUD_TOPIC_PRESENCE, '');
-            const data = JSON.parse(message.toString());
-            const isRecent = !data?.ts || Math.abs(Date.now() - Number(data.ts)) < 65000;
-            if (data && data.online && isRecent) {
+
+            this.hasReceivedInitialCloud = true;
+            this.currentState = normalized;
+            this.persistLocally(normalized);
+
+            this.updateStatus({
+              mode: 'live-server',
+              connected: true,
+              lastSyncAt: Date.now(),
+              lastEventText: normalized.lastAction
+                ? `${normalized.lastUpdatedBy || 'צוות'}: ${normalized.lastAction}`
+                : undefined
+            });
+            this.notifyState(isRemote);
+
+            // If payload had heavy screenshots offloaded to bytebinKey, fetch and restore them
+            if (
+              normalized.bytebinKey &&
+              normalized.bytebinKey !== this.lastBytebinFetched
+            ) {
+              this.lastBytebinFetched = normalized.bytebinKey;
+              fetch(`${BYTEBIN_GET_BASE}${normalized.bytebinKey}`)
+                .then((r) => (r.ok ? r.json() : null))
+                .then((fullData) => {
+                  if (fullData && Array.isArray(fullData.issues)) {
+                    const fullNorm = this.normalizePayload(fullData);
+                    this.currentState = fullNorm;
+                    this.persistLocally(fullNorm);
+                    this.notifyState(false);
+                  }
+                })
+                .catch(() => {});
+            }
+          } else if (topic === CLOUD_TOPIC_PING) {
+            const data = JSON.parse(rawStr);
+            if (data && data.clientId) {
+              this.activePeers.set(data.clientId, Date.now());
+              this.activePeers.set(this.clientId, Date.now());
+              this.updateStatus({
+                onlineCount: Math.max(1, this.activePeers.size)
+              });
+              if (data.type === 'PING' && data.clientId !== this.clientId) {
+                publishPresenceOnline();
+              }
+            }
+          } else if (
+            topic.startsWith(CLOUD_TOPIC_PRESENCE) ||
+            topic.startsWith(CLOUD_TOPIC_PRESENCE_LEGACY) ||
+            topic.startsWith(CLOUD_TOPIC_PRESENCE_V3)
+          ) {
+            const peerId = topic
+              .replace(CLOUD_TOPIC_PRESENCE, '')
+              .replace(CLOUD_TOPIC_PRESENCE_LEGACY, '')
+              .replace(CLOUD_TOPIC_PRESENCE_V3, '');
+            if (!peerId) return;
+
+            const data = JSON.parse(rawStr);
+            // Record using THIS device's Date.now() so clock differences between PC & Phone never break presence!
+            if (data && data.online) {
               this.activePeers.set(peerId, Date.now());
             } else {
               this.activePeers.delete(peerId);
@@ -634,51 +780,58 @@ class RealtimeSyncService {
     } catch {
       // ignore MQTT errors
     }
+  }
 
-    // 2. Also connect to local Vite SSE server if running locally
-    fetch('/api/std-state')
-      .then((r) => {
-        if (!r.ok) throw new Error('Not local server');
-        return r.json();
-      })
-      .then((data) => {
-        if (
-          data.firebaseConfig &&
-          isValidFirebaseConfig(data.firebaseConfig) &&
-          !this.activeFirebaseConfig
-        ) {
-          this.connectFirebase(data.firebaseConfig);
-          return;
-        }
-        const normalized = this.normalizePayload(data);
-        this.currentState = normalized;
-        this.updateStatus({
-          mode: 'live-server',
-          connected: true,
-          onlineCount: Math.max(this.statusInfo.onlineCount, data.onlineCount || 1),
-          lastSyncAt: Date.now()
-        });
-        this.notifyState(false);
+  private async publishStateToMqtt(payload: SyncStatePayload) {
+    if (!this.mqttClient || !this.mqttClient.connected) return;
 
-        const es = new EventSource('/api/std-stream');
-        this.eventSource = es;
-        es.onmessage = (event) => {
-          try {
-            const msg = JSON.parse(event.data);
-            if (msg.type === 'SYNC_STATE' && msg.payload) {
-              const norm = this.normalizePayload(msg.payload);
-              const isRemote = Boolean(norm.clientId && norm.clientId !== this.clientId);
-              this.currentState = norm;
-              this.notifyState(isRemote);
+    try {
+      let jsonStr = JSON.stringify(payload);
+
+      // If state + screenshots + Excel rows exceeds 210KB, offload heavy base64 images to Bytebin
+      // so the MQTT packet stays < 210KB (with ALL Excel issues included!) and broker.emqx.io never drops it!
+      if (jsonStr.length > MAX_SAFE_MQTT_BYTES) {
+        let bytebinKey = payload.bytebinKey || '';
+        try {
+          const bRes = await fetch(BYTEBIN_POST_URL, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: jsonStr
+          });
+          if (bRes.ok) {
+            const bJson = await bRes.json();
+            if (bJson && bJson.key) {
+              bytebinKey = String(bJson.key);
+              this.lastBytebinFetched = bytebinKey;
             }
-          } catch {
-            // ignore
           }
+        } catch {
+          // ignore bytebin error
+        }
+
+        const lightPayload: SyncStatePayload = {
+          ...payload,
+          bytebinKey: bytebinKey || undefined,
+          issues: payload.issues.map((iss) => ({
+            ...iss,
+            screenshots: [],
+            comments: (iss.comments || []).map((c) => ({ ...c, screenshot: undefined }))
+          }))
         };
-      })
-      .catch(() => {
-        // Running on GitHub Pages (static) - MQTT WebSocket cloud handles real-time sync!
+        jsonStr = JSON.stringify(lightPayload);
+      }
+
+      this.mqttClient.publish(CLOUD_TOPIC_STATE, jsonStr, {
+        qos: 1,
+        retain: true
       });
+      this.mqttClient.publish(CLOUD_TOPIC_STATE_V3, jsonStr, {
+        qos: 1,
+        retain: true
+      });
+    } catch {
+      // ignore
+    }
   }
 
   private normalizePayload(raw: any): SyncStatePayload {
@@ -744,7 +897,9 @@ class RealtimeSyncService {
       lastUpdatedBy: raw?.lastUpdatedBy,
       lastAction: raw?.lastAction,
       updatedAt: raw?.updatedAt,
-      clientId: raw?.clientId
+      revision: Number(raw?.revision || 0),
+      clientId: raw?.clientId,
+      bytebinKey: raw?.bytebinKey
     };
   }
 
@@ -765,17 +920,14 @@ class RealtimeSyncService {
       lastUpdatedBy: actorName,
       lastAction: actionSummary,
       updatedAt: Date.now(),
+      revision: (this.currentState.revision || 0) + 1,
       clientId: this.clientId
     };
 
     this.currentState = payload;
+    this.hasReceivedInitialCloud = true;
     this.notifyState(false);
-
-    try {
-      localStorage.setItem('std_qa_fallback_cache', JSON.stringify(payload));
-    } catch {
-      // ignore quota errors
-    }
+    this.persistLocally(payload);
 
     if (this.broadcastChannel) {
       try {
@@ -803,17 +955,8 @@ class RealtimeSyncService {
       return;
     }
 
-    // 3. Publish to built-in Cloud WebSocket Broker (retained so new visitors get latest state!)
-    if (this.mqttClient && this.mqttClient.connected) {
-      try {
-        this.mqttClient.publish(CLOUD_TOPIC_STATE, JSON.stringify(payload), {
-          qos: 1,
-          retain: true
-        });
-      } catch {
-        // ignore
-      }
-    }
+    // 3. Publish to built-in Cloud WebSocket Broker (with automatic >210KB large Excel/screenshot handling)
+    await this.publishStateToMqtt(payload);
 
     // 4. Also push to local server if running locally
     try {
