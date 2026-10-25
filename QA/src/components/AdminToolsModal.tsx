@@ -68,7 +68,7 @@ export const AdminToolsModal: React.FC<AdminToolsModalProps> = ({
     {
       id: 'security',
       title: 'ניהול אבטחה, סיסמאות ומנהל-על',
-      subtitle: 'מוגן בקוד-על (211662457) – שינוי קודי כניסה ושם מנהל-העל',
+      subtitle: 'מוגן בקוד אבטחה ראשי – שינוי קודי כניסה ושם מנהל-העל',
       icon: KeyRound,
       iconBg: 'bg-amber-100 text-amber-700 border-amber-200',
       action: onOpenSecurity
