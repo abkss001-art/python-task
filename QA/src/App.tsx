@@ -324,12 +324,20 @@ export function App() {
       return;
     }
     const nextArchived = archivedSystems.filter((s) => s !== newSys);
+    const nextDeletedSystems = (syncService.getState().deletedSystemIds || []).filter(
+      (s) => s !== newSys
+    );
     const nextSystems = [...systems, newSys];
     setSystems(nextSystems);
     setArchivedSystems(nextArchived);
     setActiveSystem(newSys);
     syncService.pushStateToCloud(
-      { systems: nextSystems, archivedSystems: nextArchived, issues },
+      {
+        systems: nextSystems,
+        archivedSystems: nextArchived,
+        deletedSystemIds: nextDeletedSystems,
+        issues
+      },
       `הוספת מערכת חדשה (${newSys})`,
       currentUserName
     );
@@ -377,15 +385,34 @@ export function App() {
 
     const nextSystems = systems.filter((s) => s !== sysToDelete);
     const nextArchived = archivedSystems.filter((s) => s !== sysToDelete);
+    const removedIssueIds = issues
+      .filter((i) => i.system === sysToDelete)
+      .map((i) => i.id);
     const nextIssues = issues.filter((i) => i.system !== sysToDelete);
+
+    const prevState = syncService.getState();
+    const nextDeletedIssues = Array.from(
+      new Set([...(prevState.deletedIssueIds || []), ...removedIssueIds])
+    );
+    const nextDeletedSystems = Array.from(
+      new Set([...(prevState.deletedSystemIds || []), sysToDelete])
+    );
+
     setSystems(nextSystems);
     setArchivedSystems(nextArchived);
+    setIssues(nextIssues);
     if (activeSystem === sysToDelete) {
       setActiveSystem(nextSystems[0] || 'ALL');
     }
     setSystemToRemove(null);
     syncService.pushStateToCloud(
-      { systems: nextSystems, archivedSystems: nextArchived, issues: nextIssues },
+      {
+        systems: nextSystems,
+        archivedSystems: nextArchived,
+        deletedIssueIds: nextDeletedIssues,
+        deletedSystemIds: nextDeletedSystems,
+        issues: nextIssues
+      },
       `מחיקת מערכת לצמיתות (${sysToDelete})`,
       currentUserName
     );
@@ -1429,6 +1456,7 @@ export function App() {
           activeSystem={activeSystem}
           currentUserDisplay={formattedUserDisplay}
           onRestoreBackup={(restored) => {
+            const liveState = syncService.getState();
             setSystems(restored.systems);
             setArchivedSystems(restored.archivedSystems);
             setIssues(restored.issues);
@@ -1436,26 +1464,39 @@ export function App() {
               {
                 systems: restored.systems,
                 archivedSystems: restored.archivedSystems,
-                deletedIssueIds: [],
-                issues: restored.issues
+                deletedIssueIds: liveState.deletedIssueIds || [],
+                deletedSystemIds: liveState.deletedSystemIds || [],
+                issues: restored.issues,
+                replaceAll: true
               },
-              `שחזור מסד נתונים מקובץ גיבוי (${restored.issues.length} תקלות)`,
+              `שחזור/עדכון מסד נתונים (${restored.issues.length} תקלות)`,
               currentUserName
             );
           }}
           onImportIssues={(imported) => {
-            const nextSystems = [...systems];
+            const liveState = syncService.getState();
+            const baseSystems = liveState.systems?.length ? liveState.systems : systems;
+            const baseIssues = liveState.issues?.length ? liveState.issues : issues;
+            const nextSystems = [...baseSystems];
+            const nextDeletedSystems = (liveState.deletedSystemIds || []).filter(
+              (s) => !imported.some((item) => item.system === s)
+            );
             for (const item of imported) {
               if (item.system && !nextSystems.includes(item.system)) {
                 nextSystems.push(item.system);
               }
             }
-            const nextIssues = [...imported, ...issues];
+            const nextIssues = [...imported, ...baseIssues];
             setSystems(nextSystems);
             setIssues(nextIssues);
             syncService.pushStateToCloud(
-              { systems: nextSystems, archivedSystems, issues: nextIssues },
-              `ייבוא ${imported.length} תסריטים מקובץ CSV`,
+              {
+                systems: nextSystems,
+                archivedSystems,
+                deletedSystemIds: nextDeletedSystems,
+                issues: nextIssues
+              },
+              `ייבוא ${imported.length} תסריטים מקובץ אקסל / CSV`,
               currentUserName
             );
           }}

@@ -43,6 +43,7 @@ export interface SyncStatePayload {
   systems: string[];
   archivedSystems?: string[];
   deletedIssueIds?: string[];
+  deletedSystemIds?: string[];
   issues: StdIssue[];
   lastUpdatedBy?: string;
   lastAction?: string;
@@ -241,9 +242,12 @@ class RealtimeSyncService {
   };
 
   private hasReceivedInitialCloud = false;
+  private hasCheckedInitialRegistry = false;
   private highestSeenRevision = 0;
   private lastBytebinFetched = '';
   private lastAppliedFingerprint = '';
+  private isOffloadingImages = false;
+  private uploadedDriveUrlCache = new Map<string, string>();
 
   private statusInfo: SyncStatusInfo = {
     mode: 'connecting',
@@ -573,21 +577,191 @@ class RealtimeSyncService {
    * כפתור "סנכרון חי" או רענון יזום: מושך (Pull) את המצב העדכני ביותר מהענן מבלי לדרוס עם זיכרון מקומי ישן!
    */
   public requestManualSync() {
-    this.pullLatestFromCloud();
+    this.pullLatestFromCloud(true);
+  }
+
+  /**
+   * מנגנון הגנת "אפס מחיקה שקטה" (Anti-Wipe Union Merge):
+   * שום תקלה או בקשה מאקסל לא יכולה להיעלם מעצמה לעולם!
+   * תקלה מוסרת אך ורק אם המזהה שלה נמצא ברשימת המחוקים הרשמית של המנהל (deletedIssueIds / deletedSystemIds).
+   */
+  private mergeWorkspaceStates(
+    localState: SyncStatePayload,
+    incomingState: SyncStatePayload
+  ): SyncStatePayload {
+    const incomingIsNewer =
+      (incomingState.revision || 0) >= (localState.revision || 0);
+    const primary = incomingIsNewer ? incomingState : localState;
+
+    const deletedIssueSet = new Set<string>([
+      ...(localState.deletedIssueIds || []),
+      ...(incomingState.deletedIssueIds || [])
+    ]);
+
+    const deletedSystemSet = new Set<string>([
+      ...(localState.deletedSystemIds || []),
+      ...(incomingState.deletedSystemIds || [])
+    ]);
+
+    // If a system was explicitly re-added in the newer state, un-delete it
+    for (const s of primary.systems || []) {
+      deletedSystemSet.delete(s);
+    }
+
+    const demoIds = new Set(['std-101', 'std-102', 'std-103', 'std-201']);
+    const localIsInitialDemo =
+      (localState.revision || 0) === 0 && (incomingState.revision || 0) > 0;
+    const incomingIsInitialDemo =
+      (incomingState.revision || 0) === 0 && (localState.revision || 0) > 0;
+
+    const issueMap = new Map<string, StdIssue>();
+
+    const mergeSingleIssue = (existing: StdIssue, candidate: StdIssue): StdIssue => {
+      const winner =
+        (candidate.updatedAt || 0) >= (existing.updatedAt || 0) ? candidate : existing;
+      const loser = winner === candidate ? existing : candidate;
+
+      // Preserve screenshots if one packet had stripped screenshots, and prefer Google Drive URLs
+      const rawScreenshots =
+        winner.screenshots && winner.screenshots.length > 0
+          ? winner.screenshots
+          : loser.screenshots || [];
+      const mergedScreenshots = rawScreenshots.map(
+        (sc) => this.uploadedDriveUrlCache.get(sc) || sc
+      );
+
+      // Union-merge comments by ID so no comment is ever lost
+      const commentMap = new Map<string, any>();
+      for (const c of loser.comments || []) {
+        if (c && c.id) {
+          commentMap.set(c.id, {
+            ...c,
+            screenshot: c.screenshot
+              ? this.uploadedDriveUrlCache.get(c.screenshot) || c.screenshot
+              : undefined
+          });
+        }
+      }
+      for (const c of winner.comments || []) {
+        if (c && c.id) {
+          const prev = commentMap.get(c.id);
+          const sc = c.screenshot || prev?.screenshot;
+          commentMap.set(c.id, {
+            ...c,
+            screenshot: sc ? this.uploadedDriveUrlCache.get(sc) || sc : undefined
+          });
+        }
+      }
+      const mergedComments = Array.from(commentMap.values()).sort(
+        (a, b) => (a.createdAt || 0) - (b.createdAt || 0)
+      );
+
+      // Union-merge auditLog by ID
+      const auditMap = new Map<string, any>();
+      for (const a of [...(loser.auditLog || []), ...(winner.auditLog || [])]) {
+        if (a && a.id) auditMap.set(a.id, a);
+      }
+      const mergedAudit = Array.from(auditMap.values()).sort(
+        (a, b) => (a.timestamp || 0) - (b.timestamp || 0)
+      );
+
+      return {
+        ...winner,
+        screenshots: mergedScreenshots,
+        comments: mergedComments,
+        auditLog: mergedAudit
+      };
+    };
+
+    // 1. Add all valid issues from localState
+    for (const iss of localState.issues || []) {
+      if (!iss || !iss.id) continue;
+      if (deletedIssueSet.has(iss.id) || deletedSystemSet.has(iss.system)) continue;
+      if (localIsInitialDemo && demoIds.has(iss.id)) continue;
+      issueMap.set(iss.id, iss);
+    }
+
+    // 2. Merge all valid issues from incomingState
+    for (const iss of incomingState.issues || []) {
+      if (!iss || !iss.id) continue;
+      if (deletedIssueSet.has(iss.id) || deletedSystemSet.has(iss.system)) continue;
+      if (incomingIsInitialDemo && demoIds.has(iss.id)) continue;
+
+      const existing = issueMap.get(iss.id);
+      if (existing) {
+        issueMap.set(iss.id, mergeSingleIssue(existing, iss));
+      } else {
+        issueMap.set(iss.id, {
+          ...iss,
+          screenshots: (iss.screenshots || []).map(
+            (sc) => this.uploadedDriveUrlCache.get(sc) || sc
+          )
+        });
+      }
+    }
+
+    const mergedIssues = Array.from(issueMap.values()).sort(
+      (a, b) => (b.updatedAt || 0) - (a.updatedAt || 0)
+    );
+
+    const archivedSet = new Set<string>(
+      (primary.archivedSystems || []).filter((s) => !deletedSystemSet.has(s))
+    );
+
+    const systemsSet = new Set<string>();
+    for (const s of [...(primary.systems || []), ...(localState.systems || []), ...(incomingState.systems || [])]) {
+      if (s && !deletedSystemSet.has(s) && !archivedSet.has(s)) {
+        systemsSet.add(s);
+      }
+    }
+    // Ensure any system that has active issues is visible in the systems bar
+    for (const iss of mergedIssues) {
+      if (iss.system && !deletedSystemSet.has(iss.system) && !archivedSet.has(iss.system)) {
+        systemsSet.add(iss.system);
+      }
+    }
+
+    const finalSystems =
+      systemsSet.size > 0 ? Array.from(systemsSet) : DEFAULT_SYSTEMS;
+
+    return {
+      systems: finalSystems,
+      archivedSystems: Array.from(archivedSet),
+      deletedIssueIds: Array.from(deletedIssueSet),
+      deletedSystemIds: Array.from(deletedSystemSet),
+      issues: mergedIssues,
+      lastUpdatedBy: primary.lastUpdatedBy || localState.lastUpdatedBy,
+      lastAction: primary.lastAction || localState.lastAction,
+      updatedAt: Math.max(incomingState.updatedAt || 0, localState.updatedAt || 0),
+      revision: Math.max(incomingState.revision || 0, localState.revision || 0),
+      clientId: primary.clientId || this.clientId,
+      bytebinKey: incomingState.bytebinKey || localState.bytebinKey,
+      googleDriveUrl:
+        incomingState.googleDriveUrl ||
+        localState.googleDriveUrl ||
+        getSavedGoogleDriveUrl() ||
+        undefined
+    };
   }
 
   /**
    * משיכה שקטה מהענן (פועלת אוטומטית כל 5 שניות, בעת פתיחת מסך הטלפון, ובלחיצה על "סנכרון חי")
    */
-  private async pullLatestFromCloud() {
-    // 1. Re-subscribe on MQTT to receive the latest retained state packet from broker.emqx.io
+  private async pullLatestFromCloud(forceMqttResubscribe = false) {
     if (this.mqttClient && this.mqttClient.connected) {
       try {
-        this.mqttClient.subscribe(CLOUD_TOPIC_STATE, { qos: 1 });
-        this.mqttClient.subscribe(CLOUD_TOPIC_STATE_V3, { qos: 1 });
+        if (forceMqttResubscribe || !this.hasReceivedInitialCloud) {
+          this.mqttClient.subscribe(CLOUD_TOPIC_STATE, { qos: 1 });
+        }
+        // Ask all connected peers if anyone has a newer revision or more issues
         this.mqttClient.publish(
           CLOUD_TOPIC_PING,
-          JSON.stringify({ type: 'PING', clientId: this.clientId }),
+          JSON.stringify({
+            type: 'STATE_SYNC_CHECK',
+            clientId: this.clientId,
+            revision: this.currentState.revision || 0,
+            issueCount: this.currentState.issues.length
+          }),
           { qos: 0, retain: false }
         );
       } catch {
@@ -595,7 +769,12 @@ class RealtimeSyncService {
       }
     }
 
-    // 2. Also check the HTTPS 443 Cloud Registry for any newer revision / Bytebin snapshot
+    // Only check the public fallback registry once on initial load if MQTT hasn't delivered yet
+    if (this.hasReceivedInitialCloud || this.hasCheckedInitialRegistry) {
+      return;
+    }
+    this.hasCheckedInitialRegistry = true;
+
     try {
       const regRes = await fetch(REGISTRY_OBJECT_URL, { cache: 'no-store' });
       if (!regRes.ok) return;
@@ -606,11 +785,7 @@ class RealtimeSyncService {
       const cloudRev = Number(regData.revision || 0);
       const localRev = Number(this.currentState.revision || 0);
 
-      if (
-        !this.hasReceivedInitialCloud ||
-        cloudRev > localRev ||
-        (cloudRev === localRev && regData.bytebinKey !== this.lastBytebinFetched)
-      ) {
+      if (!this.hasReceivedInitialCloud && cloudRev >= localRev) {
         const bRes = await fetch(`${BYTEBIN_GET_BASE}${regData.bytebinKey}`, {
           cache: 'no-store'
         });
@@ -626,68 +801,83 @@ class RealtimeSyncService {
         }
       }
     } catch {
-      // ignore network error during background poll
+      // ignore network error during initial fallback check
     }
   }
 
   private handleIncomingCloudState(normalized: SyncStatePayload) {
     const incomingRev = Number(normalized.revision || 0);
     const localRev = Number(this.currentState.revision || 0);
-    const hasPendingLocalSave = localStorage.getItem('std_qa_pending_push') === '1';
+    const isFirstLoad = !this.hasReceivedInitialCloud;
 
-    // If this device had an interrupted save that hasn't finished pushing yet, and its revision is higher:
-    if (hasPendingLocalSave && localRev > incomingRev) {
-      this.hasReceivedInitialCloud = true;
-      this.publishStateToMqtt(this.currentState);
-      return;
+    // Always merge using Anti-Wipe Union Merge so no Excel rows or issues can ever be wiped by a stale device!
+    const merged = this.mergeWorkspaceStates(this.currentState, normalized);
+    const mergedFp = this.computeFingerprint(merged);
+
+    this.hasReceivedInitialCloud = true;
+    this.highestSeenRevision = Math.max(
+      this.highestSeenRevision,
+      incomingRev,
+      localRev,
+      merged.revision || 0
+    );
+
+    // If a remote device sent us a stale/partial list that was missing issues we already have (e.g. Excel rows),
+    // heal the cloud immediately by re-publishing the complete merged list!
+    const remoteWasMissingOurIssues =
+      !isFirstLoad &&
+      normalized.clientId &&
+      normalized.clientId !== this.clientId &&
+      merged.issues.length > normalized.issues.length;
+
+    if (remoteWasMissingOurIssues) {
+      const healedRev = this.highestSeenRevision + 1;
+      this.highestSeenRevision = healedRev;
+      merged.revision = healedRev;
     }
 
-    // On initial page load/refresh: ALWAYS pull from cloud unless our revision is strictly newer from a pending save
-    // On subsequent checks: accept if incomingRev >= localRev
-    if (!this.hasReceivedInitialCloud || incomingRev >= localRev) {
-      const fp = this.computeFingerprint(normalized);
-      const isFirstLoad = !this.hasReceivedInitialCloud;
-      this.hasReceivedInitialCloud = true;
-      this.highestSeenRevision = Math.max(this.highestSeenRevision, incomingRev, localRev);
+    if (mergedFp === this.lastAppliedFingerprint && !isFirstLoad && !remoteWasMissingOurIssues) {
+      return;
+    }
+    this.lastAppliedFingerprint = this.computeFingerprint(merged);
 
-      if (fp === this.lastAppliedFingerprint && !isFirstLoad) {
-        return;
-      }
-      this.lastAppliedFingerprint = fp;
+    const isRemote = Boolean(
+      !isFirstLoad && normalized.clientId && normalized.clientId !== this.clientId
+    );
 
-      const isRemote = Boolean(
-        !isFirstLoad && normalized.clientId && normalized.clientId !== this.clientId
-      );
+    this.currentState = merged;
+    this.persistLocally(merged);
 
-      this.currentState = normalized;
-      this.persistLocally(normalized);
+    this.updateStatus({
+      mode: 'live-server',
+      connected: true,
+      lastSyncAt: Date.now(),
+      lastEventText: merged.lastAction
+        ? `${merged.lastUpdatedBy || 'צוות'}: ${merged.lastAction}`
+        : undefined
+    });
+    this.notifyState(isRemote);
 
-      this.updateStatus({
-        mode: 'live-server',
-        connected: true,
-        lastSyncAt: Date.now(),
-        lastEventText: normalized.lastAction
-          ? `${normalized.lastUpdatedBy || 'צוות'}: ${normalized.lastAction}`
-          : undefined
-      });
-      this.notifyState(isRemote);
+    if (remoteWasMissingOurIssues) {
+      this.publishStateToMqtt(merged);
+    }
 
-      // If payload had heavy screenshots offloaded to bytebinKey, fetch and restore them seamlessly
-      if (normalized.bytebinKey && normalized.bytebinKey !== this.lastBytebinFetched) {
-        this.lastBytebinFetched = normalized.bytebinKey;
-        fetch(`${BYTEBIN_GET_BASE}${normalized.bytebinKey}`)
-          .then((r) => (r.ok ? r.json() : null))
-          .then((fullData) => {
-            if (fullData && Array.isArray(fullData.issues)) {
-              const fullNorm = this.normalizePayload(fullData);
-              this.lastAppliedFingerprint = this.computeFingerprint(fullNorm);
-              this.currentState = fullNorm;
-              this.persistLocally(fullNorm);
-              this.notifyState(false);
-            }
-          })
-          .catch(() => {});
-      }
+    // If payload had heavy screenshots offloaded to bytebinKey, fetch and merge them seamlessly
+    if (normalized.bytebinKey && normalized.bytebinKey !== this.lastBytebinFetched) {
+      this.lastBytebinFetched = normalized.bytebinKey;
+      fetch(`${BYTEBIN_GET_BASE}${normalized.bytebinKey}`)
+        .then((r) => (r.ok ? r.json() : null))
+        .then((fullData) => {
+          if (fullData && Array.isArray(fullData.issues)) {
+            const fullNorm = this.normalizePayload(fullData);
+            const fullMerged = this.mergeWorkspaceStates(this.currentState, fullNorm);
+            this.lastAppliedFingerprint = this.computeFingerprint(fullMerged);
+            this.currentState = fullMerged;
+            this.persistLocally(fullMerged);
+            this.notifyState(false);
+          }
+        })
+        .catch(() => {});
     }
   }
 
@@ -697,6 +887,7 @@ class RealtimeSyncService {
   public connectBuiltInCloudAndServer() {
     this.cleanupConnections();
     this.hasReceivedInitialCloud = false;
+    this.hasCheckedInitialRegistry = false;
     this.updateStatus({
       mode: 'live-server',
       connected: false,
@@ -717,28 +908,24 @@ class RealtimeSyncService {
     }
 
     loadWorkspaceFromIndexedDB<SyncStatePayload>().then((idbState) => {
-      if (idbState && Array.isArray(idbState.issues) && !this.hasReceivedInitialCloud) {
+      if (idbState && Array.isArray(idbState.issues)) {
         const normIdb = this.normalizePayload(idbState);
-        if ((normIdb.revision || 0) >= (this.currentState.revision || 0)) {
-          this.currentState = normIdb;
-          this.highestSeenRevision = Math.max(
-            this.highestSeenRevision,
-            normIdb.revision || 0
-          );
-          this.notifyState(false);
-        }
+        const mergedLocal = this.mergeWorkspaceStates(this.currentState, normIdb);
+        this.currentState = mergedLocal;
+        this.highestSeenRevision = Math.max(
+          this.highestSeenRevision,
+          mergedLocal.revision || 0
+        );
+        this.notifyState(false);
       }
     });
 
-    // 2. Immediately check HTTPS 443 Cloud Registry in parallel
-    this.pullLatestFromCloud();
-
-    // 3. Start Time-Based Auto-Refresh every 5 seconds in the background
+    // 2. Start Time-Based Auto-Refresh every 5 seconds in the background
     this.autoRefreshTimer = setInterval(() => {
-      this.pullLatestFromCloud();
+      this.pullLatestFromCloud(false);
     }, AUTO_REFRESH_INTERVAL_MS);
 
-    // 4. Connect to built-in Cloud WebSocket Broker (wss://broker.emqx.io:8084/mqtt)
+    // 3. Connect to built-in Cloud WebSocket Broker (wss://broker.emqx.io:8084/mqtt)
     try {
       const mqttSessionId = `std_qa_${this.clientId}_${Math.random().toString(36).substring(2, 6)}`;
       const client = mqtt.connect('wss://broker.emqx.io:8084/mqtt', {
@@ -785,7 +972,6 @@ class RealtimeSyncService {
         });
 
         client.subscribe(CLOUD_TOPIC_STATE, { qos: 1 });
-        client.subscribe(CLOUD_TOPIC_STATE_V3, { qos: 1 });
         client.subscribe(`${CLOUD_TOPIC_PRESENCE}+`, { qos: 0 });
         client.subscribe(`${CLOUD_TOPIC_PRESENCE_LEGACY}+`, { qos: 0 });
         client.subscribe(`${CLOUD_TOPIC_PRESENCE_V3}+`, { qos: 0 });
@@ -795,7 +981,12 @@ class RealtimeSyncService {
 
         client.publish(
           CLOUD_TOPIC_PING,
-          JSON.stringify({ type: 'PING', clientId: this.clientId }),
+          JSON.stringify({
+            type: 'STATE_SYNC_CHECK',
+            clientId: this.clientId,
+            revision: this.currentState.revision || 0,
+            issueCount: this.currentState.issues.length
+          }),
           { qos: 0, retain: false }
         );
 
@@ -823,7 +1014,7 @@ class RealtimeSyncService {
           const rawStr = message.toString();
           if (!rawStr) return;
 
-          if (topic === CLOUD_TOPIC_STATE || topic === CLOUD_TOPIC_STATE_V3) {
+          if (topic === CLOUD_TOPIC_STATE) {
             const parsed = JSON.parse(rawStr);
             const normalized = this.normalizePayload(parsed);
             this.handleIncomingCloudState(normalized);
@@ -835,8 +1026,20 @@ class RealtimeSyncService {
               this.updateStatus({
                 onlineCount: Math.max(1, this.activePeers.size)
               });
-              if (data.type === 'PING' && data.clientId !== this.clientId) {
-                publishPresenceOnline();
+              if (data.clientId !== this.clientId) {
+                if (data.type === 'PING') {
+                  publishPresenceOnline();
+                } else if (data.type === 'STATE_SYNC_CHECK') {
+                  publishPresenceOnline();
+                  const peerRev = Number(data.revision || 0);
+                  const peerIssueCount = Number(data.issueCount || 0);
+                  const myRev = Number(this.currentState.revision || 0);
+                  const myIssueCount = this.currentState.issues.length;
+                  // If we have a newer revision OR more non-deleted issues than the peer, broadcast our state!
+                  if (myRev > peerRev || (myRev > 0 && myIssueCount > peerIssueCount)) {
+                    this.publishStateToMqtt(this.currentState);
+                  }
+                }
               }
             }
           } else if (
@@ -875,40 +1078,27 @@ class RealtimeSyncService {
       const fullJsonStr = JSON.stringify(payload);
       let bytebinKey = payload.bytebinKey || '';
 
-      // 1. Always upload a snapshot to Bytebin + HTTPS Registry so 5-second auto-refresh & large Excel files work 100%!
-      try {
-        const bRes = await fetch(BYTEBIN_POST_URL, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: fullJsonStr
-        });
-        if (bRes.ok) {
-          const bJson = await bRes.json();
-          if (bJson && bJson.key) {
-            bytebinKey = String(bJson.key);
-            this.lastBytebinFetched = bytebinKey;
-            fetch(REGISTRY_OBJECT_URL, {
-              method: 'PUT',
-              headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({
-                name: 'tzavman_qa_state_registry_v4',
-                data: {
-                  bytebinKey,
-                  revision: payload.revision || 1,
-                  updatedAt: payload.updatedAt || Date.now(),
-                  clientId: this.clientId,
-                  lastUpdatedBy: payload.lastUpdatedBy,
-                  lastAction: payload.lastAction
-                }
-              })
-            }).catch(() => {});
+      // 1. If payload exceeds MQTT safe packet size (210KB), offload full snapshot to Bytebin
+      if (fullJsonStr.length > MAX_SAFE_MQTT_BYTES) {
+        try {
+          const bRes = await fetch(BYTEBIN_POST_URL, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: fullJsonStr
+          });
+          if (bRes.ok) {
+            const bJson = await bRes.json();
+            if (bJson && bJson.key) {
+              bytebinKey = String(bJson.key);
+              this.lastBytebinFetched = bytebinKey;
+            }
           }
+        } catch {
+          // ignore bytebin error
         }
-      } catch {
-        // ignore bytebin error
       }
 
-      // 2. Publish to MQTT (if > 210KB, attach bytebinKey and strip inline base64 so MQTT never drops the packet)
+      // 2. Publish to primary MQTT state channel
       if (this.mqttClient && this.mqttClient.connected) {
         let mqttJsonStr = fullJsonStr;
         if (mqttJsonStr.length > MAX_SAFE_MQTT_BYTES) {
@@ -917,18 +1107,18 @@ class RealtimeSyncService {
             bytebinKey: bytebinKey || undefined,
             issues: payload.issues.map((iss) => ({
               ...iss,
-              screenshots: [],
-              comments: (iss.comments || []).map((c) => ({ ...c, screenshot: undefined }))
+              screenshots: (iss.screenshots || []).filter((s) => !isDataUrlImage(s)),
+              comments: (iss.comments || []).map((c) => ({
+                ...c,
+                screenshot:
+                  c.screenshot && !isDataUrlImage(c.screenshot) ? c.screenshot : undefined
+              }))
             }))
           };
           mqttJsonStr = JSON.stringify(lightPayload);
         }
 
         this.mqttClient.publish(CLOUD_TOPIC_STATE, mqttJsonStr, {
-          qos: 1,
-          retain: true
-        });
-        this.mqttClient.publish(CLOUD_TOPIC_STATE_V3, mqttJsonStr, {
           qos: 1,
           retain: true
         });
@@ -950,6 +1140,18 @@ class RealtimeSyncService {
       ? raw.archivedSystems
       : raw?.archivedSystems && typeof raw.archivedSystems === 'object'
       ? Object.values(raw.archivedSystems)
+      : [];
+
+    const deletedIssueIds: string[] = Array.isArray(raw?.deletedIssueIds)
+      ? raw.deletedIssueIds.map(String)
+      : raw?.deletedIssueIds && typeof raw.deletedIssueIds === 'object'
+      ? Object.values(raw.deletedIssueIds).map(String)
+      : [];
+
+    const deletedSystemIds: string[] = Array.isArray(raw?.deletedSystemIds)
+      ? raw.deletedSystemIds.map(String)
+      : raw?.deletedSystemIds && typeof raw.deletedSystemIds === 'object'
+      ? Object.values(raw.deletedSystemIds).map(String)
       : [];
 
     let rawIssues: any[] = [];
@@ -996,13 +1198,18 @@ class RealtimeSyncService {
         updatedAt: Number(item.updatedAt || Date.now())
       }));
 
-    if (typeof raw?.googleDriveUrl === 'string' && raw.googleDriveUrl.startsWith('https://script.google.com/')) {
+    if (
+      typeof raw?.googleDriveUrl === 'string' &&
+      raw.googleDriveUrl.startsWith('https://script.google.com/')
+    ) {
       setSavedGoogleDriveUrl(raw.googleDriveUrl);
     }
 
     return {
       systems,
       archivedSystems,
+      deletedIssueIds,
+      deletedSystemIds,
       issues,
       lastUpdatedBy: raw?.lastUpdatedBy,
       lastAction: raw?.lastAction,
@@ -1016,67 +1223,91 @@ class RealtimeSyncService {
 
   /**
    * מעלה אוטומטית ברקע תמונות Base64 חדשות ל-Google Drive (5TB) של המנהל ומחליף אותן בקישור קל!
+   * בטוח לחלוטין מפני דריסת בקשות/אקסל שנוספו בזמן העלאת התמונות (מעדכן אך ורק קישורי תמונות על המצב החי הנוכחי).
    */
-  private async offloadNewImagesToGoogleDriveInBackground(
-    issues: StdIssue[]
-  ): Promise<{ changed: boolean; issues: StdIssue[] }> {
+  private async offloadNewImagesToGoogleDriveInBackground(): Promise<void> {
     const driveUrl = getSavedGoogleDriveUrl();
-    if (!driveUrl) return { changed: false, issues };
+    if (!driveUrl || this.isOffloadingImages) return;
 
-    let anyChanged = false;
-    const updatedIssues: StdIssue[] = [];
+    this.isOffloadingImages = true;
+    try {
+      let anyUploaded = false;
+      const snapshotIssues = this.currentState.issues || [];
 
-    for (const iss of issues) {
-      let screenshotsChanged = false;
-      const nextScreenshots: string[] = [];
-
-      for (let i = 0; i < (iss.screenshots || []).length; i++) {
-        const sc = iss.screenshots[i];
-        if (isDataUrlImage(sc)) {
-          const uploadedUrl = await uploadImageToGoogleDrive(sc, {
-            system: iss.system,
-            testCaseId: `${iss.testCaseId}_${i + 1}`
-          });
-          if (uploadedUrl !== sc) {
-            screenshotsChanged = true;
-            anyChanged = true;
+      for (const iss of snapshotIssues) {
+        for (let i = 0; i < (iss.screenshots || []).length; i++) {
+          const sc = iss.screenshots[i];
+          if (isDataUrlImage(sc) && !this.uploadedDriveUrlCache.has(sc)) {
+            const uploadedUrl = await uploadImageToGoogleDrive(sc, {
+              system: iss.system,
+              testCaseId: `${iss.testCaseId}_${i + 1}`
+            });
+            if (uploadedUrl && uploadedUrl !== sc) {
+              this.uploadedDriveUrlCache.set(sc, uploadedUrl);
+              anyUploaded = true;
+            }
           }
-          nextScreenshots.push(uploadedUrl);
-        } else {
-          nextScreenshots.push(sc);
+        }
+
+        for (const c of iss.comments || []) {
+          if (
+            c.screenshot &&
+            isDataUrlImage(c.screenshot) &&
+            !this.uploadedDriveUrlCache.has(c.screenshot)
+          ) {
+            const uploadedCommentUrl = await uploadImageToGoogleDrive(c.screenshot, {
+              system: iss.system,
+              testCaseId: `${iss.testCaseId}_הערה`
+            });
+            if (uploadedCommentUrl && uploadedCommentUrl !== c.screenshot) {
+              this.uploadedDriveUrlCache.set(c.screenshot, uploadedCommentUrl);
+              anyUploaded = true;
+            }
+          }
         }
       }
 
-      let commentsChanged = false;
-      const nextComments = [];
-      for (const c of iss.comments || []) {
-        if (c.screenshot && isDataUrlImage(c.screenshot)) {
-          const uploadedCommentUrl = await uploadImageToGoogleDrive(c.screenshot, {
-            system: iss.system,
-            testCaseId: `${iss.testCaseId}_הערה`
-          });
-          if (uploadedCommentUrl !== c.screenshot) {
-            commentsChanged = true;
-            anyChanged = true;
-          }
-          nextComments.push({ ...c, screenshot: uploadedCommentUrl });
-        } else {
-          nextComments.push(c);
-        }
-      }
-
-      if (screenshotsChanged || commentsChanged) {
-        updatedIssues.push({
+      if (anyUploaded) {
+        // Apply uploaded Drive URLs directly onto the CURRENT live state without ever overwriting newly imported Excel rows!
+        const liveIssues = (this.currentState.issues || []).map((iss) => ({
           ...iss,
-          screenshots: nextScreenshots,
-          comments: nextComments
-        });
-      } else {
-        updatedIssues.push(iss);
-      }
-    }
+          screenshots: (iss.screenshots || []).map(
+            (sc) => this.uploadedDriveUrlCache.get(sc) || sc
+          ),
+          comments: (iss.comments || []).map((c) => ({
+            ...c,
+            screenshot: c.screenshot
+              ? this.uploadedDriveUrlCache.get(c.screenshot) || c.screenshot
+              : undefined
+          }))
+        }));
 
-    return { changed: anyChanged, issues: updatedIssues };
+        const driveRev =
+          Math.max(this.currentState.revision || 0, this.highestSeenRevision) + 1;
+        this.highestSeenRevision = driveRev;
+
+        const drivePayload: SyncStatePayload = {
+          ...this.currentState,
+          issues: liveIssues,
+          revision: driveRev,
+          updatedAt: Date.now(),
+          googleDriveUrl: getSavedGoogleDriveUrl() || undefined
+        };
+
+        this.currentState = drivePayload;
+        this.lastAppliedFingerprint = this.computeFingerprint(drivePayload);
+        this.notifyState(false);
+        this.persistLocally(drivePayload);
+        await this.publishStateToMqtt(drivePayload);
+      }
+
+      // Always save the latest complete state to Google Drive auto-backup!
+      saveAutoBackupToGoogleDrive(this.currentState);
+    } catch {
+      // ignore background drive error
+    } finally {
+      this.isOffloadingImages = false;
+    }
   }
 
   public async pushStateToCloud(
@@ -1084,7 +1315,9 @@ class RealtimeSyncService {
       systems: string[];
       archivedSystems?: string[];
       deletedIssueIds?: string[];
+      deletedSystemIds?: string[];
       issues: StdIssue[];
+      replaceAll?: boolean;
     },
     actionSummary: string,
     actorName = 'חבר צוות'
@@ -1093,9 +1326,13 @@ class RealtimeSyncService {
       Math.max(this.currentState.revision || 0, this.highestSeenRevision) + 1;
     this.highestSeenRevision = nextRevision;
 
-    const payload: SyncStatePayload = {
+    const candidatePayload: SyncStatePayload = {
       systems: nextState.systems,
       archivedSystems: nextState.archivedSystems ?? this.currentState.archivedSystems ?? [],
+      deletedIssueIds:
+        nextState.deletedIssueIds ?? this.currentState.deletedIssueIds ?? [],
+      deletedSystemIds:
+        nextState.deletedSystemIds ?? this.currentState.deletedSystemIds ?? [],
       issues: nextState.issues,
       lastUpdatedBy: actorName,
       lastAction: actionSummary,
@@ -1104,6 +1341,17 @@ class RealtimeSyncService {
       clientId: this.clientId,
       googleDriveUrl: getSavedGoogleDriveUrl() || undefined
     };
+
+    // Apply Anti-Wipe Union Merge unless Admin explicitly requested a full backup replacement
+    const payload: SyncStatePayload = nextState.replaceAll
+      ? candidatePayload
+      : this.mergeWorkspaceStates(this.currentState, candidatePayload);
+
+    payload.revision = nextRevision;
+    payload.lastUpdatedBy = actorName;
+    payload.lastAction = actionSummary;
+    payload.updatedAt = Date.now();
+    payload.clientId = this.clientId;
 
     try {
       localStorage.setItem('std_qa_pending_push', '1');
@@ -1145,36 +1393,12 @@ class RealtimeSyncService {
       return;
     }
 
-    // 3. Publish immediately to MQTT + HTTPS 443 Cloud Registry
+    // 3. Publish immediately to MQTT
     await this.publishStateToMqtt(payload);
 
-    // 4. If Google Drive (5TB) is connected, automatically offload any new Base64 screenshots to Google Drive
-    // and save a live JSON backup in the Google Drive folder!
+    // 4. If Google Drive (5TB) is connected, offload any new Base64 screenshots safely and update Drive backup
     if (getSavedGoogleDriveUrl()) {
-      this.offloadNewImagesToGoogleDriveInBackground(payload.issues)
-        .then(async (res) => {
-          if (res.changed) {
-            const driveRev =
-              Math.max(this.currentState.revision || 0, this.highestSeenRevision) + 1;
-            this.highestSeenRevision = driveRev;
-            const drivePayload: SyncStatePayload = {
-              ...this.currentState,
-              issues: res.issues,
-              revision: driveRev,
-              updatedAt: Date.now(),
-              googleDriveUrl: getSavedGoogleDriveUrl() || undefined
-            };
-            this.currentState = drivePayload;
-            this.lastAppliedFingerprint = this.computeFingerprint(drivePayload);
-            this.notifyState(false);
-            this.persistLocally(drivePayload);
-            await this.publishStateToMqtt(drivePayload);
-            saveAutoBackupToGoogleDrive(drivePayload);
-          } else {
-            saveAutoBackupToGoogleDrive(payload);
-          }
-        })
-        .catch(() => {});
+      this.offloadNewImagesToGoogleDriveInBackground();
     }
 
     // 5. Also push to local server if running locally
