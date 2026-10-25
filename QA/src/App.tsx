@@ -21,6 +21,7 @@ import { AdminReportModal } from './components/AdminReportModal';
 import { AdminBackupModal } from './components/AdminBackupModal';
 import { AdminTeamModal } from './components/AdminTeamModal';
 import { AdminSecurityModal } from './components/AdminSecurityModal';
+import { AdminSystemManageModal } from './components/AdminSystemManageModal';
 import { LoginScreen, AuthenticatedUser } from './components/LoginScreen';
 import {
   TeamMember,
@@ -143,6 +144,7 @@ export function App() {
   // Confirmation, Archive, Admin Report & Backup Modals
   const [issueToDelete, setIssueToDelete] = useState<StdIssue | null>(null);
   const [systemToRemove, setSystemToRemove] = useState<string | null>(null);
+  const [systemToManage, setSystemToManage] = useState<string | null>(null);
   const [isArchiveModalOpen, setIsArchiveModalOpen] = useState<boolean>(false);
   const [isAdminReportOpen, setIsAdminReportOpen] = useState<boolean>(false);
   const [isAdminBackupOpen, setIsAdminBackupOpen] = useState<boolean>(false);
@@ -269,7 +271,8 @@ export function App() {
         isAdminReportOpen ||
         isAdminBackupOpen ||
         isTeamModalOpen ||
-        isAdminSecurityOpen
+        isAdminSecurityOpen ||
+        systemToManage
       ) {
         return;
       }
@@ -320,6 +323,7 @@ export function App() {
     isAdminBackupOpen,
     isTeamModalOpen,
     isAdminSecurityOpen,
+    systemToManage,
     activeSystem,
     systems,
     issues,
@@ -406,6 +410,53 @@ export function App() {
       `הוספת מערכת חדשה (${newSys})`,
       currentUserName
     );
+  };
+
+  const handleRenameSystem = (oldName: string, newName: string) => {
+    const cleanNewName = newName.trim();
+    if (!cleanNewName || cleanNewName === oldName) return;
+
+    if (systems.includes(cleanNewName) || archivedSystems.includes(cleanNewName)) {
+      setLiveToast('כבר קיימת מערכת בשם זה במערכת או בארכיון.');
+      setTimeout(() => setLiveToast(null), 3000);
+      return;
+    }
+
+    const nextSystems = systems.map((s) => (s === oldName ? cleanNewName : s));
+    setSystems(nextSystems);
+
+    const nextIssues = issues.map((i) =>
+      i.system === oldName
+        ? {
+            ...i,
+            system: cleanNewName,
+            auditLog: [
+              ...(i.auditLog || []),
+              {
+                id: `aud-${Date.now()}`,
+                actor: formattedUserDisplay,
+                action: `שם המערכת עודכן מ-"${oldName}" ל-"${cleanNewName}"`,
+                timestamp: Date.now()
+              }
+            ],
+            updatedAt: Date.now()
+          }
+        : i
+    );
+    setIssues(nextIssues);
+
+    if (activeSystem === oldName) {
+      setActiveSystem(cleanNewName);
+    }
+
+    syncService.pushStateToCloud(
+      { systems: nextSystems, archivedSystems, issues: nextIssues },
+      `שינוי שם מערכת מ-"${oldName}" ל-"${cleanNewName}"`,
+      currentUserName
+    );
+
+    setLiveToast(`שם המערכת עודכן ל-"${cleanNewName}" בהצלחה!`);
+    setTimeout(() => setLiveToast(null), 3500);
   };
 
   const handleArchiveSystem = (sysToArchive: string) => {
@@ -1053,7 +1104,8 @@ export function App() {
         activeSystem={activeSystem}
         onSelectSystem={setActiveSystem}
         onAddSystem={handleAddSystem}
-        onRequestRemoveSystem={(sys) => setSystemToRemove(sys)}
+        onManageSystem={(sys) => setSystemToManage(sys)}
+        onRequestRemoveSystem={(sys) => setSystemToManage(sys)}
         onOpenArchiveModal={() => setIsArchiveModalOpen(true)}
         onOpenAdminReport={() => {
           if (isAdmin) setIsAdminReportOpen(true);
@@ -1334,89 +1386,30 @@ export function App() {
         </div>
       )}
 
-      {/* Admin Popup Modal Before Removing a System: Archive OR Permanent Delete */}
-      {systemToRemove && isAdmin && (
-        <div
-          className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/60 backdrop-blur-xs p-4"
-          dir="rtl"
-        >
-          <div className="bg-white rounded-2xl shadow-2xl border border-slate-200 w-full max-w-lg overflow-hidden p-6 space-y-5">
-            <div className="flex items-start justify-between gap-3">
-              <div className="flex items-start gap-3.5">
-                <div className="w-11 h-11 rounded-2xl bg-amber-50 border border-amber-200 flex items-center justify-center text-amber-600 shrink-0">
-                  <Archive className="w-6 h-6" />
-                </div>
-                <div>
-                  <h3 className="text-base sm:text-lg font-extrabold text-slate-900">
-                    ניהול מערכת: <span className="bidi-isolate text-indigo-700">{systemToRemove}</span>
-                  </h3>
-                  <p className="text-xs sm:text-sm text-slate-600 mt-0.5">
-                    במערכת זו קיימות כעת{' '}
-                    <strong>{issues.filter((i) => i.system === systemToRemove).length}</strong>{' '}
-                    תקלות מתועדות. מה תרצה לעשות?
-                  </p>
-                </div>
-              </div>
-              <button
-                type="button"
-                onClick={() => setSystemToRemove(null)}
-                className="p-1 rounded-lg text-slate-400 hover:text-slate-700 cursor-pointer"
-              >
-                <X className="w-5 h-5" />
-              </button>
-            </div>
-
-            <div className="space-y-3">
-              {/* Option 1: Send to Archive (Recommended) */}
-              <button
-                type="button"
-                onClick={() => handleArchiveSystem(systemToRemove)}
-                className="w-full flex items-center justify-between p-4 rounded-2xl border-2 border-amber-300 bg-amber-50/70 hover:bg-amber-100/80 text-right transition cursor-pointer"
-              >
-                <div className="flex items-start gap-3">
-                  <Archive className="w-5 h-5 text-amber-700 shrink-0 mt-0.5" />
-                  <div>
-                    <div className="text-sm font-extrabold text-slate-900">
-                      העבר מערכת לארכיון (מומלץ)
-                    </div>
-                    <div className="text-xs text-slate-600 mt-0.5">
-                      המערכת תוסתר מהסרגל של הצוות, אך כל התקלות שלה יישמרו בארכיון המנהל ותוכל לשחזר אותה בכל עת.
-                    </div>
-                  </div>
-                </div>
-              </button>
-
-              {/* Option 2: Permanent Delete */}
-              <button
-                type="button"
-                onClick={() => handlePermanentDeleteSystem(systemToRemove)}
-                className="w-full flex items-center justify-between p-4 rounded-2xl border border-red-200 bg-red-50/40 hover:bg-red-50 text-right transition cursor-pointer"
-              >
-                <div className="flex items-start gap-3">
-                  <Trash2 className="w-5 h-5 text-red-600 shrink-0 mt-0.5" />
-                  <div>
-                    <div className="text-sm font-bold text-red-700">
-                      מחק מערכת וכל התקלות בה לצמיתות
-                    </div>
-                    <div className="text-xs text-red-600/80 mt-0.5">
-                      זהירות: פעולה זו תמחק לצמיתות את המערכת ואת כל התקלות המשויכות אליה ללא אפשרות שחזור.
-                    </div>
-                  </div>
-                </div>
-              </button>
-            </div>
-
-            <div className="flex justify-end pt-2 border-t border-slate-100">
-              <button
-                type="button"
-                onClick={() => setSystemToRemove(null)}
-                className="px-4 py-2 rounded-xl border border-slate-300 text-slate-700 hover:bg-slate-50 text-xs font-bold transition cursor-pointer"
-              >
-                ביטול
-              </button>
-            </div>
-          </div>
-        </div>
+      {/* Admin System Management Modal: Rename, Archive or Delete */}
+      {(systemToManage || systemToRemove) && isAdmin && (
+        <AdminSystemManageModal
+          systemName={(systemToManage || systemToRemove)!}
+          totalIssuesCount={
+            issues.filter((i) => i.system === (systemToManage || systemToRemove)).length
+          }
+          openIssuesCount={
+            issues.filter(
+              (i) =>
+                i.system === (systemToManage || systemToRemove) &&
+                i.status !== 'נבדק תקין'
+            ).length
+          }
+          canDeleteOrArchive={systems.length > 1}
+          existingSystemNames={[...systems, ...archivedSystems]}
+          onRenameSystem={handleRenameSystem}
+          onArchiveSystem={(sys) => handleArchiveSystem(sys)}
+          onDeleteSystem={(sys) => handlePermanentDeleteSystem(sys)}
+          onClose={() => {
+            setSystemToManage(null);
+            setSystemToRemove(null);
+          }}
+        />
       )}
 
       {/* Admin Archive Management Modal */}

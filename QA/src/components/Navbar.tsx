@@ -19,7 +19,8 @@ import {
   BarChart3,
   DatabaseBackup,
   RefreshCw,
-  KeyRound
+  KeyRound,
+  SlidersHorizontal
 } from 'lucide-react';
 import { StdIssue, SyncStatusInfo, TeamRole } from '../types/std';
 
@@ -29,6 +30,7 @@ interface NavbarProps {
   activeSystem: string;
   onSelectSystem: (sys: string) => void;
   onAddSystem: (newSys: string) => void;
+  onManageSystem?: (sys: string) => void;
   onRequestRemoveSystem?: (sys: string) => void;
   onOpenArchiveModal?: () => void;
   onOpenAdminReport?: () => void;
@@ -128,6 +130,7 @@ export const Navbar: React.FC<NavbarProps> = ({
   activeSystem,
   onSelectSystem,
   onAddSystem,
+  onManageSystem,
   onRequestRemoveSystem,
   onOpenArchiveModal,
   onOpenAdminReport,
@@ -432,7 +435,7 @@ export const Navbar: React.FC<NavbarProps> = ({
                     type="button"
                     onClick={() => onSelectSystem(sys)}
                     className={`flex items-center gap-1.5 sm:gap-2 px-3 sm:px-3.5 py-1.5 text-xs sm:text-sm font-bold transition cursor-pointer ${
-                      isAdmin && systems.length > 1 ? 'rounded-r-xl' : 'rounded-xl'
+                      isAdmin && (onManageSystem || onRequestRemoveSystem) ? 'rounded-r-xl' : 'rounded-xl'
                     } ${
                       isSelected
                         ? 'bg-slate-900 text-white shadow-sm'
@@ -456,18 +459,18 @@ export const Navbar: React.FC<NavbarProps> = ({
                       />
                     )}
                   </button>
-                  {isAdmin && systems.length > 1 && onRequestRemoveSystem && (
+                  {isAdmin && (onManageSystem || onRequestRemoveSystem) && (
                     <button
                       type="button"
-                      onClick={() => onRequestRemoveSystem(sys)}
-                      className={`px-1.5 py-1.5 rounded-l-xl border-r text-xs transition cursor-pointer ${
+                      onClick={() => (onManageSystem ? onManageSystem(sys) : onRequestRemoveSystem?.(sys))}
+                      className={`px-2 py-1.5 rounded-l-xl border-r text-xs transition cursor-pointer flex items-center justify-center ${
                         isSelected
-                          ? 'bg-slate-800 hover:bg-red-600 text-slate-300 hover:text-white border-slate-700'
-                          : 'bg-slate-200/70 hover:bg-red-100 text-slate-500 hover:text-red-600 border-slate-300'
+                          ? 'bg-slate-800 hover:bg-indigo-600 text-slate-300 hover:text-white border-slate-700'
+                          : 'bg-slate-200/80 hover:bg-indigo-100 hover:text-indigo-700 text-slate-500 border-slate-300'
                       }`}
-                      title={`העבר לארכיון או מחק את מערכת ${sys} (מנהל בלבד)`}
+                      title={`ניהול מערכת ${sys}: עריכת שם, ארכיון או מחיקה (מנהל בלבד)`}
                     >
-                      <Trash2 className="w-3.5 h-3.5" />
+                      <SlidersHorizontal className="w-3.5 h-3.5" />
                     </button>
                   )}
                 </div>
