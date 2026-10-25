@@ -55,11 +55,13 @@ const CLOUD_TOPIC_PRESENCE_LEGACY = 'std_qa_cloud_abkss001_v2/presence/';
 const CLOUD_TOPIC_PRESENCE_V3 = 'std_qa_cloud_tzavman_v3/presence/';
 const CLOUD_TOPIC_PING = 'std_qa_cloud_abkss001_v2/presence_ping';
 
-const MAX_SAFE_MQTT_BYTES = 210_000; // Well below broker.emqx.io 256KB packet limit
+const MAX_SAFE_MQTT_BYTES = 210_000; // Safe limit under broker.emqx.io 256KB max packet size
 const BYTEBIN_POST_URL = 'https://bytebin.lucko.me/post';
 const BYTEBIN_GET_BASE = 'https://bytebin.lucko.me/';
+const REGISTRY_OBJECT_URL =
+  'https://api.restful-api.dev/objects/ff808181a09d98f701a162fda3985338';
 
-const DEMO_IDS = new Set(['std-101', 'std-102', 'std-103', 'std-201']);
+const AUTO_REFRESH_INTERVAL_MS = 5000; // Time-based auto-refresh every 5 seconds
 
 function getPersistentClientId(): string {
   try {
@@ -71,20 +73,6 @@ function getPersistentClientId(): string {
   } catch {
     return `client-${Math.random().toString(36).substring(2, 9)}`;
   }
-}
-
-function isDefaultDemoState(state: SyncStatePayload | null | undefined): boolean {
-  if (!state) return true;
-  if ((state.archivedSystems || []).length > 0) return false;
-  if (state.systems.length !== 2 || state.systems[0] !== 'CARGO' || state.systems[1] !== 'נשקי ערד') {
-    return false;
-  }
-  if (state.issues.length !== 4) return false;
-  for (const iss of state.issues) {
-    if (!DEMO_IDS.has(iss.id)) return false;
-    if ((iss.screenshots || []).length > 0) return false;
-  }
-  return true;
 }
 
 function formatLegacyAuthor(rawName: string | undefined): string {
@@ -240,11 +228,14 @@ class RealtimeSyncService {
 
   private currentState: SyncStatePayload = {
     systems: DEFAULT_SYSTEMS,
-    issues: INITIAL_DEMO_ISSUES
+    issues: INITIAL_DEMO_ISSUES,
+    revision: 0
   };
 
   private hasReceivedInitialCloud = false;
+  private highestSeenRevision = 0;
   private lastBytebinFetched = '';
+  private lastAppliedFingerprint = '';
 
   private statusInfo: SyncStatusInfo = {
     mode: 'connecting',
@@ -259,9 +250,10 @@ class RealtimeSyncService {
   private unsubscribePresence: (() => void) | null = null;
   private eventSource: EventSource | null = null;
   private mqttClient: MqttClient | null = null;
-  // Maps peerId -> local timestamp (Date.now() on THIS device when peer was seen)
+
   private activePeers = new Map<string, number>();
   private heartbeatTimer: ReturnType<typeof setInterval> | null = null;
+  private autoRefreshTimer: ReturnType<typeof setInterval> | null = null;
   private broadcastChannel: BroadcastChannel | null = null;
   private activeFirebaseConfig: FirebaseConfigData | null = null;
 
@@ -272,7 +264,12 @@ class RealtimeSyncService {
         const data = event.data;
         if (data && data.type === 'STATE_UPDATE' && data.payload) {
           const isRemote = data.payload.clientId !== this.clientId;
-          this.currentState = data.payload;
+          const normalized = this.normalizePayload(data.payload);
+          this.highestSeenRevision = Math.max(
+            this.highestSeenRevision,
+            normalized.revision || 0
+          );
+          this.currentState = normalized;
           this.notifyState(isRemote);
         }
       };
@@ -302,6 +299,16 @@ class RealtimeSyncService {
       };
       window.addEventListener('beforeunload', announceOffline);
       window.addEventListener('pagehide', announceOffline);
+
+      // Instant pull from cloud whenever phone screen wakes up or user switches back to tab!
+      document.addEventListener('visibilitychange', () => {
+        if (document.visibilityState === 'visible') {
+          this.pullLatestFromCloud();
+        }
+      });
+      window.addEventListener('focus', () => {
+        this.pullLatestFromCloud();
+      });
     }
 
     const initialFbConfig = loadActiveFirebaseConfig();
@@ -360,8 +367,12 @@ class RealtimeSyncService {
     try {
       localStorage.setItem('std_qa_fallback_cache', JSON.stringify(payload));
     } catch {
-      // If > 5MB, IndexedDB stores the full state seamlessly
+      // IndexedDB handles large states when localStorage reaches 5MB
     }
+  }
+
+  private computeFingerprint(state: SyncStatePayload): string {
+    return `${state.revision || 0}_${state.updatedAt || 0}_${state.issues.length}_${state.systems.join(',')}_${state.lastAction || ''}`;
   }
 
   private cleanupConnections() {
@@ -380,6 +391,10 @@ class RealtimeSyncService {
     if (this.heartbeatTimer) {
       clearInterval(this.heartbeatTimer);
       this.heartbeatTimer = null;
+    }
+    if (this.autoRefreshTimer) {
+      clearInterval(this.autoRefreshTimer);
+      this.autoRefreshTimer = null;
     }
     if (this.mqttClient) {
       try {
@@ -547,14 +562,21 @@ class RealtimeSyncService {
   }
 
   /**
-   * לחיצה על כפתור "סנכרון חי": משדר מיד את כל הנתונים המקומיים (כולל אקסל שיובא) לכל המכשירים!
+   * כפתור "סנכרון חי" או רענון יזום: מושך (Pull) את המצב העדכני ביותר מהענן מבלי לדרוס עם זיכרון מקומי ישן!
    */
   public requestManualSync() {
-    if (!isDefaultDemoState(this.currentState)) {
-      this.publishStateToMqtt(this.currentState);
-    }
+    this.pullLatestFromCloud();
+  }
+
+  /**
+   * משיכה שקטה מהענן (פועלת אוטומטית כל 5 שניות, בעת פתיחת מסך הטלפון, ובלחיצה על "סנכרון חי")
+   */
+  private async pullLatestFromCloud() {
+    // 1. Re-subscribe on MQTT to receive the latest retained state packet from broker.emqx.io
     if (this.mqttClient && this.mqttClient.connected) {
       try {
+        this.mqttClient.subscribe(CLOUD_TOPIC_STATE, { qos: 1 });
+        this.mqttClient.subscribe(CLOUD_TOPIC_STATE_V3, { qos: 1 });
         this.mqttClient.publish(
           CLOUD_TOPIC_PING,
           JSON.stringify({ type: 'PING', clientId: this.clientId }),
@@ -564,10 +586,105 @@ class RealtimeSyncService {
         // ignore
       }
     }
+
+    // 2. Also check the HTTPS 443 Cloud Registry for any newer revision / Bytebin snapshot
+    try {
+      const regRes = await fetch(REGISTRY_OBJECT_URL, { cache: 'no-store' });
+      if (!regRes.ok) return;
+      const regJson = await regRes.json();
+      const regData = regJson?.data;
+      if (!regData || !regData.bytebinKey) return;
+
+      const cloudRev = Number(regData.revision || 0);
+      const localRev = Number(this.currentState.revision || 0);
+
+      if (
+        !this.hasReceivedInitialCloud ||
+        cloudRev > localRev ||
+        (cloudRev === localRev && regData.bytebinKey !== this.lastBytebinFetched)
+      ) {
+        const bRes = await fetch(`${BYTEBIN_GET_BASE}${regData.bytebinKey}`, {
+          cache: 'no-store'
+        });
+        if (!bRes.ok) return;
+        const fullData = await bRes.json();
+        if (fullData && Array.isArray(fullData.issues)) {
+          this.lastBytebinFetched = regData.bytebinKey;
+          const normalized = this.normalizePayload(fullData);
+          if (cloudRev > (normalized.revision || 0)) {
+            normalized.revision = cloudRev;
+          }
+          this.handleIncomingCloudState(normalized);
+        }
+      }
+    } catch {
+      // ignore network error during background poll
+    }
+  }
+
+  private handleIncomingCloudState(normalized: SyncStatePayload) {
+    const incomingRev = Number(normalized.revision || 0);
+    const localRev = Number(this.currentState.revision || 0);
+    const hasPendingLocalSave = localStorage.getItem('std_qa_pending_push') === '1';
+
+    // If this device had an interrupted save that hasn't finished pushing yet, and its revision is higher:
+    if (hasPendingLocalSave && localRev > incomingRev) {
+      this.hasReceivedInitialCloud = true;
+      this.publishStateToMqtt(this.currentState);
+      return;
+    }
+
+    // On initial page load/refresh: ALWAYS pull from cloud unless our revision is strictly newer from a pending save
+    // On subsequent checks: accept if incomingRev >= localRev
+    if (!this.hasReceivedInitialCloud || incomingRev >= localRev) {
+      const fp = this.computeFingerprint(normalized);
+      const isFirstLoad = !this.hasReceivedInitialCloud;
+      this.hasReceivedInitialCloud = true;
+      this.highestSeenRevision = Math.max(this.highestSeenRevision, incomingRev, localRev);
+
+      if (fp === this.lastAppliedFingerprint && !isFirstLoad) {
+        return;
+      }
+      this.lastAppliedFingerprint = fp;
+
+      const isRemote = Boolean(
+        !isFirstLoad && normalized.clientId && normalized.clientId !== this.clientId
+      );
+
+      this.currentState = normalized;
+      this.persistLocally(normalized);
+
+      this.updateStatus({
+        mode: 'live-server',
+        connected: true,
+        lastSyncAt: Date.now(),
+        lastEventText: normalized.lastAction
+          ? `${normalized.lastUpdatedBy || 'צוות'}: ${normalized.lastAction}`
+          : undefined
+      });
+      this.notifyState(isRemote);
+
+      // If payload had heavy screenshots offloaded to bytebinKey, fetch and restore them seamlessly
+      if (normalized.bytebinKey && normalized.bytebinKey !== this.lastBytebinFetched) {
+        this.lastBytebinFetched = normalized.bytebinKey;
+        fetch(`${BYTEBIN_GET_BASE}${normalized.bytebinKey}`)
+          .then((r) => (r.ok ? r.json() : null))
+          .then((fullData) => {
+            if (fullData && Array.isArray(fullData.issues)) {
+              const fullNorm = this.normalizePayload(fullData);
+              this.lastAppliedFingerprint = this.computeFingerprint(fullNorm);
+              this.currentState = fullNorm;
+              this.persistLocally(fullNorm);
+              this.notifyState(false);
+            }
+          })
+          .catch(() => {});
+      }
+    }
   }
 
   /**
-   * סנכרון ענן מובנה אוטומטי (פועל מיד גם ב-GitHub Pages וגם במחשב ללא תלות בשעון המכשיר!)
+   * סנכרון ענן מובנה אוטומטי + רענון מחזורי לפי זמן (כל 5 שניות)
    */
   public connectBuiltInCloudAndServer() {
     this.cleanupConnections();
@@ -578,11 +695,13 @@ class RealtimeSyncService {
       errorMessage: undefined
     });
 
-    // 1. Load cached state from localStorage and IndexedDB (supports large Excel imports)
+    // 1. Load cached state locally for instant display ONLY (NEVER push on page load/refresh!)
     const cached = localStorage.getItem('std_qa_fallback_cache');
     if (cached) {
       try {
-        this.currentState = this.normalizePayload(JSON.parse(cached));
+        const parsed = this.normalizePayload(JSON.parse(cached));
+        this.currentState = parsed;
+        this.highestSeenRevision = Math.max(this.highestSeenRevision, parsed.revision || 0);
         this.notifyState(false);
       } catch {
         // ignore
@@ -590,23 +709,28 @@ class RealtimeSyncService {
     }
 
     loadWorkspaceFromIndexedDB<SyncStatePayload>().then((idbState) => {
-      if (idbState && Array.isArray(idbState.issues)) {
+      if (idbState && Array.isArray(idbState.issues) && !this.hasReceivedInitialCloud) {
         const normIdb = this.normalizePayload(idbState);
-        if (
-          !this.hasReceivedInitialCloud ||
-          normIdb.issues.length > this.currentState.issues.length
-        ) {
+        if ((normIdb.revision || 0) >= (this.currentState.revision || 0)) {
           this.currentState = normIdb;
+          this.highestSeenRevision = Math.max(
+            this.highestSeenRevision,
+            normIdb.revision || 0
+          );
           this.notifyState(false);
-          // If IndexedDB had a larger state (e.g. Excel import), push it to cloud once connected
-          if (this.mqttClient && this.mqttClient.connected && !isDefaultDemoState(normIdb)) {
-            this.publishStateToMqtt(normIdb);
-          }
         }
       }
     });
 
-    // 2. Connect to built-in Cloud WebSocket Broker (wss://broker.emqx.io:8084/mqtt)
+    // 2. Immediately check HTTPS 443 Cloud Registry in parallel
+    this.pullLatestFromCloud();
+
+    // 3. Start Time-Based Auto-Refresh every 5 seconds in the background
+    this.autoRefreshTimer = setInterval(() => {
+      this.pullLatestFromCloud();
+    }, AUTO_REFRESH_INTERVAL_MS);
+
+    // 4. Connect to built-in Cloud WebSocket Broker (wss://broker.emqx.io:8084/mqtt)
     try {
       const mqttSessionId = `std_qa_${this.clientId}_${Math.random().toString(36).substring(2, 6)}`;
       const client = mqtt.connect('wss://broker.emqx.io:8084/mqtt', {
@@ -628,7 +752,6 @@ class RealtimeSyncService {
         if (!client.connected) return;
         this.activePeers.set(this.clientId, Date.now());
         const onMsg = JSON.stringify({ online: true, clientId: this.clientId });
-        // Publish to all presence topics so both v2 and v3 cached clients see us online!
         client.publish(`${CLOUD_TOPIC_PRESENCE}${this.clientId}`, onMsg, {
           qos: 0,
           retain: true
@@ -662,17 +785,20 @@ class RealtimeSyncService {
 
         publishPresenceOnline();
 
-        // Ping all currently connected browsers so everyone's online counter syncs immediately
         client.publish(
           CLOUD_TOPIC_PING,
           JSON.stringify({ type: 'PING', clientId: this.clientId }),
           { qos: 0, retain: false }
         );
+
+        // Only if this device had an interrupted user save ('std_qa_pending_push' === '1'), complete it now
+        if (localStorage.getItem('std_qa_pending_push') === '1') {
+          this.publishStateToMqtt(this.currentState);
+        }
       });
 
       this.heartbeatTimer = setInterval(() => {
         publishPresenceOnline();
-        // Prune using ONLY local receiver clock (100% immune to clock skew between PC & phone!)
         const nowLocal = Date.now();
         for (const [id, seenAtLocal] of this.activePeers.entries()) {
           if (id !== this.clientId && nowLocal - seenAtLocal > 70000) {
@@ -682,7 +808,7 @@ class RealtimeSyncService {
         this.updateStatus({
           onlineCount: Math.max(1, this.activePeers.size)
         });
-      }, 22000);
+      }, 20000);
 
       client.on('message', (topic, message) => {
         try {
@@ -692,52 +818,7 @@ class RealtimeSyncService {
           if (topic === CLOUD_TOPIC_STATE || topic === CLOUD_TOPIC_STATE_V3) {
             const parsed = JSON.parse(rawStr);
             const normalized = this.normalizePayload(parsed);
-            const isRemote = Boolean(normalized.clientId && normalized.clientId !== this.clientId);
-
-            // On initial connect retained message: if this computer has an unsynced Excel import
-            // (more issues locally than in the cloud), push the computer's fuller state to the cloud!
-            if (
-              !this.hasReceivedInitialCloud &&
-              !isDefaultDemoState(this.currentState) &&
-              this.currentState.issues.length > normalized.issues.length
-            ) {
-              this.hasReceivedInitialCloud = true;
-              this.publishStateToMqtt(this.currentState);
-              return;
-            }
-
-            this.hasReceivedInitialCloud = true;
-            this.currentState = normalized;
-            this.persistLocally(normalized);
-
-            this.updateStatus({
-              mode: 'live-server',
-              connected: true,
-              lastSyncAt: Date.now(),
-              lastEventText: normalized.lastAction
-                ? `${normalized.lastUpdatedBy || 'צוות'}: ${normalized.lastAction}`
-                : undefined
-            });
-            this.notifyState(isRemote);
-
-            // If payload had heavy screenshots offloaded to bytebinKey, fetch and restore them
-            if (
-              normalized.bytebinKey &&
-              normalized.bytebinKey !== this.lastBytebinFetched
-            ) {
-              this.lastBytebinFetched = normalized.bytebinKey;
-              fetch(`${BYTEBIN_GET_BASE}${normalized.bytebinKey}`)
-                .then((r) => (r.ok ? r.json() : null))
-                .then((fullData) => {
-                  if (fullData && Array.isArray(fullData.issues)) {
-                    const fullNorm = this.normalizePayload(fullData);
-                    this.currentState = fullNorm;
-                    this.persistLocally(fullNorm);
-                    this.notifyState(false);
-                  }
-                })
-                .catch(() => {});
-            }
+            this.handleIncomingCloudState(normalized);
           } else if (topic === CLOUD_TOPIC_PING) {
             const data = JSON.parse(rawStr);
             if (data && data.clientId) {
@@ -762,7 +843,6 @@ class RealtimeSyncService {
             if (!peerId) return;
 
             const data = JSON.parse(rawStr);
-            // Record using THIS device's Date.now() so clock differences between PC & Phone never break presence!
             if (data && data.online) {
               this.activePeers.set(peerId, Date.now());
             } else {
@@ -783,52 +863,70 @@ class RealtimeSyncService {
   }
 
   private async publishStateToMqtt(payload: SyncStatePayload) {
-    if (!this.mqttClient || !this.mqttClient.connected) return;
-
     try {
-      let jsonStr = JSON.stringify(payload);
+      const fullJsonStr = JSON.stringify(payload);
+      let bytebinKey = payload.bytebinKey || '';
 
-      // If state + screenshots + Excel rows exceeds 210KB, offload heavy base64 images to Bytebin
-      // so the MQTT packet stays < 210KB (with ALL Excel issues included!) and broker.emqx.io never drops it!
-      if (jsonStr.length > MAX_SAFE_MQTT_BYTES) {
-        let bytebinKey = payload.bytebinKey || '';
-        try {
-          const bRes = await fetch(BYTEBIN_POST_URL, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: jsonStr
-          });
-          if (bRes.ok) {
-            const bJson = await bRes.json();
-            if (bJson && bJson.key) {
-              bytebinKey = String(bJson.key);
-              this.lastBytebinFetched = bytebinKey;
-            }
+      // 1. Always upload a snapshot to Bytebin + HTTPS Registry so 5-second auto-refresh & large Excel files work 100%!
+      try {
+        const bRes = await fetch(BYTEBIN_POST_URL, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: fullJsonStr
+        });
+        if (bRes.ok) {
+          const bJson = await bRes.json();
+          if (bJson && bJson.key) {
+            bytebinKey = String(bJson.key);
+            this.lastBytebinFetched = bytebinKey;
+            fetch(REGISTRY_OBJECT_URL, {
+              method: 'PUT',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({
+                name: 'tzavman_qa_state_registry_v4',
+                data: {
+                  bytebinKey,
+                  revision: payload.revision || 1,
+                  updatedAt: payload.updatedAt || Date.now(),
+                  clientId: this.clientId,
+                  lastUpdatedBy: payload.lastUpdatedBy,
+                  lastAction: payload.lastAction
+                }
+              })
+            }).catch(() => {});
           }
-        } catch {
-          // ignore bytebin error
         }
-
-        const lightPayload: SyncStatePayload = {
-          ...payload,
-          bytebinKey: bytebinKey || undefined,
-          issues: payload.issues.map((iss) => ({
-            ...iss,
-            screenshots: [],
-            comments: (iss.comments || []).map((c) => ({ ...c, screenshot: undefined }))
-          }))
-        };
-        jsonStr = JSON.stringify(lightPayload);
+      } catch {
+        // ignore bytebin error
       }
 
-      this.mqttClient.publish(CLOUD_TOPIC_STATE, jsonStr, {
-        qos: 1,
-        retain: true
-      });
-      this.mqttClient.publish(CLOUD_TOPIC_STATE_V3, jsonStr, {
-        qos: 1,
-        retain: true
-      });
+      // 2. Publish to MQTT (if > 210KB, attach bytebinKey and strip inline base64 so MQTT never drops the packet)
+      if (this.mqttClient && this.mqttClient.connected) {
+        let mqttJsonStr = fullJsonStr;
+        if (mqttJsonStr.length > MAX_SAFE_MQTT_BYTES) {
+          const lightPayload: SyncStatePayload = {
+            ...payload,
+            bytebinKey: bytebinKey || undefined,
+            issues: payload.issues.map((iss) => ({
+              ...iss,
+              screenshots: [],
+              comments: (iss.comments || []).map((c) => ({ ...c, screenshot: undefined }))
+            }))
+          };
+          mqttJsonStr = JSON.stringify(lightPayload);
+        }
+
+        this.mqttClient.publish(CLOUD_TOPIC_STATE, mqttJsonStr, {
+          qos: 1,
+          retain: true
+        });
+        this.mqttClient.publish(CLOUD_TOPIC_STATE_V3, mqttJsonStr, {
+          qos: 1,
+          retain: true
+        });
+      }
+
+      localStorage.removeItem('std_qa_pending_push');
     } catch {
       // ignore
     }
@@ -913,6 +1011,10 @@ class RealtimeSyncService {
     actionSummary: string,
     actorName = 'חבר צוות'
   ) {
+    const nextRevision =
+      Math.max(this.currentState.revision || 0, this.highestSeenRevision) + 1;
+    this.highestSeenRevision = nextRevision;
+
     const payload: SyncStatePayload = {
       systems: nextState.systems,
       archivedSystems: nextState.archivedSystems ?? this.currentState.archivedSystems ?? [],
@@ -920,12 +1022,19 @@ class RealtimeSyncService {
       lastUpdatedBy: actorName,
       lastAction: actionSummary,
       updatedAt: Date.now(),
-      revision: (this.currentState.revision || 0) + 1,
+      revision: nextRevision,
       clientId: this.clientId
     };
 
+    try {
+      localStorage.setItem('std_qa_pending_push', '1');
+    } catch {
+      // ignore
+    }
+
     this.currentState = payload;
     this.hasReceivedInitialCloud = true;
+    this.lastAppliedFingerprint = this.computeFingerprint(payload);
     this.notifyState(false);
     this.persistLocally(payload);
 
@@ -945,6 +1054,7 @@ class RealtimeSyncService {
     ) {
       const workspaceDocRef = doc(this.firestore, 'std_workspaces', 'main_workspace');
       await setDoc(workspaceDocRef, payload);
+      localStorage.removeItem('std_qa_pending_push');
       return;
     }
 
@@ -952,10 +1062,11 @@ class RealtimeSyncService {
     if (this.activeFirebaseConfig && this.rtdb) {
       const stateRef = ref(this.rtdb, 'std_workspace');
       await set(stateRef, payload);
+      localStorage.removeItem('std_qa_pending_push');
       return;
     }
 
-    // 3. Publish to built-in Cloud WebSocket Broker (with automatic >210KB large Excel/screenshot handling)
+    // 3. Publish to MQTT + HTTPS 443 Cloud Registry
     await this.publishStateToMqtt(payload);
 
     // 4. Also push to local server if running locally

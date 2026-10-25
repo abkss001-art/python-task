@@ -958,8 +958,8 @@ export function App() {
         }}
         onManualSync={() => {
           syncService.requestManualSync();
-          setLiveToast('🔄 מבצע סנכרון מיידי מול הענן וכל המכשירים...');
-          setTimeout(() => setLiveToast(null), 3000);
+          setLiveToast('🔄 מושך נתונים עדכניים מהענן...');
+          setTimeout(() => setLiveToast(null), 2500);
         }}
         issues={issues}
         syncStatus={syncStatus}

@@ -1,4 +1,4 @@
-// Service Worker v5 - Force immediate update and cache cleanup
+// Service Worker v6 - Force immediate update and cache cleanup
 self.addEventListener('install', (event) => {
   self.skipWaiting();
 });
