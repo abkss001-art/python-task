@@ -294,7 +294,23 @@ export function App() {
 
     window.addEventListener('paste', handleBoardPaste);
     return () => window.removeEventListener('paste', handleBoardPaste);
-  });
+  }, [
+    authUser,
+    canCreateOrEdit,
+    isIssueModalOpen,
+    isFirebaseModalOpen,
+    lightboxData,
+    issueToDelete,
+    systemToRemove,
+    isArchiveModalOpen,
+    isInstallModalOpen,
+    isAdminReportOpen,
+    isAdminBackupOpen,
+    activeSystem,
+    systems,
+    issues,
+    formattedUserDisplay
+  ]);
 
   const handleLoginSuccess = (user: AuthenticatedUser) => {
     setAuthUser(user);

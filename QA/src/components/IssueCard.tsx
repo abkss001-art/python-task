@@ -246,6 +246,8 @@ export const IssueCard: React.FC<IssueCardProps> = ({
                   <img
                     src={src}
                     alt={`צילום מסך ${idx + 1}`}
+                    loading="lazy"
+                    decoding="async"
                     className="max-h-full max-w-full object-contain rounded-lg transition duration-200 group-hover/img:scale-[1.02]"
                   />
                   <div className="absolute inset-0 bg-slate-950/0 group-hover/img:bg-slate-950/30 transition flex items-center justify-center">
@@ -344,6 +346,8 @@ export const IssueCard: React.FC<IssueCardProps> = ({
                       <img
                         src={c.screenshot}
                         alt="צילום מסך בהערה"
+                        loading="lazy"
+                        decoding="async"
                         className="max-h-full max-w-full object-contain rounded"
                       />
                     </div>

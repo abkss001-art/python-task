@@ -1,4 +1,4 @@
-import React, { useState, useRef } from 'react';
+import React, { useMemo, useState, useRef } from 'react';
 import {
   ArrowUpDown,
   MessageSquare,
@@ -102,29 +102,31 @@ export const SmartTableView: React.FC<SmartTableViewProps> = ({
     }
   };
 
-  const sortedIssues = [...issues].sort((a, b) => {
-    let cmp = 0;
-    if (sortKey === 'testCaseId') {
-      const numA = parseFloat(a.testCaseId);
-      const numB = parseFloat(b.testCaseId);
-      if (!isNaN(numA) && !isNaN(numB)) {
-        cmp = numA - numB;
-      } else {
-        cmp = a.testCaseId.localeCompare(b.testCaseId, 'he');
+  const sortedIssues = useMemo(() => {
+    return [...issues].sort((a, b) => {
+      let cmp = 0;
+      if (sortKey === 'testCaseId') {
+        const numA = parseFloat(a.testCaseId);
+        const numB = parseFloat(b.testCaseId);
+        if (!isNaN(numA) && !isNaN(numB)) {
+          cmp = numA - numB;
+        } else {
+          cmp = a.testCaseId.localeCompare(b.testCaseId, 'he');
+        }
+      } else if (sortKey === 'platform') {
+        cmp = a.platform.localeCompare(b.platform, 'he');
+      } else if (sortKey === 'severity') {
+        const sevA = a.severity || 'בינונית';
+        const sevB = b.severity || 'בינונית';
+        cmp = SEVERITIES.indexOf(sevA) - SEVERITIES.indexOf(sevB);
+      } else if (sortKey === 'status') {
+        cmp = STATUSES.indexOf(a.status) - STATUSES.indexOf(b.status);
+      } else if (sortKey === 'updatedAt') {
+        cmp = b.updatedAt - a.updatedAt;
       }
-    } else if (sortKey === 'platform') {
-      cmp = a.platform.localeCompare(b.platform, 'he');
-    } else if (sortKey === 'severity') {
-      const sevA = a.severity || 'בינונית';
-      const sevB = b.severity || 'בינונית';
-      cmp = SEVERITIES.indexOf(sevA) - SEVERITIES.indexOf(sevB);
-    } else if (sortKey === 'status') {
-      cmp = STATUSES.indexOf(a.status) - STATUSES.indexOf(b.status);
-    } else if (sortKey === 'updatedAt') {
-      cmp = b.updatedAt - a.updatedAt;
-    }
-    return sortAsc ? cmp : -cmp;
-  });
+      return sortAsc ? cmp : -cmp;
+    });
+  }, [issues, sortKey, sortAsc]);
 
   const handleQuickCommentSubmit = (e: React.FormEvent, issue: StdIssue) => {
     e.preventDefault();
@@ -310,6 +312,8 @@ export const SmartTableView: React.FC<SmartTableViewProps> = ({
                               <img
                                 src={src}
                                 alt=""
+                                loading="lazy"
+                                decoding="async"
                                 className="max-w-full max-h-full object-contain"
                               />
                               <span className="absolute inset-0 bg-slate-900/40 opacity-0 group-hover/thumb:opacity-100 flex items-center justify-center transition">
@@ -485,6 +489,8 @@ export const SmartTableView: React.FC<SmartTableViewProps> = ({
                                         <img
                                           src={c.screenshot}
                                           alt="צילום בהערה"
+                                          loading="lazy"
+                                          decoding="async"
                                           className="max-h-22 w-auto object-contain rounded"
                                         />
                                       </button>

@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useMemo, useState } from 'react';
 import {
   Plus,
   Cloud,
@@ -174,19 +174,39 @@ export const Navbar: React.FC<NavbarProps> = ({
     }
   };
 
-  const getCountForSystem = (sys: string) => {
-    if (sys === 'ALL') {
-      return issues.filter((i) => !archivedSystems.includes(i.system)).length;
+  // O(N) memoized counter map for all systems so rendering 10+ system tabs is instant O(1)
+  const systemCounters = useMemo(() => {
+    const archivedSet = new Set(archivedSystems);
+    const totalBySys: Record<string, number> = {};
+    const openBySys: Record<string, number> = {};
+    let allTotal = 0;
+    let allOpen = 0;
+
+    for (const iss of issues) {
+      const sys = iss.system;
+      totalBySys[sys] = (totalBySys[sys] || 0) + 1;
+      if (iss.status === 'פתוח') {
+        openBySys[sys] = (openBySys[sys] || 0) + 1;
+      }
+      if (!archivedSet.has(sys)) {
+        allTotal++;
+        if (iss.status === 'פתוח') {
+          allOpen++;
+        }
+      }
     }
-    return issues.filter((i) => i.system === sys).length;
+
+    return { totalBySys, openBySys, allTotal, allOpen };
+  }, [issues, archivedSystems]);
+
+  const getCountForSystem = (sys: string) => {
+    if (sys === 'ALL') return systemCounters.allTotal;
+    return systemCounters.totalBySys[sys] || 0;
   };
 
   const getOpenCountForSystem = (sys: string) => {
-    const list =
-      sys === 'ALL'
-        ? issues.filter((i) => !archivedSystems.includes(i.system))
-        : issues.filter((i) => i.system === sys);
-    return list.filter((i) => i.status === 'פתוח').length;
+    if (sys === 'ALL') return systemCounters.allOpen;
+    return systemCounters.openBySys[sys] || 0;
   };
 
   const isViewingArchivedSystem = archivedSystems.includes(activeSystem);
