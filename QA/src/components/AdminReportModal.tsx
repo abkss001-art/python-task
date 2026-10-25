@@ -121,9 +121,20 @@ export const AdminReportModal: React.FC<AdminReportModalProps> = ({
     if (scopedIssues.length === 0) {
       return fmt(Date.now());
     }
-    const timestamps = scopedIssues.map((i) => i.createdAt || Date.now());
-    const minDate = Math.min(...timestamps);
-    const maxDate = Math.max(...scopedIssues.map((i) => i.updatedAt || Date.now()));
+    const minDate = scopedIssues.reduce(
+      (min, i) => {
+        const ts = i.createdAt || Date.now();
+        return ts < min ? ts : min;
+      },
+      scopedIssues[0].createdAt || Date.now()
+    );
+    const maxDate = scopedIssues.reduce(
+      (max, i) => {
+        const ts = i.updatedAt || Date.now();
+        return ts > max ? ts : max;
+      },
+      scopedIssues[0].updatedAt || Date.now()
+    );
     return `${fmt(minDate)} - ${fmt(maxDate)}`;
   }, [scopedIssues]);
 

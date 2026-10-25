@@ -282,71 +282,159 @@ export const AdminBackupModal: React.FC<AdminBackupModalProps> = ({
     e.target.value = '';
   };
 
-  const parseCsvLine = (line: string): string[] => {
+  /**
+   * מנתח CSV / TSV מלא לפי תקן RFC-4180 התומך בירידות שורה (Alt+Enter באקסל) בתוך תאים ממוסגרים במירכאות
+   */
+  const parseFullCsvRows = (rawText: string): string[][] => {
+    const firstNewlineIdx = rawText.search(/\r?\n/);
+    const firstLine = firstNewlineIdx !== -1 ? rawText.slice(0, firstNewlineIdx) : rawText;
+    const tabCount = (firstLine.match(/\t/g) || []).length;
+    const semiCount = (firstLine.match(/;/g) || []).length;
+    const commaCount = (firstLine.match(/,/g) || []).length;
+
     const delimiter =
-      line.indexOf('\t') !== -1 && line.indexOf(',') === -1
+      tabCount > commaCount && tabCount >= semiCount
         ? '\t'
-        : line.indexOf(';') !== -1 && line.indexOf(',') === -1
+        : semiCount > commaCount
         ? ';'
         : ',';
-    const result: string[] = [];
-    let current = '';
+
+    const rows: string[][] = [];
+    let currentRow: string[] = [];
+    let currentCell = '';
     let inQuotes = false;
-    for (let i = 0; i < line.length; i++) {
-      const ch = line[i];
+
+    for (let i = 0; i < rawText.length; i++) {
+      const ch = rawText[i];
+
       if (ch === '"') {
-        if (inQuotes && line[i + 1] === '"') {
-          current += '"';
+        if (inQuotes && rawText[i + 1] === '"') {
+          currentCell += '"';
           i++;
         } else {
           inQuotes = !inQuotes;
         }
       } else if (ch === delimiter && !inQuotes) {
-        result.push(current.trim());
-        current = '';
+        currentRow.push(currentCell.trim());
+        currentCell = '';
+      } else if ((ch === '\n' || ch === '\r') && !inQuotes) {
+        if (ch === '\r' && rawText[i + 1] === '\n') {
+          i++;
+        }
+        currentRow.push(currentCell.trim());
+        if (currentRow.some((cell) => cell.length > 0)) {
+          rows.push(currentRow);
+        }
+        currentRow = [];
+        currentCell = '';
       } else {
-        current += ch;
+        currentCell += ch;
       }
     }
-    result.push(current.trim());
-    return result;
+
+    currentRow.push(currentCell.trim());
+    if (currentRow.some((cell) => cell.length > 0)) {
+      rows.push(currentRow);
+    }
+
+    return rows;
   };
 
   const handleUploadCsvFile = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
+
+    if (/\.xlsx?$/i.test(file.name)) {
+      setStatusMsg({
+        type: 'error',
+        text: 'קובץ זה שמור בפורמט בינארי (.xlsx). באקסל לחץ על "שמור בשם" (Save As) ובחר "CSV UTF-8 (מופרד בפסיקים)" ואז העלה אותו לכאן.'
+      });
+      e.target.value = '';
+      return;
+    }
+
     const reader = new FileReader();
     reader.onload = () => {
       try {
-        const text = String(reader.result || '').replace(/^\uFEFF/, '');
-        const lines = text
-          .split(/\r?\n/)
-          .map((l) => l.trim())
-          .filter(Boolean);
+        const buffer = reader.result as ArrayBuffer;
+        let text = '';
+        try {
+          // ניסיון ראשון: פענוח UTF-8 תקני
+          const utf8Decoder = new TextDecoder('utf-8', { fatal: true });
+          text = utf8Decoder.decode(buffer);
+        } catch {
+          // גיבוי אוטומטי לקובצי אקסל בעברית ב-Windows (קידוד Windows-1255 / ANSI) למניעת ג'יבריש!
+          const hebDecoder = new TextDecoder('windows-1255');
+          text = hebDecoder.decode(buffer);
+        }
 
-        if (lines.length < 2) {
+        text = text.replace(/^\uFEFF/, '');
+        const rows = parseFullCsvRows(text);
+
+        if (rows.length < 2) {
           throw new Error('קובץ ה-CSV ריק או שאינו מכיל שורות נתונים');
         }
+
+        const headerCols = rows[0].map((h) => h.trim().toLowerCase());
+        const findColIdx = (keywords: string[]) =>
+          headerCols.findIndex((h) => keywords.some((kw) => h.includes(kw)));
+
+        const sysCol = findColIdx(['מערכת', 'system']);
+        const idCol = findColIdx(['מזהה', 'תסריט', 'מספר', 'id', 'test']);
+        const platCol = findColIdx(['פלטפורמה', 'מכשיר', 'platform']);
+        const sevCol = findColIdx(['חומרה', 'עדיפות', 'severity', 'priority']);
+        const subjCol = findColIdx(['נושא', 'כותרת', 'שם תסריט', 'subject', 'title']);
+        const descCol = findColIdx(['מהות', 'תיאור', 'פירוט', 'שגיאה', 'description', 'details']);
+        const statusCol = findColIdx(['סטטוס', 'מצב', 'status']);
+
+        const hasRecognizedHeaders =
+          subjCol !== -1 || descCol !== -1 || idCol !== -1 || sysCol !== -1;
 
         const targetSys = activeSystem === 'ALL' ? systems[0] || 'CARGO' : activeSystem;
         const imported: StdIssue[] = [];
 
-        for (let idx = 1; idx < lines.length; idx++) {
-          const cols = parseCsvLine(lines[idx]);
+        for (let idx = 1; idx < rows.length; idx++) {
+          const cols = rows[idx];
           if (cols.length < 2) continue;
 
-          const isExportFormat = cols.length >= 6;
-          const sys = isExportFormat && cols[0] ? cols[0] : targetSys;
-          const testCaseId = isExportFormat ? cols[1] || String(idx) : cols[0] || String(idx);
-          const rawPlat = isExportFormat ? cols[2] : cols[3] || 'מחשב';
-          const subject = isExportFormat ? cols[3] : cols[1] || `תסריט בדיקה #${testCaseId}`;
-          const description = isExportFormat ? cols[4] : cols[2] || subject;
-          const rawStatus = isExportFormat ? cols[5] : 'פתוח';
+          let sys = targetSys;
+          let testCaseId = String(idx);
+          let rawPlat = 'מחשב';
+          let rawSev = 'בינונית';
+          let subject = '';
+          let description = '';
+          let rawStatus = 'פתוח';
 
+          if (hasRecognizedHeaders) {
+            if (sysCol !== -1 && cols[sysCol]) sys = cols[sysCol];
+            if (idCol !== -1 && cols[idCol]) testCaseId = cols[idCol];
+            if (platCol !== -1 && cols[platCol]) rawPlat = cols[platCol];
+            if (sevCol !== -1 && cols[sevCol]) rawSev = cols[sevCol];
+            if (subjCol !== -1 && cols[subjCol]) subject = cols[subjCol];
+            if (descCol !== -1 && cols[descCol]) description = cols[descCol];
+            if (statusCol !== -1 && cols[statusCol]) rawStatus = cols[statusCol];
+
+            if (!subject && description) subject = description.slice(0, 80);
+            if (!description && subject) description = subject;
+            if (!subject) subject = `תסריט בדיקה #${testCaseId}`;
+          } else {
+            const isExportFormat = cols.length >= 6;
+            sys = isExportFormat && cols[0] ? cols[0] : targetSys;
+            testCaseId = isExportFormat ? cols[1] || String(idx) : cols[0] || String(idx);
+            rawPlat = isExportFormat ? cols[2] : cols[3] || 'מחשב';
+            subject = isExportFormat ? cols[3] : cols[1] || `תסריט בדיקה #${testCaseId}`;
+            description = isExportFormat ? cols[4] : cols[2] || subject;
+            rawStatus = isExportFormat ? cols[5] : 'פתוח';
+          }
+
+          const normPlat = rawPlat.trim().toLowerCase();
           const platform: StdPlatform =
-            rawPlat === 'IOS' || rawPlat === 'אנדרואיד' || rawPlat === 'מחשב'
-              ? rawPlat
+            normPlat === 'ios' || rawPlat.includes('אייפון')
+              ? 'IOS'
+              : rawPlat.includes('אנדרואיד') || normPlat === 'android'
+              ? 'אנדרואיד'
               : 'מחשב';
+
           const status: StdStatus =
             rawStatus === 'פתוח' ||
             rawStatus === 'בטיפול' ||
@@ -354,16 +442,23 @@ export const AdminBackupModal: React.FC<AdminBackupModalProps> = ({
             rawStatus === 'נבדק תקין'
               ? rawStatus
               : 'פתוח';
-          const severity: StdSeverity = 'בינונית';
+
+          const severity: StdSeverity =
+            rawSev === 'קריטית' ||
+            rawSev === 'גבוהה' ||
+            rawSev === 'בינונית' ||
+            rawSev === 'נמוכה'
+              ? rawSev
+              : 'בינונית';
 
           imported.push({
-            id: `std-${Date.now()}-${idx}-${Math.random().toString(36).substring(2, 5)}`,
-            system: sys,
-            testCaseId,
+            id: `std-${Date.now()}-${idx}-${Math.random().toString(36).substring(2, 6)}`,
+            system: sys.trim() || targetSys,
+            testCaseId: testCaseId.trim() || String(idx),
             platform,
             severity,
-            subject,
-            description,
+            subject: subject.trim(),
+            description: description.trim() || subject.trim(),
             status,
             screenshots: [],
             comments: [],
@@ -388,7 +483,7 @@ export const AdminBackupModal: React.FC<AdminBackupModalProps> = ({
         onImportIssues(imported);
         setStatusMsg({
           type: 'success',
-          text: `יובאו בהצלחה ${imported.length} תסריטים / תקלות וסונכרנו לכל הצוות!`
+          text: `יובאו בהצלחה ${imported.length} תסריטים / תקלות (קידוד עברית זוהה אוטומטית) וסונכרנו לכל הצוות!`
         });
       } catch (err: any) {
         setStatusMsg({
@@ -397,7 +492,7 @@ export const AdminBackupModal: React.FC<AdminBackupModalProps> = ({
         });
       }
     };
-    reader.readAsText(file, 'UTF-8');
+    reader.readAsArrayBuffer(file);
     e.target.value = '';
   };
 

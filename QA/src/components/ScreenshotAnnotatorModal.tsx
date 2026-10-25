@@ -39,20 +39,47 @@ export const ScreenshotAnnotatorModal: React.FC<ScreenshotAnnotatorModalProps> =
   const [startPos, setStartPos] = useState<{ x: number; y: number }>({ x: 0, y: 0 });
   const snapshotBeforeDrag = useRef<ImageData | null>(null);
 
+  const [corsTainted, setCorsTainted] = useState(false);
+
   useEffect(() => {
     const canvas = canvasRef.current;
     if (!canvas) return;
     const ctx = canvas.getContext('2d');
     if (!ctx) return;
 
+    let didFallback = false;
     const img = new Image();
+    if (!imageSrc.startsWith('data:')) {
+      img.crossOrigin = 'anonymous';
+    }
+
     img.onload = () => {
-      canvas.width = img.width;
-      canvas.height = img.height;
+      canvas.width = img.width || 1280;
+      canvas.height = img.height || 720;
       ctx.drawImage(img, 0, 0);
-      const initial = ctx.getImageData(0, 0, canvas.width, canvas.height);
-      setHistory([initial]);
+      try {
+        const initial = ctx.getImageData(0, 0, canvas.width, canvas.height);
+        setHistory([initial]);
+        setCorsTainted(false);
+      } catch {
+        setCorsTainted(true);
+      }
     };
+
+    img.onerror = () => {
+      if (!didFallback && img.crossOrigin) {
+        didFallback = true;
+        const fallbackImg = new Image();
+        fallbackImg.onload = () => {
+          canvas.width = fallbackImg.width || 1280;
+          canvas.height = fallbackImg.height || 720;
+          ctx.drawImage(fallbackImg, 0, 0);
+          setCorsTainted(true);
+        };
+        fallbackImg.src = imageSrc;
+      }
+    };
+
     img.src = imageSrc;
   }, [imageSrc]);
 
@@ -78,7 +105,11 @@ export const ScreenshotAnnotatorModal: React.FC<ScreenshotAnnotatorModalProps> =
     const coords = getCanvasCoords(e);
     setStartPos(coords);
     setIsDrawing(true);
-    snapshotBeforeDrag.current = ctx.getImageData(0, 0, canvas.width, canvas.height);
+    try {
+      snapshotBeforeDrag.current = ctx.getImageData(0, 0, canvas.width, canvas.height);
+    } catch {
+      snapshotBeforeDrag.current = null;
+    }
 
     if (tool === 'pen') {
       ctx.beginPath();
@@ -184,8 +215,13 @@ export const ScreenshotAnnotatorModal: React.FC<ScreenshotAnnotatorModalProps> =
     const ctx = canvas.getContext('2d');
     if (!ctx) return;
 
-    const nextSnap = ctx.getImageData(0, 0, canvas.width, canvas.height);
-    setHistory((prev) => [...prev, nextSnap]);
+    try {
+      const nextSnap = ctx.getImageData(0, 0, canvas.width, canvas.height);
+      // Cap history at 10 snapshots (initial + last 9 strokes) to prevent mobile RAM exhaustion
+      setHistory((prev) => (prev.length >= 10 ? [prev[0], ...prev.slice(-8), nextSnap] : [...prev, nextSnap]));
+    } catch {
+      // ignore if canvas is tainted
+    }
   };
 
   const handleUndo = () => {
@@ -216,11 +252,19 @@ export const ScreenshotAnnotatorModal: React.FC<ScreenshotAnnotatorModalProps> =
   const handleSaveAnnotated = () => {
     const canvas = canvasRef.current;
     if (!canvas) return;
-    let out = canvas.toDataURL('image/webp', 0.88);
-    if (out.length > 750_000) {
-      out = canvas.toDataURL('image/jpeg', 0.82);
+    if (corsTainted) {
+      onSave(imageSrc);
+      return;
     }
-    onSave(out);
+    try {
+      let out = canvas.toDataURL('image/webp', 0.88);
+      if (out.length > 750_000) {
+        out = canvas.toDataURL('image/jpeg', 0.82);
+      }
+      onSave(out);
+    } catch {
+      onSave(imageSrc);
+    }
   };
 
   return (

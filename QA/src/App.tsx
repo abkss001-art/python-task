@@ -236,7 +236,9 @@ export function App() {
         issueToDelete ||
         systemToRemove ||
         isArchiveModalOpen ||
-        isInstallModalOpen
+        isInstallModalOpen ||
+        isAdminReportOpen ||
+        isAdminBackupOpen
       ) {
         return;
       }
@@ -435,13 +437,14 @@ export function App() {
     return Array.from(set).sort((a, b) => Number(a) - Number(b));
   }, [systemIssues]);
 
-  // Suggested next Test Case ID
+  // Suggested next Test Case ID (safe reduce loop for large Excel datasets)
   const getSuggestedTestCaseId = () => {
     const nums = systemIssues
       .map((i) => parseInt(i.testCaseId, 10))
       .filter((n) => !isNaN(n));
     if (nums.length === 0) return '10';
-    return String(Math.max(...nums) + 1);
+    const maxId = nums.reduce((max, n) => (n > max ? n : max), 0);
+    return String(maxId + 1);
   };
 
   // Filtered Issues
@@ -666,10 +669,20 @@ export function App() {
       'נושא התקלה',
       'מהות השגיאה',
       'סטטוס',
+      'חומרה',
       'מדווח',
       'מספר הערות',
       'הערה אחרונה'
     ];
+
+    const sanitizeCsvCell = (rawVal: unknown): string => {
+      let str = String(rawVal ?? '');
+      // Prevent Excel Formula Injection (#NAME? errors) when text starts with =, +, -, @
+      if (/^[=+\-@]/.test(str)) {
+        str = `'${str}`;
+      }
+      return `"${str.replace(/"/g, '""')}"`;
+    };
 
     const rows = filteredIssues.map((i) => {
       const lastComment =
@@ -683,10 +696,11 @@ export function App() {
         i.subject,
         i.description,
         i.status,
+        i.severity || 'בינונית',
         i.createdBy,
         String(i.comments.length),
         lastComment
-      ].map((val) => `"${String(val).replace(/"/g, '""')}"`);
+      ].map(sanitizeCsvCell);
     });
 
     const csvContent =
