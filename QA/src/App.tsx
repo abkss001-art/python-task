@@ -22,6 +22,7 @@ import { AdminBackupModal } from './components/AdminBackupModal';
 import { AdminTeamModal } from './components/AdminTeamModal';
 import { AdminSecurityModal } from './components/AdminSecurityModal';
 import { AdminSystemManageModal } from './components/AdminSystemManageModal';
+import { AdminToolsModal } from './components/AdminToolsModal';
 import { LoginScreen, AuthenticatedUser } from './components/LoginScreen';
 import {
   TeamMember,
@@ -150,6 +151,7 @@ export function App() {
   const [isAdminBackupOpen, setIsAdminBackupOpen] = useState<boolean>(false);
   const [isTeamModalOpen, setIsTeamModalOpen] = useState<boolean>(false);
   const [isAdminSecurityOpen, setIsAdminSecurityOpen] = useState<boolean>(false);
+  const [isAdminToolsOpen, setIsAdminToolsOpen] = useState<boolean>(false);
   const [teamMembers, setTeamMembers] = useState<TeamMember[]>(() => getStoredTeamMembers());
 
   // Live Notification Toast & Highlight
@@ -272,6 +274,7 @@ export function App() {
         isAdminBackupOpen ||
         isTeamModalOpen ||
         isAdminSecurityOpen ||
+        isAdminToolsOpen ||
         systemToManage
       ) {
         return;
@@ -323,6 +326,7 @@ export function App() {
     isAdminBackupOpen,
     isTeamModalOpen,
     isAdminSecurityOpen,
+    isAdminToolsOpen,
     systemToManage,
     activeSystem,
     systems,
@@ -1119,6 +1123,9 @@ export function App() {
         onOpenSecurityModal={() => {
           if (isAdmin) setIsAdminSecurityOpen(true);
         }}
+        onOpenAdminToolsModal={() => {
+          if (isAdmin) setIsAdminToolsOpen(true);
+        }}
         onManualSync={() => {
           syncService.requestManualSync();
           setLiveToast('🔄 מושך נתונים עדכניים מהענן...');
@@ -1586,6 +1593,20 @@ export function App() {
           teamMembers={teamMembers}
           onSaveTeamMembers={handleSaveTeamMembers}
           onClose={() => setIsTeamModalOpen(false)}
+        />
+      )}
+
+      {/* Admin Central Tools Hub Modal (Admin Only) */}
+      {isAdminToolsOpen && isAdmin && (
+        <AdminToolsModal
+          archivedCount={archivedSystems.length}
+          onOpenReport={() => setIsAdminReportOpen(true)}
+          onOpenBackup={() => setIsAdminBackupOpen(true)}
+          onOpenTeam={() => setIsTeamModalOpen(true)}
+          onOpenCloud={() => setIsFirebaseModalOpen(true)}
+          onOpenSecurity={() => setIsAdminSecurityOpen(true)}
+          onOpenArchive={() => setIsArchiveModalOpen(true)}
+          onClose={() => setIsAdminToolsOpen(false)}
         />
       )}
 

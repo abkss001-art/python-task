@@ -39,6 +39,7 @@ interface NavbarProps {
   onOpenAdminBackup?: () => void;
   onOpenTeamModal?: () => void;
   onOpenSecurityModal?: () => void;
+  onOpenAdminToolsModal?: () => void;
   onManualSync?: () => void;
   issues: StdIssue[];
   syncStatus: SyncStatusInfo;
@@ -139,6 +140,7 @@ export const Navbar: React.FC<NavbarProps> = ({
   onOpenAdminBackup,
   onOpenTeamModal,
   onOpenSecurityModal,
+  onOpenAdminToolsModal,
   onManualSync,
   issues,
   syncStatus,
@@ -155,22 +157,6 @@ export const Navbar: React.FC<NavbarProps> = ({
   const [isAddingSystem, setIsAddingSystem] = useState(false);
   const [newSystemName, setNewSystemName] = useState('');
   const [isSyncSpinning, setIsSyncSpinning] = useState(false);
-  const [isAdminMenuOpen, setIsAdminMenuOpen] = useState(false);
-  const adminMenuRef = useRef<HTMLDivElement | null>(null);
-
-  useEffect(() => {
-    const handleClickOutside = (e: MouseEvent) => {
-      if (adminMenuRef.current && !adminMenuRef.current.contains(e.target as Node)) {
-        setIsAdminMenuOpen(false);
-      }
-    };
-    if (isAdminMenuOpen) {
-      document.addEventListener('mousedown', handleClickOutside);
-    }
-    return () => {
-      document.removeEventListener('mousedown', handleClickOutside);
-    };
-  }, [isAdminMenuOpen]);
 
   const handleCreateSystem = (e: React.FormEvent) => {
     e.preventDefault();
@@ -333,189 +319,20 @@ export const Navbar: React.FC<NavbarProps> = ({
                 </button>
               )}
 
-              {/* Admin Tools Dropdown Menu (Consolidates Progress Report, Backup, Team, Cloud, Security & Archive) */}
+              {/* Admin Tools Button (Opens Centered Admin Tools Modal) */}
               {isAdmin && (
-                <div className="relative shrink-0" ref={adminMenuRef}>
-                  <button
-                    type="button"
-                    onClick={() => setIsAdminMenuOpen((prev) => !prev)}
-                    className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl border text-[11px] sm:text-xs font-extrabold transition cursor-pointer shrink-0 shadow-xs ${
-                      isAdminMenuOpen
-                        ? 'bg-indigo-600 text-white border-indigo-600 shadow-indigo-200'
-                        : 'bg-white hover:bg-slate-50 text-slate-800 border-slate-300 hover:border-indigo-400'
-                    }`}
-                    title="תפריט כלי ניהול מערכת מרוכז"
-                  >
-                    <MoreHorizontal className={`w-4 h-4 ${isAdminMenuOpen ? 'text-white' : 'text-indigo-600'}`} />
-                    <span>כלי מנהל</span>
-                    {archivedSystems.length > 0 && (
-                      <span className="w-2 h-2 rounded-full bg-amber-500" title="יש מערכות בארכיון" />
-                    )}
-                    <ChevronDown
-                      className={`w-3.5 h-3.5 transition-transform duration-200 ${
-                        isAdminMenuOpen ? 'rotate-180' : ''
-                      }`}
-                    />
-                  </button>
-
-                  {isAdminMenuOpen && (
-                    <div
-                      className="absolute left-0 sm:right-auto sm:left-0 top-full mt-2 w-72 sm:w-80 bg-white rounded-2xl shadow-2xl border border-slate-200/90 py-2 z-50 animate-in fade-in slide-in-from-top-2 duration-150 divide-y divide-slate-100"
-                      dir="rtl"
-                    >
-                      <div className="px-4 py-2 bg-gradient-to-l from-slate-50 to-indigo-50/50 flex items-center justify-between">
-                        <span className="text-[11px] font-black text-slate-800 flex items-center gap-1.5">
-                          <SlidersHorizontal className="w-3.5 h-3.5 text-indigo-600" />
-                          <span>מרכז כלי ניהול ושליטה</span>
-                        </span>
-                        <span className="text-[10px] font-extrabold text-indigo-700 bg-indigo-100/70 px-2 py-0.5 rounded-md">
-                          מנהל
-                        </span>
-                      </div>
-
-                      <div className="p-1.5 space-y-1">
-                        {/* 1. Progress Report */}
-                        <button
-                          type="button"
-                          onClick={() => {
-                            setIsAdminMenuOpen(false);
-                            onOpenAdminReport?.();
-                          }}
-                          className="w-full flex items-center gap-3 p-2.5 rounded-xl hover:bg-indigo-50/70 text-right transition cursor-pointer group"
-                        >
-                          <div className="w-8 h-8 rounded-xl bg-gradient-to-tr from-indigo-600 to-blue-600 text-white flex items-center justify-center shrink-0 shadow-xs">
-                            <BarChart3 className="w-4 h-4" />
-                          </div>
-                          <div className="flex-1 min-w-0">
-                            <div className="text-xs font-extrabold text-slate-900 group-hover:text-indigo-700">
-                              דוח התקדמות מנהלים
-                            </div>
-                            <div className="text-[10px] text-slate-500 truncate">
-                              סטטיסטיקות, גרפים וסיכום כלל המערכות
-                            </div>
-                          </div>
-                        </button>
-
-                        {/* 2. Backup & Excel */}
-                        <button
-                          type="button"
-                          onClick={() => {
-                            setIsAdminMenuOpen(false);
-                            onOpenAdminBackup?.();
-                          }}
-                          className="w-full flex items-center gap-3 p-2.5 rounded-xl hover:bg-emerald-50/70 text-right transition cursor-pointer group"
-                        >
-                          <div className="w-8 h-8 rounded-xl bg-emerald-100 text-emerald-700 flex items-center justify-center shrink-0 border border-emerald-200">
-                            <DatabaseBackup className="w-4 h-4 text-emerald-600" />
-                          </div>
-                          <div className="flex-1 min-w-0">
-                            <div className="text-xs font-extrabold text-slate-900 group-hover:text-emerald-700">
-                              דרייב וגיבוי נתונים (5TB)
-                            </div>
-                            <div className="text-[10px] text-slate-500 truncate">
-                              Google Drive, ייבוא וייצוא Excel ו-CSV
-                            </div>
-                          </div>
-                        </button>
-
-                        {/* 3. Team Management */}
-                        <button
-                          type="button"
-                          onClick={() => {
-                            setIsAdminMenuOpen(false);
-                            onOpenTeamModal?.();
-                          }}
-                          className="w-full flex items-center gap-3 p-2.5 rounded-xl hover:bg-violet-50/70 text-right transition cursor-pointer group"
-                        >
-                          <div className="w-8 h-8 rounded-xl bg-violet-100 text-violet-700 flex items-center justify-center shrink-0 border border-violet-200">
-                            <Users className="w-4 h-4 text-violet-600" />
-                          </div>
-                          <div className="flex-1 min-w-0">
-                            <div className="text-xs font-extrabold text-slate-900 group-hover:text-violet-700">
-                              ניהול צוות והרשאות
-                            </div>
-                            <div className="text-[10px] text-slate-500 truncate">
-                              הוספה והסרה של בודקים, מפתחים ומנהלים
-                            </div>
-                          </div>
-                        </button>
-
-                        {/* 4. Cloud Settings */}
-                        <button
-                          type="button"
-                          onClick={() => {
-                            setIsAdminMenuOpen(false);
-                            onOpenFirebaseModal();
-                          }}
-                          className="w-full flex items-center gap-3 p-2.5 rounded-xl hover:bg-indigo-50/70 text-right transition cursor-pointer group"
-                        >
-                          <div className="w-8 h-8 rounded-xl bg-indigo-100 text-indigo-700 flex items-center justify-center shrink-0 border border-indigo-200">
-                            <Settings className="w-4 h-4 text-indigo-600" />
-                          </div>
-                          <div className="flex-1 min-w-0">
-                            <div className="text-xs font-extrabold text-slate-900 group-hover:text-indigo-700">
-                              הגדרות ענן וחיבור (Firebase)
-                            </div>
-                            <div className="text-[10px] text-slate-500 truncate">
-                              הגדרת שרת בזמן אמת וסנכרון ענן
-                            </div>
-                          </div>
-                        </button>
-
-                        {/* 5. Security & Passwords */}
-                        <button
-                          type="button"
-                          onClick={() => {
-                            setIsAdminMenuOpen(false);
-                            onOpenSecurityModal?.();
-                          }}
-                          className="w-full flex items-center gap-3 p-2.5 rounded-xl hover:bg-amber-50/70 text-right transition cursor-pointer group"
-                        >
-                          <div className="w-8 h-8 rounded-xl bg-amber-100 text-amber-700 flex items-center justify-center shrink-0 border border-amber-200">
-                            <KeyRound className="w-4 h-4 text-amber-600" />
-                          </div>
-                          <div className="flex-1 min-w-0">
-                            <div className="text-xs font-extrabold text-slate-900 group-hover:text-amber-700">
-                              אבטחה, קודי כניסה ומנהל-על
-                            </div>
-                            <div className="text-[10px] text-slate-500 truncate">
-                              מוגן בקוד-על (211662457)
-                            </div>
-                          </div>
-                        </button>
-
-                        {/* 6. Systems Archive */}
-                        <button
-                          type="button"
-                          onClick={() => {
-                            setIsAdminMenuOpen(false);
-                            onOpenArchiveModal?.();
-                          }}
-                          className="w-full flex items-center gap-3 p-2.5 rounded-xl hover:bg-orange-50/70 text-right transition cursor-pointer group"
-                        >
-                          <div className="w-8 h-8 rounded-xl bg-orange-100 text-orange-700 flex items-center justify-center shrink-0 border border-orange-200">
-                            <Archive className="w-4 h-4 text-orange-600" />
-                          </div>
-                          <div className="flex-1 min-w-0">
-                            <div className="flex items-center justify-between">
-                              <span className="text-xs font-extrabold text-slate-900 group-hover:text-orange-700">
-                                ארכיון מערכות
-                              </span>
-                              {archivedSystems.length > 0 && (
-                                <span className="text-[10px] font-extrabold text-amber-800 bg-amber-100 px-1.5 py-0.2 rounded-md">
-                                  {archivedSystems.length}
-                                </span>
-                              )}
-                            </div>
-                            <div className="text-[10px] text-slate-500 truncate">
-                              צפייה ושחזור מערכות ותסריטים מהארכיון
-                            </div>
-                          </div>
-                        </button>
-                      </div>
-                    </div>
+                <button
+                  type="button"
+                  onClick={onOpenAdminToolsModal}
+                  className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl border border-slate-300 bg-white hover:bg-indigo-50 hover:border-indigo-400 text-slate-800 hover:text-indigo-700 text-[11px] sm:text-xs font-extrabold transition cursor-pointer shrink-0 shadow-xs"
+                  title="פתיחת חלון כלי ניהול ושליטה (דוח, גיבוי, צוות, ענן, אבטחה וארכיון)"
+                >
+                  <MoreHorizontal className="w-4 h-4 text-indigo-600" />
+                  <span>כלי מנהל</span>
+                  {archivedSystems.length > 0 && (
+                    <span className="w-2 h-2 rounded-full bg-amber-500" title="יש מערכות בארכיון" />
                   )}
-                </div>
+                </button>
               )}
             </div>
 
