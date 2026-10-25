@@ -38,6 +38,11 @@ import {
   setSavedGoogleDriveUrl,
   uploadImageToGoogleDrive
 } from './googleDriveService';
+import {
+  decodeProtectedUrl,
+  encodeProtectedUrl,
+  sanitizeImageUrl
+} from '../utils/securityUtils';
 
 export interface SyncStatePayload {
   systems: string[];
@@ -1075,8 +1080,12 @@ class RealtimeSyncService {
 
   private async publishStateToMqtt(payload: SyncStatePayload) {
     try {
-      const fullJsonStr = JSON.stringify(payload);
-      let bytebinKey = payload.bytebinKey || '';
+      const protectedPayload: SyncStatePayload = {
+        ...payload,
+        googleDriveUrl: encodeProtectedUrl(payload.googleDriveUrl)
+      };
+      const fullJsonStr = JSON.stringify(protectedPayload);
+      let bytebinKey = protectedPayload.bytebinKey || '';
 
       // 1. If payload exceeds MQTT safe packet size (210KB), offload full snapshot to Bytebin
       if (fullJsonStr.length > MAX_SAFE_MQTT_BYTES) {
@@ -1103,9 +1112,9 @@ class RealtimeSyncService {
         let mqttJsonStr = fullJsonStr;
         if (mqttJsonStr.length > MAX_SAFE_MQTT_BYTES) {
           const lightPayload: SyncStatePayload = {
-            ...payload,
+            ...protectedPayload,
             bytebinKey: bytebinKey || undefined,
-            issues: payload.issues.map((iss) => ({
+            issues: protectedPayload.issues.map((iss) => ({
               ...iss,
               screenshots: (iss.screenshots || []).filter((s) => !isDataUrlImage(s)),
               comments: (iss.comments || []).map((c) => ({
@@ -1174,11 +1183,13 @@ class RealtimeSyncService {
         subject: String(item.subject || ''),
         description: String(item.description || ''),
         status: item.status || 'פתוח',
-        screenshots: Array.isArray(item.screenshots)
+        screenshots: ((Array.isArray(item.screenshots)
           ? item.screenshots
           : item.screenshots && typeof item.screenshots === 'object'
           ? Object.values(item.screenshots)
-          : [],
+          : []) as unknown[])
+          .map(sanitizeImageUrl)
+          .filter((s: string | null): s is string => Boolean(s)),
         comments: (Array.isArray(item.comments)
           ? item.comments
           : item.comments && typeof item.comments === 'object'
@@ -1186,7 +1197,8 @@ class RealtimeSyncService {
           : []
         ).map((c: any) => ({
           ...c,
-          author: formatLegacyAuthor(c?.author)
+          author: formatLegacyAuthor(c?.author),
+          screenshot: sanitizeImageUrl(c?.screenshot) || undefined
         })),
         auditLog: Array.isArray(item.auditLog)
           ? item.auditLog
@@ -1198,11 +1210,9 @@ class RealtimeSyncService {
         updatedAt: Number(item.updatedAt || Date.now())
       }));
 
-    if (
-      typeof raw?.googleDriveUrl === 'string' &&
-      raw.googleDriveUrl.startsWith('https://script.google.com/')
-    ) {
-      setSavedGoogleDriveUrl(raw.googleDriveUrl);
+    const decodedDriveUrl = decodeProtectedUrl(raw?.googleDriveUrl);
+    if (decodedDriveUrl) {
+      setSavedGoogleDriveUrl(decodedDriveUrl);
     }
 
     return {
@@ -1217,7 +1227,7 @@ class RealtimeSyncService {
       revision: Number(raw?.revision || 0),
       clientId: raw?.clientId,
       bytebinKey: raw?.bytebinKey,
-      googleDriveUrl: raw?.googleDriveUrl || getSavedGoogleDriveUrl() || undefined
+      googleDriveUrl: decodedDriveUrl || getSavedGoogleDriveUrl() || undefined
     };
   }
 

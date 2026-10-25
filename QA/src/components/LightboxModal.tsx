@@ -11,6 +11,7 @@ import {
   Maximize2,
   Move
 } from 'lucide-react';
+import { sanitizeImageUrl } from '../utils/securityUtils';
 
 interface LightboxModalProps {
   images: string[];
@@ -32,7 +33,7 @@ export const LightboxModal: React.FC<LightboxModalProps> = ({
   const [isDragging, setIsDragging] = useState(false);
   const dragStartRef = useRef({ x: 0, y: 0 });
 
-  const currentSrc = images[currentIndex] || '';
+  const currentSrc = sanitizeImageUrl(images[currentIndex]) || '';
 
   const resetTransform = () => {
     setScale(1);
@@ -115,8 +116,11 @@ export const LightboxModal: React.FC<LightboxModalProps> = ({
   };
 
   const handleDownload = () => {
+    const safeUrl = sanitizeImageUrl(currentSrc);
+    if (!safeUrl) return;
     const link = document.createElement('a');
-    link.href = currentSrc;
+    link.href = safeUrl;
+    link.rel = 'noopener noreferrer';
     link.download = `STD-screenshot-${currentIndex + 1}.png`;
     link.click();
   };

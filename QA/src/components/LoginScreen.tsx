@@ -11,6 +11,10 @@ import {
   AlertCircle
 } from 'lucide-react';
 import { TeamRole } from '../types/std';
+import {
+  computeUserAuthSignature,
+  verifyAccessCodeRole
+} from '../utils/securityUtils';
 
 export interface AuthenticatedUser {
   firstName: string;
@@ -18,6 +22,7 @@ export interface AuthenticatedUser {
   fullName: string;
   role: TeamRole;
   isAdmin: boolean;
+  authSignature?: string;
 }
 
 interface LoginScreenProps {
@@ -50,31 +55,18 @@ export const LoginScreen: React.FC<LoginScreenProps> = ({
     }
 
     const fullName = `${fName} ${lName}`;
+    const authResult = verifyAccessCodeRole(code);
 
-    if (code === '9988') {
-      onLoginSuccess({
+    if (authResult.valid) {
+      const userObj: AuthenticatedUser = {
         firstName: fName,
         lastName: lName,
         fullName,
-        role: 'qa',
-        isAdmin: false
-      });
-    } else if (code === '1111') {
-      onLoginSuccess({
-        firstName: fName,
-        lastName: lName,
-        fullName,
-        role: 'dev',
-        isAdmin: false
-      });
-    } else if (code === '1108') {
-      onLoginSuccess({
-        firstName: fName,
-        lastName: lName,
-        fullName,
-        role: 'qa',
-        isAdmin: true
-      });
+        role: authResult.role,
+        isAdmin: authResult.isAdmin
+      };
+      userObj.authSignature = computeUserAuthSignature(userObj);
+      onLoginSuccess(userObj);
     } else {
       setError('סיסמת הכניסה שהוזנה שגויה. נא להזין קוד בודק QA, מפתח או מנהל.');
     }

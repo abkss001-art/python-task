@@ -49,8 +49,12 @@ import {
   Download,
   Smartphone
 } from 'lucide-react';
+import {
+  computeUserAuthSignature,
+  isAdminAccessCode,
+  verifyUserAuthSignature
+} from './utils/securityUtils';
 
-const ADMIN_CODES = ['1108'];
 const AUTH_STORAGE_KEY = 'std_qa_auth_user_v1';
 
 export function App() {
@@ -60,7 +64,7 @@ export function App() {
   const [issues, setIssues] = useState<StdIssue[]>([]);
   const [syncStatus, setSyncStatus] = useState<SyncStatusInfo>(syncService.getStatus());
 
-  // Authenticated User State (First Name + Last Name + Role from Password)
+  // Authenticated User State (First Name + Last Name + Role from Password + Tamper-Proof Signature)
   const [authUser, setAuthUser] = useState<AuthenticatedUser | null>(() => {
     try {
       const saved = localStorage.getItem(AUTH_STORAGE_KEY);
@@ -74,7 +78,22 @@ export function App() {
           parsed.role &&
           parsed.fullName !== 'בודק צוות'
         ) {
-          return parsed;
+          if (!parsed.authSignature) {
+            parsed.authSignature = computeUserAuthSignature(parsed);
+            localStorage.setItem(AUTH_STORAGE_KEY, JSON.stringify(parsed));
+            return parsed;
+          }
+          if (verifyUserAuthSignature(parsed)) {
+            return parsed;
+          }
+          // If localStorage was tampered with in DevTools (e.g. changing isAdmin: true), downgrade to non-admin
+          const downgraded: AuthenticatedUser = {
+            ...parsed,
+            isAdmin: false
+          };
+          downgraded.authSignature = computeUserAuthSignature(downgraded);
+          localStorage.setItem(AUTH_STORAGE_KEY, JSON.stringify(downgraded));
+          return downgraded;
         }
       }
     } catch {
@@ -288,11 +307,12 @@ export function App() {
   };
 
   const handleToggleAdmin = (code: string): boolean => {
-    if (ADMIN_CODES.includes(code) && authUser) {
+    if (isAdminAccessCode(code) && authUser) {
       const updatedUser: AuthenticatedUser = {
         ...authUser,
         isAdmin: true
       };
+      updatedUser.authSignature = computeUserAuthSignature(updatedUser);
       setAuthUser(updatedUser);
       localStorage.setItem(AUTH_STORAGE_KEY, JSON.stringify(updatedUser));
       return true;
