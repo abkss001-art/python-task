@@ -32,6 +32,7 @@ interface NavbarProps {
   onOpenArchiveModal?: () => void;
   onOpenAdminReport?: () => void;
   onOpenAdminBackup?: () => void;
+  onOpenTeamModal?: () => void;
   onManualSync?: () => void;
   issues: StdIssue[];
   syncStatus: SyncStatusInfo;
@@ -130,6 +131,7 @@ export const Navbar: React.FC<NavbarProps> = ({
   onOpenArchiveModal,
   onOpenAdminReport,
   onOpenAdminBackup,
+  onOpenTeamModal,
   onManualSync,
   issues,
   syncStatus,
@@ -347,6 +349,16 @@ export const Navbar: React.FC<NavbarProps> = ({
                   >
                     <DatabaseBackup className="w-3.5 h-3.5 text-emerald-600" />
                     <span>דרייב / גיבוי</span>
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={onOpenTeamModal}
+                    className="flex items-center gap-1 px-2.5 py-1.5 rounded-xl bg-violet-50 hover:bg-violet-100 text-violet-800 border border-violet-200 text-[11px] sm:text-xs font-bold transition cursor-pointer shrink-0"
+                    title="ניהול שמות חברי צוות מורשים והשלמה אוטומטית (זמין למנהל בלבד)"
+                  >
+                    <Users className="w-3.5 h-3.5 text-violet-600" />
+                    <span>ניהול צוות</span>
                   </button>
 
                   <button

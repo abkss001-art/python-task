@@ -19,7 +19,13 @@ import { LightboxModal } from './components/LightboxModal';
 import { FirebaseSetupModal } from './components/FirebaseSetupModal';
 import { AdminReportModal } from './components/AdminReportModal';
 import { AdminBackupModal } from './components/AdminBackupModal';
+import { AdminTeamModal } from './components/AdminTeamModal';
 import { LoginScreen, AuthenticatedUser } from './components/LoginScreen';
+import {
+  TeamMember,
+  getStoredTeamMembers,
+  saveStoredTeamMembers
+} from './utils/teamMembers';
 import { extractImagesFromClipboardEvent } from './utils/imageUtils';
 import {
   getNotificationPermissionState,
@@ -139,6 +145,8 @@ export function App() {
   const [isArchiveModalOpen, setIsArchiveModalOpen] = useState<boolean>(false);
   const [isAdminReportOpen, setIsAdminReportOpen] = useState<boolean>(false);
   const [isAdminBackupOpen, setIsAdminBackupOpen] = useState<boolean>(false);
+  const [isTeamModalOpen, setIsTeamModalOpen] = useState<boolean>(false);
+  const [teamMembers, setTeamMembers] = useState<TeamMember[]>(() => getStoredTeamMembers());
 
   // Live Notification Toast & Highlight
   const [liveToast, setLiveToast] = useState<string | null>(null);
@@ -257,7 +265,8 @@ export function App() {
         isArchiveModalOpen ||
         isInstallModalOpen ||
         isAdminReportOpen ||
-        isAdminBackupOpen
+        isAdminBackupOpen ||
+        isTeamModalOpen
       ) {
         return;
       }
@@ -306,6 +315,7 @@ export function App() {
     isInstallModalOpen,
     isAdminReportOpen,
     isAdminBackupOpen,
+    isTeamModalOpen,
     activeSystem,
     systems,
     issues,
@@ -315,6 +325,11 @@ export function App() {
   const handleLoginSuccess = (user: AuthenticatedUser) => {
     setAuthUser(user);
     localStorage.setItem(AUTH_STORAGE_KEY, JSON.stringify(user));
+  };
+
+  const handleSaveTeamMembers = (updated: TeamMember[]) => {
+    setTeamMembers(updated);
+    saveStoredTeamMembers(updated);
   };
 
   const handleLogoutUser = () => {
@@ -1010,6 +1025,7 @@ export function App() {
           onLoginSuccess={handleLoginSuccess}
           onInstallAndNotify={handleInstallAndNotify}
           notificationsEnabled={notificationsEnabled}
+          teamMembers={teamMembers}
         />
         {renderInstallModal()}
       </>
@@ -1032,6 +1048,9 @@ export function App() {
         }}
         onOpenAdminBackup={() => {
           if (isAdmin) setIsAdminBackupOpen(true);
+        }}
+        onOpenTeamModal={() => {
+          if (isAdmin) setIsTeamModalOpen(true);
         }}
         onManualSync={() => {
           syncService.requestManualSync();
@@ -1551,6 +1570,15 @@ export function App() {
             );
           }}
           onClose={() => setIsAdminBackupOpen(false)}
+        />
+      )}
+
+      {/* Admin Team Members Management Modal (Admin Only) */}
+      {isTeamModalOpen && isAdmin && (
+        <AdminTeamModal
+          teamMembers={teamMembers}
+          onSaveTeamMembers={handleSaveTeamMembers}
+          onClose={() => setIsTeamModalOpen(false)}
         />
       )}
 
