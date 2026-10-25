@@ -56,6 +56,7 @@ export interface SyncStatusInfo {
   mode: SyncConnectionMode;
   connected: boolean;
   onlineCount: number;
+  onlineUsers?: string[];
   projectId?: string;
   errorMessage?: string;
   lastSyncAt?: number;
