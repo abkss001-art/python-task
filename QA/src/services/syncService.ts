@@ -31,6 +31,13 @@ import {
   loadWorkspaceFromIndexedDB,
   saveWorkspaceToIndexedDB
 } from '../utils/idbStorage';
+import {
+  getSavedGoogleDriveUrl,
+  isDataUrlImage,
+  saveAutoBackupToGoogleDrive,
+  setSavedGoogleDriveUrl,
+  uploadImageToGoogleDrive
+} from './googleDriveService';
 
 export interface SyncStatePayload {
   systems: string[];
@@ -43,6 +50,7 @@ export interface SyncStatePayload {
   revision?: number;
   clientId?: string;
   bytebinKey?: string;
+  googleDriveUrl?: string;
 }
 
 type StateListener = (state: SyncStatePayload, isRemoteUpdate: boolean) => void;
@@ -988,6 +996,10 @@ class RealtimeSyncService {
         updatedAt: Number(item.updatedAt || Date.now())
       }));
 
+    if (typeof raw?.googleDriveUrl === 'string' && raw.googleDriveUrl.startsWith('https://script.google.com/')) {
+      setSavedGoogleDriveUrl(raw.googleDriveUrl);
+    }
+
     return {
       systems,
       archivedSystems,
@@ -997,8 +1009,74 @@ class RealtimeSyncService {
       updatedAt: raw?.updatedAt,
       revision: Number(raw?.revision || 0),
       clientId: raw?.clientId,
-      bytebinKey: raw?.bytebinKey
+      bytebinKey: raw?.bytebinKey,
+      googleDriveUrl: raw?.googleDriveUrl || getSavedGoogleDriveUrl() || undefined
     };
+  }
+
+  /**
+   * מעלה אוטומטית ברקע תמונות Base64 חדשות ל-Google Drive (5TB) של המנהל ומחליף אותן בקישור קל!
+   */
+  private async offloadNewImagesToGoogleDriveInBackground(
+    issues: StdIssue[]
+  ): Promise<{ changed: boolean; issues: StdIssue[] }> {
+    const driveUrl = getSavedGoogleDriveUrl();
+    if (!driveUrl) return { changed: false, issues };
+
+    let anyChanged = false;
+    const updatedIssues: StdIssue[] = [];
+
+    for (const iss of issues) {
+      let screenshotsChanged = false;
+      const nextScreenshots: string[] = [];
+
+      for (let i = 0; i < (iss.screenshots || []).length; i++) {
+        const sc = iss.screenshots[i];
+        if (isDataUrlImage(sc)) {
+          const uploadedUrl = await uploadImageToGoogleDrive(sc, {
+            system: iss.system,
+            testCaseId: `${iss.testCaseId}_${i + 1}`
+          });
+          if (uploadedUrl !== sc) {
+            screenshotsChanged = true;
+            anyChanged = true;
+          }
+          nextScreenshots.push(uploadedUrl);
+        } else {
+          nextScreenshots.push(sc);
+        }
+      }
+
+      let commentsChanged = false;
+      const nextComments = [];
+      for (const c of iss.comments || []) {
+        if (c.screenshot && isDataUrlImage(c.screenshot)) {
+          const uploadedCommentUrl = await uploadImageToGoogleDrive(c.screenshot, {
+            system: iss.system,
+            testCaseId: `${iss.testCaseId}_הערה`
+          });
+          if (uploadedCommentUrl !== c.screenshot) {
+            commentsChanged = true;
+            anyChanged = true;
+          }
+          nextComments.push({ ...c, screenshot: uploadedCommentUrl });
+        } else {
+          nextComments.push(c);
+        }
+      }
+
+      if (screenshotsChanged || commentsChanged) {
+        updatedIssues.push({
+          ...iss,
+          screenshots: nextScreenshots,
+          comments: nextComments
+        });
+      } else {
+        updatedIssues.push(iss);
+      }
+    }
+
+    return { changed: anyChanged, issues: updatedIssues };
   }
 
   public async pushStateToCloud(
@@ -1023,7 +1101,8 @@ class RealtimeSyncService {
       lastAction: actionSummary,
       updatedAt: Date.now(),
       revision: nextRevision,
-      clientId: this.clientId
+      clientId: this.clientId,
+      googleDriveUrl: getSavedGoogleDriveUrl() || undefined
     };
 
     try {
@@ -1066,10 +1145,39 @@ class RealtimeSyncService {
       return;
     }
 
-    // 3. Publish to MQTT + HTTPS 443 Cloud Registry
+    // 3. Publish immediately to MQTT + HTTPS 443 Cloud Registry
     await this.publishStateToMqtt(payload);
 
-    // 4. Also push to local server if running locally
+    // 4. If Google Drive (5TB) is connected, automatically offload any new Base64 screenshots to Google Drive
+    // and save a live JSON backup in the Google Drive folder!
+    if (getSavedGoogleDriveUrl()) {
+      this.offloadNewImagesToGoogleDriveInBackground(payload.issues)
+        .then(async (res) => {
+          if (res.changed) {
+            const driveRev =
+              Math.max(this.currentState.revision || 0, this.highestSeenRevision) + 1;
+            this.highestSeenRevision = driveRev;
+            const drivePayload: SyncStatePayload = {
+              ...this.currentState,
+              issues: res.issues,
+              revision: driveRev,
+              updatedAt: Date.now(),
+              googleDriveUrl: getSavedGoogleDriveUrl() || undefined
+            };
+            this.currentState = drivePayload;
+            this.lastAppliedFingerprint = this.computeFingerprint(drivePayload);
+            this.notifyState(false);
+            this.persistLocally(drivePayload);
+            await this.publishStateToMqtt(drivePayload);
+            saveAutoBackupToGoogleDrive(drivePayload);
+          } else {
+            saveAutoBackupToGoogleDrive(payload);
+          }
+        })
+        .catch(() => {});
+    }
+
+    // 5. Also push to local server if running locally
     try {
       await fetch('/api/std-state', {
         method: 'POST',

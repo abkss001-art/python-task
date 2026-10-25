@@ -323,10 +323,10 @@ export const Navbar: React.FC<NavbarProps> = ({
                     type="button"
                     onClick={onOpenAdminBackup}
                     className="flex items-center gap-1 px-2.5 py-1.5 rounded-xl bg-emerald-50 hover:bg-emerald-100 text-emerald-800 border border-emerald-200 text-[11px] sm:text-xs font-bold transition cursor-pointer shrink-0"
-                    title="גיבוי מלא, שחזור וייבוא מאקסל/CSV (זמין למנהל בלבד)"
+                    title="אחסון אוטומטי ב-Google Drive (5TB), גיבוי מלא וייבוא מאקסל/CSV (זמין למנהל בלבד)"
                   >
                     <DatabaseBackup className="w-3.5 h-3.5 text-emerald-600" />
-                    <span>גיבוי / ייבוא</span>
+                    <span>דרייב / גיבוי</span>
                   </button>
 
                   <button

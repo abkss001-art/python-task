@@ -6,9 +6,25 @@ import {
   Upload,
   FileSpreadsheet,
   CheckCircle2,
-  AlertCircle
+  AlertCircle,
+  HardDrive,
+  Copy,
+  Check,
+  ExternalLink,
+  Loader2,
+  Sparkles,
+  Trash2
 } from 'lucide-react';
 import { StdIssue, StdPlatform, StdSeverity, StdStatus } from '../types/std';
+import {
+  GOOGLE_APPS_SCRIPT_CODE,
+  getSavedGoogleDriveUrl,
+  isDataUrlImage,
+  saveAutoBackupToGoogleDrive,
+  setSavedGoogleDriveUrl,
+  testGoogleDriveConnection,
+  uploadImageToGoogleDrive
+} from '../services/googleDriveService';
 
 interface AdminBackupModalProps {
   systems: string[];
@@ -37,10 +53,176 @@ export const AdminBackupModal: React.FC<AdminBackupModalProps> = ({
 }) => {
   const jsonFileInputRef = useRef<HTMLInputElement | null>(null);
   const csvFileInputRef = useRef<HTMLInputElement | null>(null);
+
+  const [driveUrlInput, setDriveUrlInput] = useState<string>(getSavedGoogleDriveUrl());
+  const [isConnectedDrive, setIsConnectedDrive] = useState<boolean>(
+    Boolean(getSavedGoogleDriveUrl())
+  );
+  const [driveFolderUrl, setDriveFolderUrl] = useState<string>('');
+  const [showScriptInstructions, setShowScriptInstructions] = useState<boolean>(
+    !getSavedGoogleDriveUrl()
+  );
+  const [copiedScript, setCopiedScript] = useState(false);
+  const [isTestingDrive, setIsTestingDrive] = useState(false);
+  const [isMigratingImages, setIsMigratingImages] = useState(false);
+  const [migrationProgress, setMigrationProgress] = useState<string>('');
+
   const [statusMsg, setStatusMsg] = useState<{
     type: 'success' | 'error';
     text: string;
   } | null>(null);
+
+  // Count how many screenshots are currently Base64 vs already on Google Drive
+  const base64ImagesCount = issues.reduce((acc, iss) => {
+    const inIssue = (iss.screenshots || []).filter(isDataUrlImage).length;
+    const inComments = (iss.comments || []).filter(
+      (c) => c.screenshot && isDataUrlImage(c.screenshot)
+    ).length;
+    return acc + inIssue + inComments;
+  }, 0);
+
+  const driveImagesCount = issues.reduce((acc, iss) => {
+    const inIssue = (iss.screenshots || []).filter((s) => !isDataUrlImage(s)).length;
+    const inComments = (iss.comments || []).filter(
+      (c) => c.screenshot && !isDataUrlImage(c.screenshot)
+    ).length;
+    return acc + inIssue + inComments;
+  }, 0);
+
+  const handleCopyScript = async () => {
+    try {
+      await navigator.clipboard.writeText(GOOGLE_APPS_SCRIPT_CODE);
+      setCopiedScript(true);
+      setTimeout(() => setCopiedScript(false), 3000);
+    } catch {
+      // ignore
+    }
+  };
+
+  const handleTestAndSaveDrive = async () => {
+    const cleaned = driveUrlInput.trim();
+    if (!cleaned) {
+      setStatusMsg({
+        type: 'error',
+        text: 'נא להדביק את כתובת ה-Web App של Google Apps Script'
+      });
+      return;
+    }
+
+    setIsTestingDrive(true);
+    setStatusMsg(null);
+    const result = await testGoogleDriveConnection(cleaned);
+    setIsTestingDrive(false);
+
+    if (result.ok) {
+      setSavedGoogleDriveUrl(cleaned);
+      setIsConnectedDrive(true);
+      if (result.folderUrl) setDriveFolderUrl(result.folderUrl);
+      setShowScriptInstructions(false);
+
+      // Sync the new Google Drive URL to all devices in the team & save initial backup!
+      saveAutoBackupToGoogleDrive({ systems, archivedSystems, issues });
+      onRestoreBackup({ systems, archivedSystems, issues });
+
+      setStatusMsg({
+        type: 'success',
+        text: `חובר בהצלחה ל-Google Drive שלך (תיקייה: "${result.folderName || 'צב מן - צילומי מסך וגיבויים'}")! מעכשיו כל צילום מסך מכל מכשיר בצוות יישמר אוטומטית בדרייב שלך.`
+      });
+    } else {
+      setStatusMsg({
+        type: 'error',
+        text: result.error || 'החיבור ל-Google Drive נכשל'
+      });
+    }
+  };
+
+  const handleMigrateExistingImagesToDrive = async () => {
+    if (!getSavedGoogleDriveUrl()) return;
+    setIsMigratingImages(true);
+    setStatusMsg(null);
+
+    try {
+      let migratedCount = 0;
+      const updatedIssues: StdIssue[] = [];
+
+      for (let idx = 0; idx < issues.length; idx++) {
+        const iss = issues[idx];
+        const nextScreenshots: string[] = [];
+
+        for (let sIdx = 0; sIdx < (iss.screenshots || []).length; sIdx++) {
+          const sc = iss.screenshots[sIdx];
+          if (isDataUrlImage(sc)) {
+            setMigrationProgress(
+              `מעלה תמונה ${migratedCount + 1} מתוך ${base64ImagesCount} ל-Google Drive...`
+            );
+            const url = await uploadImageToGoogleDrive(sc, {
+              system: iss.system,
+              testCaseId: `${iss.testCaseId}_${sIdx + 1}`
+            });
+            if (url !== sc) migratedCount++;
+            nextScreenshots.push(url);
+          } else {
+            nextScreenshots.push(sc);
+          }
+        }
+
+        const nextComments = [];
+        for (const c of iss.comments || []) {
+          if (c.screenshot && isDataUrlImage(c.screenshot)) {
+            setMigrationProgress(
+              `מעלה תמונה ${migratedCount + 1} מתוך ${base64ImagesCount} ל-Google Drive...`
+            );
+            const url = await uploadImageToGoogleDrive(c.screenshot, {
+              system: iss.system,
+              testCaseId: `${iss.testCaseId}_הערה`
+            });
+            if (url !== c.screenshot) migratedCount++;
+            nextComments.push({ ...c, screenshot: url });
+          } else {
+            nextComments.push(c);
+          }
+        }
+
+        updatedIssues.push({
+          ...iss,
+          screenshots: nextScreenshots,
+          comments: nextComments
+        });
+      }
+
+      onRestoreBackup({
+        systems,
+        archivedSystems,
+        issues: updatedIssues
+      });
+
+      setIsMigratingImages(false);
+      setMigrationProgress('');
+      setStatusMsg({
+        type: 'success',
+        text: `הועברו בהצלחה ${migratedCount} צילומי מסך ל-Google Drive שלך! המערכת כעת קלה ומהירה פי 10.`
+      });
+    } catch (err: any) {
+      setIsMigratingImages(false);
+      setMigrationProgress('');
+      setStatusMsg({
+        type: 'error',
+        text: err?.message || 'שגיאה בהעברת התמונות ל-Google Drive'
+      });
+    }
+  };
+
+  const handleDisconnectDrive = () => {
+    setSavedGoogleDriveUrl('');
+    setDriveUrlInput('');
+    setIsConnectedDrive(false);
+    setDriveFolderUrl('');
+    onRestoreBackup({ systems, archivedSystems, issues });
+    setStatusMsg({
+      type: 'success',
+      text: 'החיבור ל-Google Drive נותק.'
+    });
+  };
 
   const handleDownloadFullJsonBackup = () => {
     const backupPayload = {
@@ -101,6 +283,12 @@ export const AdminBackupModal: React.FC<AdminBackupModalProps> = ({
   };
 
   const parseCsvLine = (line: string): string[] => {
+    const delimiter =
+      line.indexOf('\t') !== -1 && line.indexOf(',') === -1
+        ? '\t'
+        : line.indexOf(';') !== -1 && line.indexOf(',') === -1
+        ? ';'
+        : ',';
     const result: string[] = [];
     let current = '';
     let inQuotes = false;
@@ -113,7 +301,7 @@ export const AdminBackupModal: React.FC<AdminBackupModalProps> = ({
         } else {
           inQuotes = !inQuotes;
         }
-      } else if (ch === ',' && !inQuotes) {
+      } else if (ch === delimiter && !inQuotes) {
         result.push(current.trim());
         current = '';
       } else {
@@ -145,13 +333,10 @@ export const AdminBackupModal: React.FC<AdminBackupModalProps> = ({
 
         for (let idx = 1; idx < lines.length; idx++) {
           const cols = parseCsvLine(lines[idx]);
-          if (cols.length < 3) continue;
+          if (cols.length < 2) continue;
 
-          // Supports either exported CSV format:
-          // [מערכת, מזהה תסריט, פלטפורמה, נושא התקלה, מהות השגיאה, סטטוס, מדווח...]
-          // OR simple 3-4 column CSV: [מזהה תסריט, נושא, תיאור, פלטפורמה]
-          const isExportFormat = cols.length >= 6 && systems.includes(cols[0]);
-          const sys = isExportFormat ? cols[0] : targetSys;
+          const isExportFormat = cols.length >= 6;
+          const sys = isExportFormat && cols[0] ? cols[0] : targetSys;
           const testCaseId = isExportFormat ? cols[1] || String(idx) : cols[0] || String(idx);
           const rawPlat = isExportFormat ? cols[2] : cols[3] || 'מחשב';
           const subject = isExportFormat ? cols[3] : cols[1] || `תסריט בדיקה #${testCaseId}`;
@@ -186,7 +371,7 @@ export const AdminBackupModal: React.FC<AdminBackupModalProps> = ({
               {
                 id: `aud-${Date.now()}-${idx}`,
                 actor: currentUserDisplay,
-                action: 'יובא מתוך קובץ CSV',
+                action: 'יובא מתוך קובץ CSV / Excel',
                 timestamp: Date.now()
               }
             ],
@@ -203,7 +388,7 @@ export const AdminBackupModal: React.FC<AdminBackupModalProps> = ({
         onImportIssues(imported);
         setStatusMsg({
           type: 'success',
-          text: `יובאו בהצלחה ${imported.length} תסריטים / תקלות מתוך קובץ ה-CSV!`
+          text: `יובאו בהצלחה ${imported.length} תסריטים / תקלות וסונכרנו לכל הצוות!`
         });
       } catch (err: any) {
         setStatusMsg({
@@ -218,19 +403,19 @@ export const AdminBackupModal: React.FC<AdminBackupModalProps> = ({
 
   return (
     <div
-      className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/60 backdrop-blur-xs p-4"
+      className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/60 backdrop-blur-xs p-3 sm:p-4 overflow-y-auto"
       dir="rtl"
     >
-      <div className="bg-white rounded-2xl shadow-2xl border border-slate-200 w-full max-w-lg overflow-hidden">
-        <div className="flex items-center justify-between px-6 py-4 bg-slate-900 text-white">
+      <div className="bg-white rounded-2xl shadow-2xl border border-slate-200 w-full max-w-2xl overflow-hidden my-auto max-h-[92vh] flex flex-col">
+        <div className="flex items-center justify-between px-6 py-4 bg-slate-900 text-white shrink-0">
           <div className="flex items-center gap-2.5">
             <DatabaseBackup className="w-5 h-5 text-indigo-400" />
             <div>
               <h3 className="text-base font-extrabold">
-                גיבוי, שחזור וייבוא נתונים (סביבת מנהל)
+                אחסון Google Drive (5TB), גיבוי וייבוא אקסל (מנהל)
               </h3>
               <p className="text-xs text-slate-300">
-                ניהול גיבויים מלאים של מסד הנתונים וייבוא תסריטים מאקסל / CSV
+                חיבור אוטומטי של כל צילומי המסך והגיבויים ל-Google Drive שלך ללא הגבלת מקום
               </p>
             </div>
           </div>
@@ -243,26 +428,211 @@ export const AdminBackupModal: React.FC<AdminBackupModalProps> = ({
           </button>
         </div>
 
-        <div className="p-6 space-y-4">
+        <div className="p-5 sm:p-6 space-y-4 overflow-y-auto flex-1">
           {statusMsg && (
             <div
-              className={`flex items-center gap-2 p-3.5 rounded-xl border text-xs font-bold ${
+              className={`flex items-start gap-2 p-3.5 rounded-xl border text-xs font-bold leading-relaxed ${
                 statusMsg.type === 'success'
                   ? 'bg-emerald-50 border-emerald-200 text-emerald-800'
                   : 'bg-red-50 border-red-200 text-red-700'
               }`}
             >
               {statusMsg.type === 'success' ? (
-                <CheckCircle2 className="w-4 h-4 shrink-0 text-emerald-600" />
+                <CheckCircle2 className="w-4 h-4 shrink-0 text-emerald-600 mt-0.5" />
               ) : (
-                <AlertCircle className="w-4 h-4 shrink-0 text-red-600" />
+                <AlertCircle className="w-4 h-4 shrink-0 text-red-600 mt-0.5" />
               )}
               <span>{statusMsg.text}</span>
             </div>
           )}
 
+          {/* 0. Google Drive 5TB Integration Panel */}
+          <div className="p-4 sm:p-5 rounded-2xl bg-gradient-to-br from-indigo-50/90 via-white to-blue-50/80 border-2 border-indigo-200 space-y-3.5 shadow-2xs">
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <div className="flex items-center gap-2">
+                <div className="w-9 h-9 rounded-xl bg-indigo-600 text-white flex items-center justify-center shadow-xs">
+                  <HardDrive className="w-5 h-5" />
+                </div>
+                <div>
+                  <div className="flex items-center gap-2">
+                    <span className="text-sm font-black text-slate-900">
+                      אחסון אוטומטי ב-Google Drive שלך (5TB)
+                    </span>
+                    <span
+                      className={`px-2 py-0.5 rounded-full text-[10px] font-extrabold ${
+                        isConnectedDrive
+                          ? 'bg-emerald-100 text-emerald-800 border border-emerald-300'
+                          : 'bg-amber-100 text-amber-800 border border-amber-300'
+                      }`}
+                    >
+                      {isConnectedDrive ? 'מחובר ופעיל לכל הצוות' : 'ממתין לחיבור חד-פעמי'}
+                    </span>
+                  </div>
+                  <p className="text-xs text-slate-600 mt-0.5">
+                    שומר אוטומטית כל צילום מסך בתיקייה מסודרת לפי מערכת אצלך בדרייב ומשאיר את המערכת מהירה גם עם 10 מערכות ומאות תמונות!
+                  </p>
+                </div>
+              </div>
+
+              <button
+                type="button"
+                onClick={() => setShowScriptInstructions((prev) => !prev)}
+                className="text-xs font-bold text-indigo-700 hover:text-indigo-900 underline cursor-pointer"
+              >
+                {showScriptInstructions ? 'הסתר הוראות הגדרה' : 'איך מחברים ב-30 שניות?'}
+              </button>
+            </div>
+
+            {/* Stats Pill */}
+            <div className="flex flex-wrap items-center gap-2 text-[11px] font-bold">
+              <span className="px-2.5 py-1 rounded-lg bg-white border border-slate-200 text-slate-700">
+                תמונות השמורות ב-Google Drive: <strong className="text-emerald-700">{driveImagesCount}</strong>
+              </span>
+              <span className="px-2.5 py-1 rounded-lg bg-white border border-slate-200 text-slate-700">
+                תמונות מקומיות שממתינות להעברה לדרייב: <strong className="text-indigo-700">{base64ImagesCount}</strong>
+              </span>
+            </div>
+
+            {showScriptInstructions && (
+              <div className="p-3.5 rounded-xl bg-white border border-indigo-100 space-y-2.5 text-xs text-slate-700 leading-relaxed">
+                <div className="font-extrabold text-slate-900">
+                  חיבור חד-פעמי ל-Google Drive שלך (לוקח 40 שניות):
+                </div>
+                <ol className="list-decimal list-inside space-y-1.5 text-[11px] sm:text-xs">
+                  <li>
+                    לחץ על הכפתור למטה <strong>"1. העתק קוד סקריפט"</strong> ואז לחץ על{' '}
+                    <strong>"2. פתח את Google Apps Script"</strong>.
+                  </li>
+                  <li>
+                    לחץ על <strong>פרויקט חדש (New Project)</strong>, מחק את השורה שכתובה שם והדבק (<strong>Ctrl+V</strong>) את הקוד שהעתקת.
+                  </li>
+                  <li>
+                    לחץ למעלה בכחול על <strong>Deploy (פריסה) &larr; New deployment (פריסה חדשה)</strong>, בחר בסמל גלגל השיניים <strong>Web app (אפליקציית אינטרנט)</strong>.
+                  </li>
+                  <li>
+                    בשדה <strong>Who has access (למי יש גישה)</strong> בחר <strong>Anyone (כל אחד)</strong>, לחץ <strong>Deploy</strong>, אשר הרשאה לחשבון הדרייב שלך, והעתק את כתובת ה-<strong>Web app URL</strong> לכאן למטה!
+                  </li>
+                </ol>
+
+                <div className="flex flex-wrap items-center gap-2 pt-1">
+                  <button
+                    type="button"
+                    onClick={handleCopyScript}
+                    className="flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-bold shadow-xs transition cursor-pointer"
+                  >
+                    {copiedScript ? (
+                      <>
+                        <Check className="w-4 h-4 text-emerald-300" />
+                        <span>הקוד הועתק! כעת הדבק ב-Apps Script</span>
+                      </>
+                    ) : (
+                      <>
+                        <Copy className="w-4 h-4" />
+                        <span>1. העתק קוד סקריפט מוכן</span>
+                      </>
+                    )}
+                  </button>
+
+                  <a
+                    href="https://script.google.com/home"
+                    target="_blank"
+                    rel="noreferrer"
+                    className="flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-white hover:bg-slate-50 text-indigo-700 border border-indigo-200 text-xs font-bold transition"
+                  >
+                    <ExternalLink className="w-4 h-4" />
+                    <span>2. פתח את Google Apps Script</span>
+                  </a>
+                </div>
+              </div>
+            )}
+
+            {/* URL Input & Connect Button */}
+            <div className="space-y-2">
+              <label className="block text-xs font-extrabold text-slate-800">
+                כתובת ה-Web App של Google Drive שלך:
+              </label>
+              <div className="flex flex-col sm:flex-row gap-2">
+                <input
+                  type="url"
+                  dir="ltr"
+                  value={driveUrlInput}
+                  onChange={(e) => setDriveUrlInput(e.target.value)}
+                  placeholder="https://script.google.com/macros/s/.../exec"
+                  className="flex-1 px-3.5 py-2 rounded-xl bg-white border border-slate-300 focus:border-indigo-500 focus:outline-none text-xs font-mono text-slate-800"
+                />
+                <button
+                  type="button"
+                  disabled={isTestingDrive}
+                  onClick={handleTestAndSaveDrive}
+                  className="flex items-center justify-center gap-1.5 px-4 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-700 disabled:opacity-60 text-white text-xs font-extrabold shadow-xs transition cursor-pointer shrink-0"
+                >
+                  {isTestingDrive ? (
+                    <>
+                      <Loader2 className="w-4 h-4 animate-spin" />
+                      <span>בודק חיבור...</span>
+                    </>
+                  ) : (
+                    <>
+                      <CheckCircle2 className="w-4 h-4" />
+                      <span>בדוק חיבור ושמור לכל הצוות</span>
+                    </>
+                  )}
+                </button>
+              </div>
+            </div>
+
+            {/* Actions when connected */}
+            {isConnectedDrive && (
+              <div className="flex flex-wrap items-center justify-between gap-2 pt-2 border-t border-indigo-100">
+                <div className="flex flex-wrap items-center gap-2">
+                  {base64ImagesCount > 0 && (
+                    <button
+                      type="button"
+                      disabled={isMigratingImages}
+                      onClick={handleMigrateExistingImagesToDrive}
+                      className="flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-indigo-600 hover:bg-indigo-700 disabled:opacity-60 text-white text-xs font-bold shadow-xs transition cursor-pointer"
+                    >
+                      {isMigratingImages ? (
+                        <>
+                          <Loader2 className="w-4 h-4 animate-spin" />
+                          <span>{migrationProgress || 'מעביר תמונות לדרייב...'}</span>
+                        </>
+                      ) : (
+                        <>
+                          <Sparkles className="w-4 h-4" />
+                          <span>העבר {base64ImagesCount} תמונות קיימות לדרייב כעת</span>
+                        </>
+                      )}
+                    </button>
+                  )}
+
+                  {driveFolderUrl && (
+                    <a
+                      href={driveFolderUrl}
+                      target="_blank"
+                      rel="noreferrer"
+                      className="flex items-center gap-1.5 px-3 py-2 rounded-xl bg-white hover:bg-slate-50 text-indigo-700 border border-indigo-200 text-xs font-bold transition"
+                    >
+                      <ExternalLink className="w-3.5 h-3.5" />
+                      <span>פתח תיקייה ב-Google Drive</span>
+                    </a>
+                  )}
+                </div>
+
+                <button
+                  type="button"
+                  onClick={handleDisconnectDrive}
+                  className="flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-red-600 hover:bg-red-50 text-[11px] font-bold transition cursor-pointer"
+                >
+                  <Trash2 className="w-3.5 h-3.5" />
+                  <span>נתק דרייב</span>
+                </button>
+              </div>
+            )}
+          </div>
+
           {/* 1. Full JSON Backup Download */}
-          <div className="p-4 rounded-2xl bg-slate-50 border border-slate-200 space-y-2.5">
+          <div className="p-4 rounded-2xl bg-slate-50 border border-slate-200 space-y-2">
             <div className="text-sm font-extrabold text-slate-900">
               1. הורדת גיבוי מלא למחשב (JSON)
             </div>
@@ -280,7 +650,7 @@ export const AdminBackupModal: React.FC<AdminBackupModalProps> = ({
           </div>
 
           {/* 2. Restore from JSON Backup */}
-          <div className="p-4 rounded-2xl bg-slate-50 border border-slate-200 space-y-2.5">
+          <div className="p-4 rounded-2xl bg-slate-50 border border-slate-200 space-y-2">
             <div className="text-sm font-extrabold text-slate-900">
               2. שחזור מסד נתונים מקובץ גיבוי (JSON)
             </div>
@@ -305,12 +675,13 @@ export const AdminBackupModal: React.FC<AdminBackupModalProps> = ({
           </div>
 
           {/* 3. Import Test Cases from CSV */}
-          <div className="p-4 rounded-2xl bg-slate-50 border border-slate-200 space-y-2.5">
+          <div className="p-4 rounded-2xl bg-slate-50 border border-slate-200 space-y-2">
             <div className="text-sm font-extrabold text-slate-900">
               3. ייבוא תסריטי בדיקה מקובץ Excel / CSV
             </div>
             <p className="text-xs text-slate-600 leading-relaxed">
-              ייבא רשימת תסריטים מקובץ CSV (תומך בקובץ שיוצא מהמערכת או בקובץ עם עמודות: <code className="bg-white px-1 rounded border">מזהה תסריט, נושא, תיאור, פלטפורמה</code>).
+              ייבא רשימת תסריטים מקובץ CSV (תומך בקובץ שיוצא מהמערכת או בקובץ עם עמודות:{' '}
+              <code className="bg-white px-1 rounded border">מזהה תסריט, נושא, תיאור, פלטפורמה</code>).
             </p>
             <input
               ref={csvFileInputRef}
@@ -330,7 +701,7 @@ export const AdminBackupModal: React.FC<AdminBackupModalProps> = ({
           </div>
         </div>
 
-        <div className="flex justify-end px-6 py-3 bg-slate-50 border-t border-slate-200">
+        <div className="flex justify-end px-6 py-3 bg-slate-50 border-t border-slate-200 shrink-0">
           <button
             type="button"
             onClick={onClose}
