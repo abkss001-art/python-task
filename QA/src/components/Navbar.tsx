@@ -18,7 +18,8 @@ import {
   LogOut,
   BarChart3,
   DatabaseBackup,
-  RefreshCw
+  RefreshCw,
+  KeyRound
 } from 'lucide-react';
 import { StdIssue, SyncStatusInfo, TeamRole } from '../types/std';
 
@@ -33,6 +34,7 @@ interface NavbarProps {
   onOpenAdminReport?: () => void;
   onOpenAdminBackup?: () => void;
   onOpenTeamModal?: () => void;
+  onOpenSecurityModal?: () => void;
   onManualSync?: () => void;
   issues: StdIssue[];
   syncStatus: SyncStatusInfo;
@@ -42,7 +44,6 @@ interface NavbarProps {
   onOpenNewIssue: () => void;
   onOpenFirebaseModal: () => void;
   isAdmin: boolean;
-  onToggleAdmin: (code: string) => boolean;
   onLogoutUser: () => void;
   notificationsEnabled: boolean;
   onInstallAndNotify: () => void;
@@ -132,6 +133,7 @@ export const Navbar: React.FC<NavbarProps> = ({
   onOpenAdminReport,
   onOpenAdminBackup,
   onOpenTeamModal,
+  onOpenSecurityModal,
   onManualSync,
   issues,
   syncStatus,
@@ -141,7 +143,6 @@ export const Navbar: React.FC<NavbarProps> = ({
   onOpenNewIssue,
   onOpenFirebaseModal,
   isAdmin,
-  onToggleAdmin,
   onLogoutUser,
   notificationsEnabled,
   onInstallAndNotify
@@ -150,11 +151,6 @@ export const Navbar: React.FC<NavbarProps> = ({
   const [newSystemName, setNewSystemName] = useState('');
   const [isSyncSpinning, setIsSyncSpinning] = useState(false);
 
-  // Admin Quick Elevate Input State
-  const [isEnteringAdmin, setIsEnteringAdmin] = useState(false);
-  const [adminCodeInput, setAdminCodeInput] = useState('');
-  const [adminError, setAdminError] = useState(false);
-
   const handleCreateSystem = (e: React.FormEvent) => {
     e.preventDefault();
     const cleaned = newSystemName.trim();
@@ -162,18 +158,6 @@ export const Navbar: React.FC<NavbarProps> = ({
     onAddSystem(cleaned);
     setNewSystemName('');
     setIsAddingSystem(false);
-  };
-
-  const handleAdminSubmit = (e: React.FormEvent) => {
-    e.preventDefault();
-    const ok = onToggleAdmin(adminCodeInput.trim());
-    if (ok) {
-      setAdminCodeInput('');
-      setAdminError(false);
-      setIsEnteringAdmin(false);
-    } else {
-      setAdminError(true);
-    }
   };
 
   // O(N) memoized counter map for all systems so rendering 10+ system tabs is instant O(1)
@@ -370,6 +354,16 @@ export const Navbar: React.FC<NavbarProps> = ({
                     <Settings className="w-3.5 h-3.5" />
                     <span>הגדר ענן</span>
                   </button>
+
+                  <button
+                    type="button"
+                    onClick={onOpenSecurityModal}
+                    className="flex items-center gap-1 px-2.5 py-1.5 rounded-xl bg-amber-50 hover:bg-amber-100 text-amber-800 border border-amber-200 text-[11px] sm:text-xs font-bold transition cursor-pointer shrink-0"
+                    title="ניהול אבטחה, קודי כניסה ושם מנהל-העל (מוגן בקוד-על)"
+                  >
+                    <KeyRound className="w-3.5 h-3.5 text-amber-600" />
+                    <span>אבטחה וסיסמאות</span>
+                  </button>
                 </>
               )}
             </div>
@@ -393,59 +387,6 @@ export const Navbar: React.FC<NavbarProps> = ({
                   {isAdmin ? 'מנהל' : currentUserRole === 'dev' ? 'מפתח' : 'בודק QA'}
                 </span>
               </div>
-
-              {/* Admin Elevate Button (if not already Admin) */}
-              {!isAdmin && !isEnteringAdmin && (
-                <button
-                  type="button"
-                  onClick={() => {
-                    setIsEnteringAdmin(true);
-                    setAdminError(false);
-                  }}
-                  className="flex items-center gap-1 px-2 py-1.5 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-500 hover:text-slate-800 border border-slate-200 text-[11px] sm:text-xs font-medium transition cursor-pointer"
-                  title="כניסת מנהל"
-                >
-                  <Lock className="w-3.5 h-3.5" />
-                </button>
-              )}
-
-              {isEnteringAdmin && (
-                <form
-                  onSubmit={handleAdminSubmit}
-                  className="flex items-center gap-1 bg-white p-1 rounded-xl border border-indigo-300 shadow-sm"
-                >
-                  <input
-                    type="password"
-                    inputMode="numeric"
-                    value={adminCodeInput}
-                    onChange={(e) => {
-                      setAdminCodeInput(e.target.value);
-                      setAdminError(false);
-                    }}
-                    placeholder="קוד מנהל..."
-                    autoFocus
-                    className={`w-20 px-2 py-1 text-xs rounded-lg border focus:outline-none ${
-                      adminError
-                        ? 'border-red-500 bg-red-50 text-red-900'
-                        : 'border-slate-200 focus:border-indigo-500'
-                    }`}
-                  />
-                  <button
-                    type="submit"
-                    className="p-1 rounded-lg bg-indigo-600 text-white hover:bg-indigo-700 cursor-pointer"
-                    title="אשר קוד מנהל"
-                  >
-                    <Check className="w-3.5 h-3.5" />
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => setIsEnteringAdmin(false)}
-                    className="p-1 rounded-lg bg-slate-100 text-slate-500 hover:bg-slate-200 cursor-pointer"
-                  >
-                    <X className="w-3.5 h-3.5" />
-                  </button>
-                </form>
-              )}
 
               {/* Switch User / Logout Button */}
               <button

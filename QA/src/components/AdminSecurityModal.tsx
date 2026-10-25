@@ -1,0 +1,347 @@
+import React, { useState } from 'react';
+import {
+  X,
+  ShieldAlert,
+  KeyRound,
+  CheckCircle2,
+  Lock,
+  Unlock,
+  AlertTriangle,
+  RotateCcw,
+  Save,
+  UserCheck
+} from 'lucide-react';
+import {
+  verifyMasterSecurityPin,
+  getStoredSecurityConfig,
+  saveStoredSecurityConfig,
+  getEffectiveSuperAdminName,
+  setStoredSuperAdminName,
+  resetSecurityConfigToDefaults,
+  hashAccessCode
+} from '../utils/securityUtils';
+
+interface AdminSecurityModalProps {
+  onSecurityUpdated: (newSuperAdminName: string) => void;
+  onClose: () => void;
+}
+
+export const AdminSecurityModal: React.FC<AdminSecurityModalProps> = ({
+  onSecurityUpdated,
+  onClose
+}) => {
+  const [isUnlocked, setIsUnlocked] = useState(false);
+  const [masterPinInput, setMasterPinInput] = useState('');
+  const [pinError, setPinError] = useState<string | null>(null);
+
+  // Form fields once unlocked
+  const [superAdminName, setSuperAdminName] = useState(() => getEffectiveSuperAdminName());
+  const [newQaCode, setNewQaCode] = useState('');
+  const [newDevCode, setNewDevCode] = useState('');
+  const [newAdminCode, setNewAdminCode] = useState('');
+  const [statusMessage, setStatusMessage] = useState<{ text: string; isError?: boolean } | null>(null);
+
+  const handleUnlock = (e: React.FormEvent) => {
+    e.preventDefault();
+    setPinError(null);
+    if (!masterPinInput.trim()) {
+      setPinError('נא להזין קוד אבטחה ראשי.');
+      return;
+    }
+
+    if (verifyMasterSecurityPin(masterPinInput.trim())) {
+      setIsUnlocked(true);
+      setMasterPinInput('');
+      setPinError(null);
+    } else {
+      setPinError('קוד אבטחה ראשי שגוי. הגישה לאזור ניהול הסיסמאות נחסמה.');
+    }
+  };
+
+  const handleSaveSecurity = (e: React.FormEvent) => {
+    e.preventDefault();
+    setStatusMessage(null);
+
+    const cleanName = superAdminName.trim();
+    if (!cleanName) {
+      setStatusMessage({ text: 'שם מנהל-העל אינו יכול להיות ריק.', isError: true });
+      return;
+    }
+
+    const currentConfig = getStoredSecurityConfig();
+    const nextConfig = { ...currentConfig };
+
+    nextConfig.superAdminName = cleanName;
+
+    if (newQaCode.trim()) {
+      if (newQaCode.trim().length < 4) {
+        setStatusMessage({ text: 'קוד בודק QA חייב להכיל לפחות 4 תווים.', isError: true });
+        return;
+      }
+      nextConfig.qaHash = hashAccessCode(newQaCode.trim());
+    }
+
+    if (newDevCode.trim()) {
+      if (newDevCode.trim().length < 4) {
+        setStatusMessage({ text: 'קוד מפתח חייב להכיל לפחות 4 תווים.', isError: true });
+        return;
+      }
+      nextConfig.devHash = hashAccessCode(newDevCode.trim());
+    }
+
+    if (newAdminCode.trim()) {
+      if (newAdminCode.trim().length < 4) {
+        setStatusMessage({ text: 'קוד מנהל מערכת חייב להכיל לפחות 4 תווים.', isError: true });
+        return;
+      }
+      nextConfig.adminHash = hashAccessCode(newAdminCode.trim());
+    }
+
+    saveStoredSecurityConfig(nextConfig);
+    setStoredSuperAdminName(cleanName);
+    onSecurityUpdated(cleanName);
+
+    setNewQaCode('');
+    setNewDevCode('');
+    setNewAdminCode('');
+
+    setStatusMessage({ text: 'הגדרות האבטחה וקודי הכניסה נשמרו ועודכנו בהצלחה!' });
+    setTimeout(() => setStatusMessage(null), 4000);
+  };
+
+  const handleResetDefaults = () => {
+    if (!window.confirm('האם אתה בטוח שברצונך לאפס את כל קודי הכניסה לברירת המחדל (QA: 9988, Dev: 1111, Admin: 1108) ולהחזיר את שם מנהל העל ל"שמעון אבקסיס"?')) {
+      return;
+    }
+    resetSecurityConfigToDefaults();
+    setSuperAdminName('שמעון אבקסיס');
+    setNewQaCode('');
+    setNewDevCode('');
+    setNewAdminCode('');
+    onSecurityUpdated('שמעון אבקסיס');
+    setStatusMessage({ text: 'קודי הכניסה ושם מנהל העל אופסו לברירת המחדל.' });
+    setTimeout(() => setStatusMessage(null), 4000);
+  };
+
+  return (
+    <div
+      className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/60 backdrop-blur-xs p-3 sm:p-4 overflow-y-auto"
+      dir="rtl"
+    >
+      <div className="bg-white rounded-3xl shadow-2xl border border-slate-200 w-full max-w-lg overflow-hidden my-auto max-h-[92vh] flex flex-col">
+        {/* Modal Header */}
+        <div className="flex items-center justify-between px-6 py-4 bg-gradient-to-r from-slate-950 via-indigo-950 to-slate-900 text-white shrink-0">
+          <div className="flex items-center gap-2.5">
+            <div className="p-2 rounded-xl bg-amber-500/20 text-amber-400 border border-amber-500/30">
+              <ShieldAlert className="w-5 h-5" />
+            </div>
+            <div>
+              <h3 className="text-base font-extrabold flex items-center gap-1.5">
+                <span>ניהול אבטחה, קודי כניסה ומנהל-על</span>
+              </h3>
+              <p className="text-xs text-slate-300">
+                הגנה רב-שכבתית באמצעות קוד אבטחה ראשי
+              </p>
+            </div>
+          </div>
+          <button
+            type="button"
+            onClick={onClose}
+            className="p-1.5 rounded-lg text-slate-400 hover:text-white hover:bg-slate-800 cursor-pointer"
+          >
+            <X className="w-5 h-5" />
+          </button>
+        </div>
+
+        <div className="p-5 sm:p-6 space-y-4 overflow-y-auto flex-1">
+          {/* Status Message */}
+          {statusMessage && (
+            <div
+              className={`p-3.5 rounded-2xl text-xs font-bold flex items-center gap-2.5 ${
+                statusMessage.isError
+                  ? 'bg-red-50 border border-red-200 text-red-800'
+                  : 'bg-emerald-50 border border-emerald-200 text-emerald-800'
+              }`}
+            >
+              {statusMessage.isError ? (
+                <AlertTriangle className="w-4 h-4 text-red-600 shrink-0" />
+              ) : (
+                <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
+              )}
+              <span>{statusMessage.text}</span>
+            </div>
+          )}
+
+          {/* Locked State: Require Master Security PIN */}
+          {!isUnlocked ? (
+            <div className="py-4 space-y-4 text-center">
+              <div className="w-16 h-16 rounded-3xl bg-amber-50 border border-amber-200 text-amber-600 flex items-center justify-center mx-auto shadow-sm">
+                <Lock className="w-8 h-8" />
+              </div>
+
+              <div>
+                <h4 className="text-sm font-black text-slate-900">אזור מוגן בקוד-על</h4>
+                <p className="text-xs text-slate-600 mt-1 max-w-xs mx-auto">
+                  כדי לשנות את קודי הכניסה למערכת או את שם מנהל-העל, נא להזין את קוד האבטחה הראשי שלך:
+                </p>
+              </div>
+
+              <form onSubmit={handleUnlock} className="max-w-xs mx-auto space-y-3">
+                <div className="relative">
+                  <KeyRound className="w-4 h-4 text-slate-400 absolute right-3.5 top-1/2 -translate-y-1/2 pointer-events-none" />
+                  <input
+                    type="password"
+                    inputMode="numeric"
+                    required
+                    autoFocus
+                    value={masterPinInput}
+                    onChange={(e) => {
+                      setMasterPinInput(e.target.value);
+                      setPinError(null);
+                    }}
+                    placeholder="הזן קוד אבטחה ראשי..."
+                    className="w-full pr-10 pl-4 py-2.5 rounded-xl border border-slate-300 bg-slate-50 focus:bg-white text-sm font-mono text-center text-slate-900 focus:outline-none focus:ring-2 focus:ring-amber-500/30 focus:border-amber-500 transition"
+                  />
+                </div>
+
+                {pinError && (
+                  <div className="text-xs font-bold text-red-600 bg-red-50 p-2 rounded-xl border border-red-200">
+                    {pinError}
+                  </div>
+                )}
+
+                <button
+                  type="submit"
+                  className="w-full py-2.5 rounded-xl bg-gradient-to-l from-amber-600 to-indigo-600 hover:from-amber-700 hover:to-indigo-700 text-white text-xs font-extrabold flex items-center justify-center gap-2 cursor-pointer shadow-sm transition"
+                >
+                  <Unlock className="w-4 h-4" />
+                  <span>אימות קוד אבטחה ופתיחת נעילה</span>
+                </button>
+              </form>
+            </div>
+          ) : (
+            /* Unlocked State: Edit Super Admin & Access Passwords */
+            <form onSubmit={handleSaveSecurity} className="space-y-4">
+              <div className="p-3 rounded-2xl bg-emerald-50 border border-emerald-200/80 text-[11px] font-bold text-emerald-800 flex items-center justify-between">
+                <div className="flex items-center gap-2">
+                  <CheckCircle2 className="w-4 h-4 text-emerald-600" />
+                  <span>נעילה שוחררה בהצלחה באמצעות קוד האבטחה הראשי</span>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setIsUnlocked(false)}
+                  className="text-[10px] text-slate-500 hover:text-slate-800 underline cursor-pointer"
+                >
+                  נעל מחדש
+                </button>
+              </div>
+
+              {/* Super Admin Name */}
+              <div className="p-4 rounded-2xl bg-amber-50/60 border border-amber-200/90 space-y-2">
+                <label className="block text-xs font-extrabold text-amber-950 flex items-center gap-1.5">
+                  <UserCheck className="w-4 h-4 text-amber-600" />
+                  <span>שם מנהל-העל (Super Admin):</span>
+                </label>
+                <input
+                  type="text"
+                  required
+                  value={superAdminName}
+                  onChange={(e) => setSuperAdminName(e.target.value)}
+                  placeholder="שם מנהל-העל..."
+                  className="w-full px-3.5 py-2 rounded-xl bg-white border border-amber-300 text-xs font-bold text-slate-900 focus:outline-none focus:ring-2 focus:ring-amber-500/30"
+                />
+                <p className="text-[11px] text-amber-800/80 leading-relaxed">
+                  שם זה מקובע כמנהל-העל של המערכת. הוא מוגן ולא ניתן למחיקה ברשימת הצוות.
+                </p>
+              </div>
+
+              {/* Change Passwords Fields */}
+              <div className="space-y-3 pt-1">
+                <div className="text-xs font-extrabold text-slate-800 flex items-center gap-1.5">
+                  <KeyRound className="w-4 h-4 text-indigo-600" />
+                  <span>החלפת קודי כניסה למערכת:</span>
+                  <span className="text-[11px] font-normal text-slate-500">(השאר ריק אם אין שינוי)</span>
+                </div>
+
+                {/* QA Code */}
+                <div>
+                  <label className="block text-[11px] font-bold text-slate-700 mb-1">
+                    קוד כניסה לבודק QA (ברירת מחדל: 9988)
+                  </label>
+                  <input
+                    type="password"
+                    inputMode="numeric"
+                    value={newQaCode}
+                    onChange={(e) => setNewQaCode(e.target.value)}
+                    placeholder="הזן קוד בודק חדש או השאר ריק..."
+                    className="w-full px-3.5 py-2 rounded-xl bg-slate-50 border border-slate-300 text-xs font-mono text-slate-900 focus:bg-white focus:outline-none focus:border-indigo-500"
+                  />
+                </div>
+
+                {/* Dev Code */}
+                <div>
+                  <label className="block text-[11px] font-bold text-slate-700 mb-1">
+                    קוד כניסה לצוות פיתוח (ברירת מחדל: 1111)
+                  </label>
+                  <input
+                    type="password"
+                    inputMode="numeric"
+                    value={newDevCode}
+                    onChange={(e) => setNewDevCode(e.target.value)}
+                    placeholder="הזן קוד מפתח חדש או השאר ריק..."
+                    className="w-full px-3.5 py-2 rounded-xl bg-slate-50 border border-slate-300 text-xs font-mono text-slate-900 focus:bg-white focus:outline-none focus:border-indigo-500"
+                  />
+                </div>
+
+                {/* Admin Code */}
+                <div>
+                  <label className="block text-[11px] font-bold text-slate-700 mb-1">
+                    קוד כניסה למנהל מערכת (ברירת מחדל: 1108)
+                  </label>
+                  <input
+                    type="password"
+                    inputMode="numeric"
+                    value={newAdminCode}
+                    onChange={(e) => setNewAdminCode(e.target.value)}
+                    placeholder="הזן קוד מנהל חדש או השאר ריק..."
+                    className="w-full px-3.5 py-2 rounded-xl bg-slate-50 border border-slate-300 text-xs font-mono text-slate-900 focus:bg-white focus:outline-none focus:border-indigo-500"
+                  />
+                </div>
+              </div>
+
+              {/* Action Buttons */}
+              <div className="pt-2 flex flex-col sm:flex-row gap-2">
+                <button
+                  type="submit"
+                  className="flex-1 py-2.5 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-extrabold flex items-center justify-center gap-1.5 cursor-pointer shadow-xs transition"
+                >
+                  <Save className="w-4 h-4" />
+                  <span>שמור שינויים</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={handleResetDefaults}
+                  className="py-2.5 px-3 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-600 hover:text-red-700 text-xs font-bold flex items-center justify-center gap-1.5 cursor-pointer transition border border-slate-200"
+                  title="איפוס קודים לברירות מחדל"
+                >
+                  <RotateCcw className="w-3.5 h-3.5" />
+                  <span>שחזר ברירות מחדל</span>
+                </button>
+              </div>
+            </form>
+          )}
+        </div>
+
+        <div className="flex justify-end px-6 py-3 bg-slate-50 border-t border-slate-200 shrink-0">
+          <button
+            type="button"
+            onClick={onClose}
+            className="px-5 py-2 rounded-xl border border-slate-300 bg-white text-slate-700 hover:bg-slate-100 text-xs font-bold cursor-pointer"
+          >
+            סגור
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+};

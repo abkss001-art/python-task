@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { X, Users, UserPlus, Trash2, CheckCircle2, ShieldCheck, Code, UserCheck } from 'lucide-react';
+import { X, Users, UserPlus, Trash2, CheckCircle2, ShieldCheck, Code, UserCheck, Lock, ShieldAlert } from 'lucide-react';
 import { TeamMember } from '../utils/teamMembers';
 import { TeamRole } from '../types/std';
 
@@ -44,6 +44,12 @@ export const AdminTeamModal: React.FC<AdminTeamModalProps> = ({
   };
 
   const handleRemoveMember = (id: string, name: string) => {
+    const target = members.find((m) => m.id === id);
+    if (target?.isSuperAdmin) {
+      setStatusMsg('לא ניתן למחוק את מנהל-העל מהרשימה. שינוי שמו מתבצע באזור ניהול אבטחה באמצעות קוד-העל.');
+      setTimeout(() => setStatusMsg(null), 4000);
+      return;
+    }
     if (members.length <= 1) {
       setStatusMsg('חייב להישאר לפחות איש צוות אחד ברשימה.');
       return;
@@ -129,6 +135,18 @@ export const AdminTeamModal: React.FC<AdminTeamModalProps> = ({
                   <Code className="w-3.5 h-3.5" />
                   <span>מפתח</span>
                 </button>
+                <button
+                  type="button"
+                  onClick={() => setNewRole('admin')}
+                  className={`px-3 py-1.5 rounded-xl text-xs font-bold transition cursor-pointer flex items-center gap-1 ${
+                    newRole === 'admin'
+                      ? 'bg-amber-600 text-white shadow-xs'
+                      : 'bg-white text-slate-600 border border-slate-200'
+                  }`}
+                >
+                  <ShieldAlert className="w-3.5 h-3.5" />
+                  <span>מנהל</span>
+                </button>
               </div>
               <button
                 type="submit"
@@ -158,9 +176,20 @@ export const AdminTeamModal: React.FC<AdminTeamModalProps> = ({
                       <UserCheck className="w-4 h-4" />
                     </div>
                     <div>
-                      <div className="text-xs font-extrabold text-slate-900">{m.fullName}</div>
+                      <div className="text-xs font-extrabold text-slate-900 flex items-center gap-1.5">
+                        <span>{m.fullName}</span>
+                        {m.isSuperAdmin && (
+                          <span className="text-[10px] font-bold text-amber-600 bg-amber-50 px-1.5 py-0.2 rounded border border-amber-200">
+                            מנהל ראשי
+                          </span>
+                        )}
+                      </div>
                       <div className="text-[10px] text-slate-500">
-                        {m.role === 'dev' ? 'צוות פיתוח' : 'צוות בדיקות מדור נחשון'}
+                        {m.role === 'admin'
+                          ? 'הרשאות ניהול מערכת מלאות'
+                          : m.role === 'dev'
+                          ? 'צוות פיתוח'
+                          : 'צוות בדיקות מדור נחשון'}
                       </div>
                     </div>
                   </div>
@@ -168,21 +197,32 @@ export const AdminTeamModal: React.FC<AdminTeamModalProps> = ({
                   <div className="flex items-center gap-2">
                     <span
                       className={`px-2 py-0.5 rounded-full text-[10px] font-extrabold ${
-                        m.role === 'dev'
+                        m.role === 'admin'
+                          ? 'bg-amber-100 text-amber-800 border border-amber-300'
+                          : m.role === 'dev'
                           ? 'bg-purple-100 text-purple-700'
                           : 'bg-sky-100 text-sky-700'
                       }`}
                     >
-                      {m.role === 'dev' ? 'מפתח' : 'בודק QA'}
+                      {m.role === 'admin' ? 'מנהל מערכת' : m.role === 'dev' ? 'מפתח' : 'בודק QA'}
                     </span>
-                    <button
-                      type="button"
-                      onClick={() => handleRemoveMember(m.id, m.fullName)}
-                      className="p-1 rounded-lg text-slate-400 hover:text-red-600 hover:bg-red-50 transition cursor-pointer"
-                      title="הסר איש צוות מהרשימה"
-                    >
-                      <Trash2 className="w-4 h-4" />
-                    </button>
+                    {m.isSuperAdmin ? (
+                      <div
+                        className="p-1 text-slate-400 select-none"
+                        title="מנהל-על מוגן (לא ניתן למחיקה ברשימה)"
+                      >
+                        <Lock className="w-4 h-4 text-slate-400" />
+                      </div>
+                    ) : (
+                      <button
+                        type="button"
+                        onClick={() => handleRemoveMember(m.id, m.fullName)}
+                        className="p-1 rounded-lg text-slate-400 hover:text-red-600 hover:bg-red-50 transition cursor-pointer"
+                        title="הסר איש צוות מהרשימה"
+                      >
+                        <Trash2 className="w-4 h-4" />
+                      </button>
+                    )}
                   </div>
                 </div>
               ))}

@@ -4,7 +4,7 @@ export type StdStatus = 'פתוח' | 'בטיפול' | 'ניתן לבדוק שו�
 
 export type StdSeverity = 'קריטית' | 'גבוהה' | 'בינונית' | 'נמוכה';
 
-export type TeamRole = 'qa' | 'dev';
+export type TeamRole = 'qa' | 'dev' | 'admin';
 
 export interface StdComment {
   id: string;

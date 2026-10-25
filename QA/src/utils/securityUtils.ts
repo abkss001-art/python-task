@@ -3,8 +3,73 @@ import { TeamRole } from '../types/std';
 const ROLE_HASH_QA = 'a179515a8eadd996';
 const ROLE_HASH_DEV = 'c01d202455927044';
 const ROLE_HASH_ADMIN = '5e3cc70085645490';
+const MASTER_PIN_HASH = '8cf1fe7d2e429c53';
+const SECURITY_STORAGE_KEY = 'tzavman_security_config_v2';
+const DEFAULT_SUPER_ADMIN_NAME = 'שמעון אבקסיס';
 const ENVELOPE_PREFIX = 'tzv_enc_v1:';
 const ENVELOPE_KEY = 'TzavMan_Nahshon_QA_Shield_2026';
+
+export interface CustomSecurityConfig {
+  qaHash?: string;
+  devHash?: string;
+  adminHash?: string;
+  superAdminName?: string;
+}
+
+export function getStoredSecurityConfig(): CustomSecurityConfig {
+  try {
+    const raw = localStorage.getItem(SECURITY_STORAGE_KEY);
+    if (raw) {
+      const parsed = JSON.parse(raw);
+      if (parsed && typeof parsed === 'object') {
+        return parsed;
+      }
+    }
+  } catch {
+    // ignore
+  }
+  return {};
+}
+
+export function saveStoredSecurityConfig(config: CustomSecurityConfig): void {
+  try {
+    localStorage.setItem(SECURITY_STORAGE_KEY, JSON.stringify(config));
+  } catch {
+    // ignore
+  }
+}
+
+export function getEffectiveSuperAdminName(): string {
+  const cfg = getStoredSecurityConfig();
+  if (cfg.superAdminName && cfg.superAdminName.trim()) {
+    return cfg.superAdminName.trim();
+  }
+  return DEFAULT_SUPER_ADMIN_NAME;
+}
+
+export function setStoredSuperAdminName(name: string): void {
+  const clean = name.trim();
+  if (!clean) return;
+  const cfg = getStoredSecurityConfig();
+  cfg.superAdminName = clean;
+  saveStoredSecurityConfig(cfg);
+}
+
+export function resetSecurityConfigToDefaults(): void {
+  try {
+    localStorage.removeItem(SECURITY_STORAGE_KEY);
+  } catch {
+    // ignore
+  }
+}
+
+/**
+ * אימות קוד אבטחה ראשי (קוד-על) המגן על שינוי סיסמאות ושם מנהל העל
+ */
+export function verifyMasterSecurityPin(pin: string): boolean {
+  if (!pin || typeof pin !== 'string') return false;
+  return hashAccessCode(pin.trim()) === MASTER_PIN_HASH;
+}
 
 /**
  * גיבוב דטרמיניסטי מהיר (64-bit Salted Hash) להסתרת קודי הגישה מקוד המקור וחתימת הרשאות
@@ -39,20 +104,27 @@ export function verifyAccessCodeRole(code: string): {
   isAdmin: boolean;
 } {
   const digest = hashAccessCode(code);
-  if (digest === ROLE_HASH_ADMIN) {
-    return { valid: true, role: 'qa', isAdmin: true };
+  const cfg = getStoredSecurityConfig();
+  const effectiveAdminHash = cfg.adminHash || ROLE_HASH_ADMIN;
+  const effectiveDevHash = cfg.devHash || ROLE_HASH_DEV;
+  const effectiveQaHash = cfg.qaHash || ROLE_HASH_QA;
+
+  if (digest === effectiveAdminHash) {
+    return { valid: true, role: 'admin', isAdmin: true };
   }
-  if (digest === ROLE_HASH_DEV) {
+  if (digest === effectiveDevHash) {
     return { valid: true, role: 'dev', isAdmin: false };
   }
-  if (digest === ROLE_HASH_QA) {
+  if (digest === effectiveQaHash) {
     return { valid: true, role: 'qa', isAdmin: false };
   }
   return { valid: false, role: 'qa', isAdmin: false };
 }
 
 export function isAdminAccessCode(code: string): boolean {
-  return hashAccessCode(code) === ROLE_HASH_ADMIN;
+  const cfg = getStoredSecurityConfig();
+  const effectiveAdminHash = cfg.adminHash || ROLE_HASH_ADMIN;
+  return hashAccessCode(code) === effectiveAdminHash;
 }
 
 /**

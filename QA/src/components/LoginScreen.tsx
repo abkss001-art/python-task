@@ -106,26 +106,51 @@ export const LoginScreen: React.FC<LoginScreenProps> = ({
       return;
     }
 
-    const authResult = verifyAccessCodeRole(code);
-    if (!authResult.valid) {
-      setError('קוד הכניסה שהוזן שגוי. נא להזין קוד בודק QA, מפתח או מנהל.');
-      return;
-    }
-
     // Match against approved team member list
     const matchedMember = teamMembers.find(
       (m) => m.fullName.toLowerCase() === cleanFullName.toLowerCase()
     );
 
-    // If not Admin and not in approved team member list, reject fake names
-    if (!matchedMember && !authResult.isAdmin) {
+    if (!matchedMember) {
       setError(
         'השם שהוזן אינו מופיע ברשימת הצוות המורשית. יש לבחור שם מתוך ההשלמה האוטומטית או לפנות למנהל להוספה.'
       );
       return;
     }
 
-    const finalFullName = matchedMember ? matchedMember.fullName : cleanFullName;
+    const authResult = verifyAccessCodeRole(code);
+    if (!authResult.valid) {
+      setError('קוד הכניסה שהוזן שגוי. נא לוודא את הקוד ולנסות שוב.');
+      return;
+    }
+
+    // Role-matching enforcement (preventing privilege spoofing)
+    if (matchedMember.role === 'admin') {
+      if (!authResult.isAdmin) {
+        setError('שם זה מוגדר כמנהל מערכת – נדרש קוד כניסה של מנהל.');
+        return;
+      }
+    } else if (matchedMember.role === 'qa') {
+      if (authResult.isAdmin) {
+        setError('שם זה מוגדר כבודק QA – יש להזין קוד בודק ולא קוד מנהל.');
+        return;
+      }
+      if (authResult.role !== 'qa') {
+        setError('שם זה מוגדר כבודק QA – יש להזין קוד בודק.');
+        return;
+      }
+    } else if (matchedMember.role === 'dev') {
+      if (authResult.isAdmin) {
+        setError('שם זה מוגדר כמפתח – יש להזין קוד מפתח ולא קוד מנהל.');
+        return;
+      }
+      if (authResult.role !== 'dev') {
+        setError('שם זה מוגדר כמפתח – יש להזין קוד מפתח.');
+        return;
+      }
+    }
+
+    const finalFullName = matchedMember.fullName;
     const parts = finalFullName.split(/\s+/);
     const fName = parts[0] || finalFullName;
     const lName = parts.slice(1).join(' ') || '';
@@ -133,12 +158,13 @@ export const LoginScreen: React.FC<LoginScreenProps> = ({
     // Save or clear remembered login credentials
     saveRememberedLogin(finalFullName, rememberMe);
 
+    const isAdmin = matchedMember.role === 'admin' || authResult.isAdmin;
     const userObj: AuthenticatedUser = {
       firstName: fName,
       lastName: lName,
       fullName: finalFullName,
-      role: authResult.isAdmin ? 'qa' : matchedMember?.role || authResult.role,
-      isAdmin: authResult.isAdmin
+      role: isAdmin ? 'qa' : matchedMember.role,
+      isAdmin
     };
     userObj.authSignature = computeUserAuthSignature(userObj);
     onLoginSuccess(userObj);
@@ -306,12 +332,14 @@ export const LoginScreen: React.FC<LoginScreenProps> = ({
                     </div>
                     <span
                       className={`px-2 py-0.5 rounded-full text-[10px] font-bold ${
-                        m.role === 'dev'
+                        m.role === 'admin'
+                          ? 'bg-amber-100 text-amber-900 border border-amber-300'
+                          : m.role === 'dev'
                           ? 'bg-purple-100 text-purple-700'
                           : 'bg-sky-100 text-sky-700'
                       }`}
                     >
-                      {m.role === 'dev' ? 'מפתח' : 'בודק QA'}
+                      {m.role === 'admin' ? '👑 מנהל מערכת' : m.role === 'dev' ? 'מפתח' : 'בודק QA'}
                     </span>
                   </button>
                 ))}

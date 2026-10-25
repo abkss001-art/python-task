@@ -1,12 +1,15 @@
 import { TeamRole } from '../types/std';
+import { getEffectiveSuperAdminName } from './securityUtils';
 
 export interface TeamMember {
   id: string;
   fullName: string;
   role: TeamRole;
+  isSuperAdmin?: boolean;
 }
 
 export const DEFAULT_TEAM_MEMBERS: TeamMember[] = [
+  { id: 'tm-super-admin', fullName: 'שמעון אבקסיס', role: 'admin', isSuperAdmin: true },
   { id: 'tm-1', fullName: 'דניאל כהן', role: 'qa' },
   { id: 'tm-2', fullName: 'מיכל אברהם', role: 'qa' },
   { id: 'tm-3', fullName: 'רועי לוי', role: 'dev' },
@@ -22,24 +25,44 @@ export const DEFAULT_TEAM_MEMBERS: TeamMember[] = [
 const TEAM_MEMBERS_STORAGE_KEY = 'tzavman_team_members_v2';
 const REMEMBERED_USER_STORAGE_KEY = 'tzavman_remembered_user_v2';
 
+export function ensureSuperAdminInMembers(members: TeamMember[]): TeamMember[] {
+  const superAdminName = getEffectiveSuperAdminName();
+  const filtered = members.filter(
+    (m) =>
+      !m.isSuperAdmin &&
+      m.fullName.toLowerCase() !== superAdminName.toLowerCase() &&
+      m.fullName.toLowerCase() !== 'שמעון אבקסיס'
+  );
+
+  const superAdminItem: TeamMember = {
+    id: 'tm-super-admin',
+    fullName: superAdminName,
+    role: 'admin',
+    isSuperAdmin: true
+  };
+
+  return [superAdminItem, ...filtered];
+}
+
 export function getStoredTeamMembers(): TeamMember[] {
   try {
     const raw = localStorage.getItem(TEAM_MEMBERS_STORAGE_KEY);
     if (raw) {
       const parsed = JSON.parse(raw);
       if (Array.isArray(parsed) && parsed.length > 0) {
-        return parsed;
+        return ensureSuperAdminInMembers(parsed);
       }
     }
   } catch {
     // ignore
   }
-  return DEFAULT_TEAM_MEMBERS;
+  return ensureSuperAdminInMembers(DEFAULT_TEAM_MEMBERS);
 }
 
 export function saveStoredTeamMembers(members: TeamMember[]): void {
   try {
-    localStorage.setItem(TEAM_MEMBERS_STORAGE_KEY, JSON.stringify(members));
+    const ensured = ensureSuperAdminInMembers(members);
+    localStorage.setItem(TEAM_MEMBERS_STORAGE_KEY, JSON.stringify(ensured));
   } catch {
     // ignore
   }

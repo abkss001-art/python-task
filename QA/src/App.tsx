@@ -20,6 +20,7 @@ import { FirebaseSetupModal } from './components/FirebaseSetupModal';
 import { AdminReportModal } from './components/AdminReportModal';
 import { AdminBackupModal } from './components/AdminBackupModal';
 import { AdminTeamModal } from './components/AdminTeamModal';
+import { AdminSecurityModal } from './components/AdminSecurityModal';
 import { LoginScreen, AuthenticatedUser } from './components/LoginScreen';
 import {
   TeamMember,
@@ -146,6 +147,7 @@ export function App() {
   const [isAdminReportOpen, setIsAdminReportOpen] = useState<boolean>(false);
   const [isAdminBackupOpen, setIsAdminBackupOpen] = useState<boolean>(false);
   const [isTeamModalOpen, setIsTeamModalOpen] = useState<boolean>(false);
+  const [isAdminSecurityOpen, setIsAdminSecurityOpen] = useState<boolean>(false);
   const [teamMembers, setTeamMembers] = useState<TeamMember[]>(() => getStoredTeamMembers());
 
   // Live Notification Toast & Highlight
@@ -157,7 +159,7 @@ export function App() {
   const isAdmin = Boolean(authUser?.isAdmin);
   const currentUserName = authUser?.fullName || 'חבר צוות';
   const currentUserRole = authUser?.role || 'qa';
-  const userTeamTitle = currentUserRole === 'dev' && !isAdmin ? 'צוות פיתוח' : 'צוות בדיקות';
+  const userTeamTitle = isAdmin ? 'מנהל מערכת' : currentUserRole === 'dev' ? 'צוות פיתוח' : 'צוות בדיקות';
   const formattedUserDisplay = `${currentUserName} ${userTeamTitle}`;
   // QA testers and Admins can create/edit issues; Developers (1111) only update status and add comments
   const canCreateOrEdit = Boolean(authUser && (authUser.isAdmin || authUser.role === 'qa'));
@@ -266,7 +268,8 @@ export function App() {
         isInstallModalOpen ||
         isAdminReportOpen ||
         isAdminBackupOpen ||
-        isTeamModalOpen
+        isTeamModalOpen ||
+        isAdminSecurityOpen
       ) {
         return;
       }
@@ -316,6 +319,7 @@ export function App() {
     isAdminReportOpen,
     isAdminBackupOpen,
     isTeamModalOpen,
+    isAdminSecurityOpen,
     activeSystem,
     systems,
     issues,
@@ -337,18 +341,26 @@ export function App() {
     localStorage.removeItem(AUTH_STORAGE_KEY);
   };
 
-  const handleToggleAdmin = (code: string): boolean => {
-    if (isAdminAccessCode(code) && authUser) {
+  const handleSecurityUpdated = (newSuperAdminName: string) => {
+    const updatedMembers = getStoredTeamMembers();
+    setTeamMembers(updatedMembers);
+    if (authUser && (authUser.isAdmin || authUser.fullName === newSuperAdminName)) {
+      const parts = newSuperAdminName.split(/\s+/);
       const updatedUser: AuthenticatedUser = {
         ...authUser,
-        isAdmin: true
+        fullName: newSuperAdminName,
+        firstName: parts[0] || newSuperAdminName,
+        lastName: parts.slice(1).join(' ') || ''
       };
       updatedUser.authSignature = computeUserAuthSignature(updatedUser);
       setAuthUser(updatedUser);
       localStorage.setItem(AUTH_STORAGE_KEY, JSON.stringify(updatedUser));
-      return true;
     }
-    return false;
+    syncService.pushStateToCloud(
+      { systems, archivedSystems, issues },
+      `עדכון הגדרות אבטחה ושם מנהל-על: ${newSuperAdminName}`,
+      newSuperAdminName
+    );
   };
 
   const updateNotifPref = (patch: Partial<NotificationPreferences>) => {
@@ -1052,6 +1064,9 @@ export function App() {
         onOpenTeamModal={() => {
           if (isAdmin) setIsTeamModalOpen(true);
         }}
+        onOpenSecurityModal={() => {
+          if (isAdmin) setIsAdminSecurityOpen(true);
+        }}
         onManualSync={() => {
           syncService.requestManualSync();
           setLiveToast('🔄 מושך נתונים עדכניים מהענן...');
@@ -1071,7 +1086,6 @@ export function App() {
           if (isAdmin) setIsFirebaseModalOpen(true);
         }}
         isAdmin={isAdmin}
-        onToggleAdmin={handleToggleAdmin}
         onLogoutUser={handleLogoutUser}
         notificationsEnabled={notificationsEnabled}
         onInstallAndNotify={handleInstallAndNotify}
@@ -1579,6 +1593,14 @@ export function App() {
           teamMembers={teamMembers}
           onSaveTeamMembers={handleSaveTeamMembers}
           onClose={() => setIsTeamModalOpen(false)}
+        />
+      )}
+
+      {/* Admin Security, Master Key & Passcodes Management Modal (Admin Only) */}
+      {isAdminSecurityOpen && isAdmin && (
+        <AdminSecurityModal
+          onSecurityUpdated={handleSecurityUpdated}
+          onClose={() => setIsAdminSecurityOpen(false)}
         />
       )}
 
