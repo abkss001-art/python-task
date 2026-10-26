@@ -264,7 +264,7 @@ export const Navbar: React.FC<NavbarProps> = ({
                   onManualSync?.();
                   setTimeout(() => setIsSyncSpinning(false), 900);
                 }}
-                title="סנכרון חי בזמן אמת (לחץ לרענון וסנכרון מיידי מול כל הצוות)"
+                title="סנכרון חי בזמן אמת"
                 className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl border text-[11px] sm:text-xs font-semibold transition cursor-pointer ${
                   syncStatus.connected
                     ? 'bg-emerald-50/90 hover:bg-emerald-100/90 border-emerald-200 text-emerald-800'
@@ -301,7 +301,7 @@ export const Navbar: React.FC<NavbarProps> = ({
                   type="button"
                   onClick={onInstallAndNotify}
                   className="relative flex items-center justify-center w-8 h-8 sm:w-9 sm:h-9 rounded-xl bg-emerald-50 hover:bg-emerald-100 text-emerald-600 border border-emerald-200 shadow-2xs transition cursor-pointer shrink-0"
-                  title="הגדרות התראות ואפליקציה (פעיל)"
+                  title="הגדרות התראות ואפליקציה"
                   aria-label="הגדרות התראות"
                 >
                   <BellRing className="w-4 h-4 text-emerald-600" />
@@ -326,7 +326,7 @@ export const Navbar: React.FC<NavbarProps> = ({
                   type="button"
                   onClick={onOpenAdminToolsModal}
                   className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl border border-slate-300 bg-white hover:bg-indigo-50 hover:border-indigo-400 text-slate-800 hover:text-indigo-700 text-[11px] sm:text-xs font-extrabold transition cursor-pointer shrink-0 shadow-xs"
-                  title="פתיחת חלון כלי ניהול ושליטה (דוח, גיבוי, צוות, ענן, אבטחה וארכיון)"
+                  title="כלי ניהול ושליטה"
                 >
                   <MoreHorizontal className="w-4 h-4 text-indigo-600" />
                   <span>כלי מנהל</span>

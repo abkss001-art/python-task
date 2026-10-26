@@ -388,7 +388,7 @@ export const IssueCard: React.FC<IssueCardProps> = ({
             value={commentText}
             onChange={(e) => setCommentText(e.target.value)}
             onPaste={handleCommentPaste}
-            placeholder={`הוסף הערה כ-${currentUserName} (ניתן גם להדביק תמונה ב-Ctrl+V)...`}
+            placeholder={`הוסף הערה כ-${currentUserName}...`}
             className="flex-1 px-3 py-2 rounded-xl border border-slate-200 bg-white text-xs text-slate-900 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-indigo-500/30 focus:border-indigo-500 transition rtl-safe"
           />
           <button

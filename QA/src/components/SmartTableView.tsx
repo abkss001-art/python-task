@@ -547,7 +547,7 @@ export const SmartTableView: React.FC<SmartTableViewProps> = ({
                                 value={quickComment}
                                 onChange={(e) => setQuickComment(e.target.value)}
                                 onPaste={handleCommentPaste}
-                                placeholder={`כתוב הערה או הדבק צילום מסך (Ctrl+V) כ-${currentUserName}...`}
+                                placeholder={`כתוב הערה כ-${currentUserName}...`}
                                 className="flex-1 px-3 py-2 rounded-xl border border-slate-300 bg-white text-xs focus:outline-none focus:border-indigo-500 rtl-safe"
                               />
                               <button

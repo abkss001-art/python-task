@@ -289,18 +289,18 @@ export const AdminSecurityModal: React.FC<AdminSecurityModalProps> = ({
               <div className="p-4 rounded-2xl bg-amber-50/60 border border-amber-200/90 space-y-2">
                 <label className="block text-xs font-extrabold text-amber-950 flex items-center gap-1.5">
                   <UserCheck className="w-4 h-4 text-amber-600" />
-                  <span>שם מנהל-העל (Super Admin):</span>
+                  <span>שם מנהל-העל:</span>
                 </label>
                 <input
                   type="text"
                   required
                   value={superAdminName}
                   onChange={(e) => setSuperAdminName(e.target.value)}
-                  placeholder="שם מנהל-העל..."
+                  placeholder="הזן שם מנהל-על..."
                   className="w-full px-3.5 py-2 rounded-xl bg-white border border-amber-300 text-xs font-bold text-slate-900 focus:outline-none focus:ring-2 focus:ring-amber-500/30"
                 />
                 <p className="text-[11px] text-amber-800/80 leading-relaxed">
-                  שם זה מקובע כמנהל-העל של המערכת. הוא מוגן ולא ניתן למחיקה ברשימת הצוות.
+                  שם זה מוגדר כמנהל הראשי של המערכת ולא ניתן למחיקה.
                 </p>
               </div>
 
@@ -308,21 +308,20 @@ export const AdminSecurityModal: React.FC<AdminSecurityModalProps> = ({
               <div className="space-y-3 pt-1">
                 <div className="text-xs font-extrabold text-slate-800 flex items-center gap-1.5">
                   <KeyRound className="w-4 h-4 text-indigo-600" />
-                  <span>החלפת קודי כניסה למערכת:</span>
-                  <span className="text-[11px] font-normal text-slate-500">(השאר ריק אם אין שינוי)</span>
+                  <span>החלפת קודי כניסה:</span>
                 </div>
 
                 {/* QA Code */}
                 <div>
                   <label className="block text-[11px] font-bold text-slate-700 mb-1">
-                    קוד כניסה לבודק QA (ברירת מחדל: 9988)
+                    קוד כניסה לבודק QA
                   </label>
                   <input
                     type="password"
                     inputMode="numeric"
                     value={newQaCode}
                     onChange={(e) => setNewQaCode(e.target.value)}
-                    placeholder="הזן קוד בודק חדש או השאר ריק..."
+                    placeholder="הזן קוד בודק חדש..."
                     className="w-full px-3.5 py-2 rounded-xl bg-slate-50 border border-slate-300 text-xs font-mono text-slate-900 focus:bg-white focus:outline-none focus:border-indigo-500"
                   />
                 </div>
@@ -330,14 +329,14 @@ export const AdminSecurityModal: React.FC<AdminSecurityModalProps> = ({
                 {/* Dev Code */}
                 <div>
                   <label className="block text-[11px] font-bold text-slate-700 mb-1">
-                    קוד כניסה לצוות פיתוח (ברירת מחדל: 1111)
+                    קוד כניסה לצוות פיתוח
                   </label>
                   <input
                     type="password"
                     inputMode="numeric"
                     value={newDevCode}
                     onChange={(e) => setNewDevCode(e.target.value)}
-                    placeholder="הזן קוד מפתח חדש או השאר ריק..."
+                    placeholder="הזן קוד מפתח חדש..."
                     className="w-full px-3.5 py-2 rounded-xl bg-slate-50 border border-slate-300 text-xs font-mono text-slate-900 focus:bg-white focus:outline-none focus:border-indigo-500"
                   />
                 </div>
@@ -345,14 +344,14 @@ export const AdminSecurityModal: React.FC<AdminSecurityModalProps> = ({
                 {/* Admin Code */}
                 <div>
                   <label className="block text-[11px] font-bold text-slate-700 mb-1">
-                    קוד כניסה למנהל מערכת (ברירת מחדל: 1108)
+                    קוד כניסה למנהל מערכת
                   </label>
                   <input
                     type="password"
                     inputMode="numeric"
                     value={newAdminCode}
                     onChange={(e) => setNewAdminCode(e.target.value)}
-                    placeholder="הזן קוד מנהל חדש או השאר ריק..."
+                    placeholder="הזן קוד מנהל חדש..."
                     className="w-full px-3.5 py-2 rounded-xl bg-slate-50 border border-slate-300 text-xs font-mono text-slate-900 focus:bg-white focus:outline-none focus:border-indigo-500"
                   />
                 </div>

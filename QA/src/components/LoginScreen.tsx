@@ -165,7 +165,7 @@ export const LoginScreen: React.FC<LoginScreenProps> = ({
         };
     } else {
       if (!cleanFullName) {
-        setError('נא להזין שם מתוך רשימת הצוות (או להזין קוד מנהל-על בלבד לכניסה מהירה).');
+        setError('נא להזין שם פרטי ומשפחה.');
         return;
       }
       matchedMember = teamMembers.find(
@@ -334,14 +334,9 @@ export const LoginScreen: React.FC<LoginScreenProps> = ({
         <form onSubmit={handleSubmit} className="p-6 space-y-4">
           {/* Combined Full Name (First + Last Name in ONE field) with Autocomplete */}
           <div className="relative" ref={dropdownRef}>
-            <div className="flex items-center justify-between mb-1.5">
-              <label className="block text-xs font-bold text-slate-700">
-                שם מלא מתוך הצוות
-              </label>
-              <span className="text-[11px] font-medium text-amber-700 bg-amber-50 px-2 py-0.5 rounded-md border border-amber-200">
-                למנהל-על: ניתן להזין סיסמה בלבד
-              </span>
-            </div>
+            <label className="block text-xs font-bold text-slate-700 mb-1.5">
+              שם פרטי ומשפחה
+            </label>
             <div className="relative">
               <User className="w-4 h-4 text-slate-400 absolute right-3.5 top-1/2 -translate-y-1/2 pointer-events-none" />
               <input
@@ -357,7 +352,7 @@ export const LoginScreen: React.FC<LoginScreenProps> = ({
                     setIsDropdownOpen(true);
                   }
                 }}
-                placeholder="הקלד שם מתוך הצוות (למנהל-על: אפשר רק סיסמה למטה)..."
+                placeholder="הכנס שם פרטי ומשפחה..."
                 autoFocus={!remembered?.fullName}
                 autoComplete="name"
                 className="w-full pr-10 pl-9 py-2.5 rounded-xl border border-slate-300 bg-slate-50/70 focus:bg-white text-sm text-slate-900 focus:outline-none focus:ring-2 focus:ring-indigo-500/30 focus:border-indigo-500 transition rtl-safe font-medium"
@@ -414,7 +409,7 @@ export const LoginScreen: React.FC<LoginScreenProps> = ({
           {/* Password Input */}
           <div>
             <label className="block text-xs font-bold text-slate-700 mb-1.5">
-              סיסמא / קוד כניסה (בודק QA / מפתח / מנהל) <span className="text-red-500">*</span>
+              קוד כניסה <span className="text-red-500">*</span>
             </label>
             <div className="relative">
               <KeyRound className="w-4 h-4 text-slate-400 absolute right-3.5 top-1/2 -translate-y-1/2 pointer-events-none" />
@@ -449,7 +444,7 @@ export const LoginScreen: React.FC<LoginScreenProps> = ({
               className="w-4 h-4 rounded text-indigo-600 focus:ring-indigo-500 border-slate-300 cursor-pointer accent-indigo-600"
             />
             <span className="text-xs font-bold text-slate-700">
-              זכור אותי במכשיר זה (שמור פרטי כניסה לפעם הבאה)
+              זכור אותי במכשיר זה
             </span>
           </label>
 

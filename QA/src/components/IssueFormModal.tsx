@@ -267,7 +267,7 @@ export const IssueFormModal: React.FC<IssueFormModalProps> = ({
                 <span>מזהה תסריט בדיקה</span>
                 <span className="text-[11px] font-semibold text-slate-400 flex items-center gap-1">
                   <Lock className="w-3 h-3 text-slate-400" />
-                  <span>אוטומטי (מערכת: {system})</span>
+                  <span>מספור אוטומטי</span>
                 </span>
               </label>
               <div className="flex items-center justify-between px-3.5 py-2.5 rounded-xl border border-slate-200 bg-slate-100/90 text-sm font-mono select-none shadow-2xs">
@@ -275,9 +275,6 @@ export const IssueFormModal: React.FC<IssueFormModalProps> = ({
                   <span className="text-slate-400 font-bold text-xs">תסריט #</span>
                   <span className="text-base font-black text-indigo-700">{testCaseId}</span>
                 </div>
-                <span className="text-[11px] font-sans font-bold text-slate-500 bg-white px-2 py-0.5 rounded-md border border-slate-200">
-                  סדר עולה מ-1
-                </span>
               </div>
             </div>
           </div>
@@ -409,7 +406,7 @@ export const IssueFormModal: React.FC<IssueFormModalProps> = ({
           <div>
             <div className="flex items-center justify-between mb-1.5">
               <label className="block text-xs font-bold text-slate-700">
-                צילומי מסך (הדבקה מהלוח או בחירת קובץ • ניתן לסמן חצים על התמונה)
+                צילומי מסך והמחשות
               </label>
               {pasteNotice && (
                 <span className="inline-flex items-center gap-1 text-xs font-bold text-emerald-600 animate-bounce">
@@ -526,13 +523,13 @@ export const IssueFormModal: React.FC<IssueFormModalProps> = ({
           {(!editingIssue || editingIssue.id === '__NEW_FROM_PASTE__') && (
             <div>
               <label className="block text-xs font-bold text-slate-700 mb-1.5">
-                הערה ראשונית למפתח / לצוות (אופציונלי)
+                הערה ראשונית
               </label>
               <input
                 type="text"
                 value={initialComment}
                 onChange={(e) => setInitialComment(e.target.value)}
-                placeholder="למשל: משחזר רק במשתמש ללא הרשאות מנהל..."
+                placeholder="הערה נוספת לצוות..."
                 className="w-full px-3.5 py-2 rounded-xl border border-slate-300 bg-slate-50/70 focus:bg-white text-sm text-slate-900 focus:outline-none focus:ring-2 focus:ring-indigo-500/30 focus:border-indigo-500 transition rtl-safe"
               />
             </div>

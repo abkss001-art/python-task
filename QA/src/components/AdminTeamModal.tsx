@@ -177,7 +177,7 @@ export const AdminTeamModal: React.FC<AdminTeamModalProps> = ({
                 required
                 value={newFullName}
                 onChange={(e) => setNewFullName(e.target.value)}
-                placeholder="שם מלא (למשל: דניאל כהן)..."
+                placeholder="הכנס שם מלא..."
                 className="flex-1 px-3.5 py-2.5 rounded-xl bg-white border border-slate-300 text-xs text-slate-900 focus:outline-none focus:border-indigo-500 font-semibold shadow-2xs"
               />
               <button
@@ -238,7 +238,7 @@ export const AdminTeamModal: React.FC<AdminTeamModalProps> = ({
                 <div className="flex items-center justify-between">
                   <span className="text-xs font-bold text-purple-900 flex items-center gap-1.5">
                     <Layers className="w-3.5 h-3.5 text-purple-600" />
-                    <span>מערכות מורשות למפתח (סמן את המערכות שהוא יכול לראות):</span>
+                    <span>מערכות מורשות לצפייה:</span>
                   </span>
                   <div className="flex items-center gap-1.5">
                     <button
