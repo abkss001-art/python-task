@@ -1,0 +1,20 @@
+{
+  "name": "צב מן - צוות בדיקות מדור נחשון",
+  "short_name": "צב מן",
+  "description": "סביבת עבודה של צוות בדיקות מדור נחשון - ניהול ותיעוד בדיקות מערכת בזמן אמת",
+  "start_url": "./",
+  "scope": "./",
+  "display": "standalone",
+  "dir": "rtl",
+  "lang": "he",
+  "background_color": "#0f172a",
+  "theme_color": "#4f46e5",
+  "icons": [
+    {
+      "src": "./icon.svg",
+      "sizes": "192x192 512x512",
+      "type": "image/svg+xml",
+      "purpose": "any maskable"
+    }
+  ]
+}
