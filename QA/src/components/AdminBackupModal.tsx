@@ -393,6 +393,21 @@ export const AdminBackupModal: React.FC<AdminBackupModalProps> = ({
         const targetSys = activeSystem === 'ALL' ? systems[0] || 'CARGO' : activeSystem;
         const imported: StdIssue[] = [];
 
+        // Track used IDs to guarantee every imported scenario gets a unique ID
+        const usedTestCaseIds = new Set<string>();
+        for (const iss of issues) {
+          if (iss.testCaseId) {
+            usedTestCaseIds.add(iss.testCaseId.trim().toLowerCase());
+          }
+        }
+        let maxExistingNum = 9;
+        for (const iss of issues) {
+          const num = parseInt(iss.testCaseId, 10);
+          if (!isNaN(num) && num > maxExistingNum) {
+            maxExistingNum = num;
+          }
+        }
+
         for (let idx = 1; idx < rows.length; idx++) {
           const cols = rows[idx];
           if (cols.length < 2) continue;
@@ -451,10 +466,20 @@ export const AdminBackupModal: React.FC<AdminBackupModalProps> = ({
               ? rawSev
               : 'בינונית';
 
+          let finalTestCaseId = testCaseId.trim();
+          if (!finalTestCaseId || usedTestCaseIds.has(finalTestCaseId.toLowerCase())) {
+            maxExistingNum++;
+            while (usedTestCaseIds.has(String(maxExistingNum).toLowerCase())) {
+              maxExistingNum++;
+            }
+            finalTestCaseId = String(maxExistingNum);
+          }
+          usedTestCaseIds.add(finalTestCaseId.toLowerCase());
+
           imported.push({
             id: `std-${Date.now()}-${idx}-${Math.random().toString(36).substring(2, 6)}`,
             system: sys.trim() || targetSys,
-            testCaseId: testCaseId.trim() || String(idx),
+            testCaseId: finalTestCaseId,
             platform,
             severity,
             subject: subject.trim(),

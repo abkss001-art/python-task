@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState, useRef } from 'react';
+import React, { useEffect, useMemo, useState, useRef, useCallback } from 'react';
 import {
   DEFAULT_SYSTEMS,
   StdAuditEntry,
@@ -593,15 +593,20 @@ export function App() {
     return Array.from(set).sort((a, b) => Number(a) - Number(b));
   }, [systemIssues]);
 
-  // Suggested next Test Case ID (safe reduce loop for large Excel datasets)
-  const getSuggestedTestCaseId = () => {
-    const nums = systemIssues
-      .map((i) => parseInt(i.testCaseId, 10))
-      .filter((n) => !isNaN(n));
-    if (nums.length === 0) return '10';
-    const maxId = nums.reduce((max, n) => (n > max ? n : max), 0);
-    return String(maxId + 1);
-  };
+  // Suggested next unique Test Case ID across all systems
+  const getSuggestedTestCaseId = useCallback(() => {
+    const usedIds = new Set<number>();
+    issues.forEach((i) => {
+      const num = parseInt(i.testCaseId?.trim(), 10);
+      if (!isNaN(num)) usedIds.add(num);
+    });
+    if (usedIds.size === 0) return '10';
+    let candidate = Math.max(10, Math.max(...Array.from(usedIds)) + 1);
+    while (usedIds.has(candidate)) {
+      candidate++;
+    }
+    return String(candidate);
+  }, [issues]);
 
   // Filtered Issues
   const filteredIssues = useMemo(() => {
@@ -653,6 +658,17 @@ export function App() {
     const isEditingExisting =
       editingIssue && editingIssue.id !== '__NEW_FROM_PASTE__';
 
+    // Strictly ensure testCaseId is unique across all scenarios
+    let finalTestCaseId = formData.testCaseId.trim();
+    const isDuplicate = issues.some(
+      (iss) =>
+        iss.testCaseId.trim().toLowerCase() === finalTestCaseId.toLowerCase() &&
+        (!isEditingExisting || iss.id !== editingIssue.id)
+    );
+    if (isDuplicate || !finalTestCaseId) {
+      finalTestCaseId = getSuggestedTestCaseId();
+    }
+
     if (isEditingExisting) {
       const auditEntry: StdAuditEntry = {
         id: `aud-${Date.now()}-${Math.random().toString(36).substring(2, 5)}`,
@@ -669,7 +685,7 @@ export function App() {
           ? {
               ...item,
               system: formData.system,
-              testCaseId: formData.testCaseId,
+              testCaseId: finalTestCaseId,
               platform: formData.platform,
               severity: formData.severity,
               subject: formData.subject,
@@ -683,7 +699,7 @@ export function App() {
       );
       syncService.pushStateToCloud(
         { systems, archivedSystems, issues: nextIssues },
-        `עריכת תסריט #${formData.testCaseId} (${formData.system})`,
+        `עריכת תסריט #${finalTestCaseId} (${formData.system})`,
         currentUserName
       );
     } else {
@@ -701,7 +717,7 @@ export function App() {
       const newIssue: StdIssue = {
         id: `std-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`,
         system: formData.system,
-        testCaseId: formData.testCaseId,
+        testCaseId: finalTestCaseId,
         platform: formData.platform,
         severity: formData.severity,
         subject: formData.subject,
@@ -731,7 +747,7 @@ export function App() {
 
       syncService.pushStateToCloud(
         { systems, archivedSystems, issues: nextIssues },
-        `תקלה חדשה בתסריט #${formData.testCaseId} (${formData.system})`,
+        `תקלה חדשה בתסריט #${finalTestCaseId} (${formData.system})`,
         currentUserName
       );
     }
@@ -1376,6 +1392,7 @@ export function App() {
           defaultSystem={activeSystem}
           suggestedTestCaseId={getSuggestedTestCaseId()}
           editingIssue={editingIssue}
+          existingIssues={issues}
           onSave={handleSaveIssue}
           onClose={() => {
             setIsIssueModalOpen(false);

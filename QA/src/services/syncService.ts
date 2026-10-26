@@ -215,7 +215,7 @@ const INITIAL_DEMO_ISSUES: StdIssue[] = [
   {
     id: 'std-201',
     system: 'נשקי ערד',
-    testCaseId: '10',
+    testCaseId: '13',
     platform: 'מחשב',
     severity: 'נמוכה',
     subject: 'איטיות בטעינת קטלוג דגמים בחיפוש לפי מספר סידורי',
@@ -733,6 +733,33 @@ class RealtimeSyncService {
       (a, b) => (b.updatedAt || 0) - (a.updatedAt || 0)
     );
 
+    // Guarantee that every scenario across all systems has a strictly unique testCaseId
+    const seenMergeCaseIds = new Set<string>();
+    let maxMergeNum = 9;
+    for (const iss of mergedIssues) {
+      const num = parseInt(iss.testCaseId, 10);
+      if (!isNaN(num) && num > maxMergeNum) {
+        maxMergeNum = num;
+      }
+    }
+    // Sort chronologically ascending so earlier created issues preserve their original testCaseId
+    const chronologicalIssues = [...mergedIssues].sort(
+      (a, b) => (a.createdAt || 0) - (b.createdAt || 0)
+    );
+    for (const iss of chronologicalIssues) {
+      const trimmed = (iss.testCaseId || '').trim();
+      if (!trimmed || seenMergeCaseIds.has(trimmed.toLowerCase())) {
+        maxMergeNum++;
+        while (seenMergeCaseIds.has(String(maxMergeNum).toLowerCase())) {
+          maxMergeNum++;
+        }
+        iss.testCaseId = String(maxMergeNum);
+      } else {
+        iss.testCaseId = trimmed;
+      }
+      seenMergeCaseIds.add(iss.testCaseId.toLowerCase());
+    }
+
     const archivedSet = new Set<string>(
       (primary.archivedSystems || []).filter((s) => !deletedSystemSet.has(s))
     );
@@ -1249,6 +1276,32 @@ class RealtimeSyncService {
         createdAt: Number(item.createdAt || Date.now()),
         updatedAt: Number(item.updatedAt || Date.now())
       }));
+
+    // Guarantee strictly unique testCaseId across all issues in the normalized payload
+    const seenNormCaseIds = new Set<string>();
+    let maxNormNum = 9;
+    for (const iss of issues) {
+      const num = parseInt(iss.testCaseId, 10);
+      if (!isNaN(num) && num > maxNormNum) {
+        maxNormNum = num;
+      }
+    }
+    const chronologicalNorm = [...issues].sort(
+      (a, b) => (a.createdAt || 0) - (b.createdAt || 0)
+    );
+    for (const iss of chronologicalNorm) {
+      const trimmed = (iss.testCaseId || '').trim();
+      if (!trimmed || seenNormCaseIds.has(trimmed.toLowerCase())) {
+        maxNormNum++;
+        while (seenNormCaseIds.has(String(maxNormNum).toLowerCase())) {
+          maxNormNum++;
+        }
+        iss.testCaseId = String(maxNormNum);
+      } else {
+        iss.testCaseId = trimmed;
+      }
+      seenNormCaseIds.add(iss.testCaseId.toLowerCase());
+    }
 
     const decodedDriveUrl = decodeProtectedUrl(raw?.googleDriveUrl);
     if (decodedDriveUrl) {
