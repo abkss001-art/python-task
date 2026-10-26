@@ -1,9 +1,15 @@
 @import "tailwindcss";
 
+@custom-variant dark (&:where(.dark, .dark *));
+
 @layer base {
   html {
     direction: rtl;
     font-family: 'Rubik', 'Heebo', system-ui, -apple-system, sans-serif;
+  }
+
+  html.dark {
+    color-scheme: dark;
   }
 
   body {
@@ -41,6 +47,18 @@
 
 ::-webkit-scrollbar-thumb:hover {
   background: #94a3b8;
+}
+
+html.dark ::-webkit-scrollbar-track {
+  background: #0f172a;
+}
+
+html.dark ::-webkit-scrollbar-thumb {
+  background: #334155;
+}
+
+html.dark ::-webkit-scrollbar-thumb:hover {
+  background: #475569;
 }
 
 @keyframes pulseRing {

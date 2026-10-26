@@ -22,7 +22,9 @@ import {
   KeyRound,
   SlidersHorizontal,
   ChevronDown,
-  MoreHorizontal
+  MoreHorizontal,
+  Sun,
+  Moon
 } from 'lucide-react';
 import { StdIssue, SyncStatusInfo, TeamRole } from '../types/std';
 
@@ -52,6 +54,8 @@ interface NavbarProps {
   onLogoutUser: () => void;
   notificationsEnabled: boolean;
   onInstallAndNotify: () => void;
+  theme?: 'light' | 'dark';
+  onToggleTheme?: () => void;
 }
 
 /**
@@ -152,7 +156,9 @@ export const Navbar: React.FC<NavbarProps> = ({
   isAdmin,
   onLogoutUser,
   notificationsEnabled,
-  onInstallAndNotify
+  onInstallAndNotify,
+  theme = 'light',
+  onToggleTheme
 }) => {
   const [isAddingSystem, setIsAddingSystem] = useState(false);
   const [newSystemName, setNewSystemName] = useState('');
@@ -206,26 +212,26 @@ export const Navbar: React.FC<NavbarProps> = ({
   const isViewingArchivedSystem = archivedSystems.includes(activeSystem);
 
   return (
-    <header className="sticky top-0 z-30 bg-white/95 backdrop-blur-md border-b border-slate-200 shadow-xs" dir="rtl">
+    <header className="sticky top-0 z-30 bg-white/95 dark:bg-slate-900/95 backdrop-blur-md border-b border-slate-200 dark:border-slate-800 shadow-xs" dir="rtl">
       <div className="max-w-7xl mx-auto px-3 sm:px-6">
         {/* Top Section: Responsive layout for Mobile & Desktop */}
-        <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-2 py-2.5 sm:py-3 border-b border-slate-100">
+        <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-2 py-2.5 sm:py-3 border-b border-slate-100 dark:border-slate-800/80">
           {/* Brand Block + Mobile CTA */}
           <div className="flex flex-col gap-1">
             <div className="flex items-center justify-between gap-2">
               <div className="flex items-center gap-2.5 sm:gap-3.5">
                 <TzavManEmblem />
                 <div>
-                  <h1 className="text-xl sm:text-2xl font-black tracking-tight bg-gradient-to-l from-slate-950 via-indigo-950 to-indigo-700 bg-clip-text text-transparent leading-tight">
+                  <h1 className="text-xl sm:text-2xl font-black tracking-tight bg-gradient-to-l from-slate-950 via-indigo-950 to-indigo-700 dark:from-white dark:via-indigo-200 dark:to-cyan-400 bg-clip-text text-transparent leading-tight">
                     צב מן
                   </h1>
                   {/* Desktop/Tablet Subtitle inline under title */}
-                  <p className="hidden sm:block text-sm text-slate-600 mt-0.5 leading-snug">
+                  <p className="hidden sm:block text-sm text-slate-600 dark:text-slate-400 mt-0.5 leading-snug">
                     <span>סביבת עבודה של </span>
-                    <strong className="font-extrabold text-indigo-700">צ</strong>וות{' '}
-                    <strong className="font-extrabold text-indigo-700">ב</strong>דיקות{' '}
-                    <strong className="font-extrabold text-indigo-700">מ</strong>דור{' '}
-                    <strong className="font-extrabold text-indigo-700">נ</strong>חשון
+                    <strong className="font-extrabold text-indigo-700 dark:text-indigo-400">צ</strong>וות{' '}
+                    <strong className="font-extrabold text-indigo-700 dark:text-indigo-400">ב</strong>דיקות{' '}
+                    <strong className="font-extrabold text-indigo-700 dark:text-indigo-400">מ</strong>דור{' '}
+                    <strong className="font-extrabold text-indigo-700 dark:text-indigo-400">נ</strong>חשון
                   </p>
                 </div>
               </div>
@@ -244,17 +250,17 @@ export const Navbar: React.FC<NavbarProps> = ({
             </div>
 
             {/* Mobile Full-Width Subtitle: Never truncated or overlapped by '+ תקלה חדשה' */}
-            <p className="sm:hidden text-xs text-slate-600 pr-0.5 leading-relaxed">
+            <p className="sm:hidden text-xs text-slate-600 dark:text-slate-400 pr-0.5 leading-relaxed">
               <span>סביבת עבודה של </span>
-              <strong className="font-extrabold text-indigo-700">צ</strong>וות{' '}
-              <strong className="font-extrabold text-indigo-700">ב</strong>דיקות{' '}
-              <strong className="font-extrabold text-indigo-700">מ</strong>דור{' '}
-              <strong className="font-extrabold text-indigo-700">נ</strong>חשון
+              <strong className="font-extrabold text-indigo-700 dark:text-indigo-400">צ</strong>וות{' '}
+              <strong className="font-extrabold text-indigo-700 dark:text-indigo-400">ב</strong>דיקות{' '}
+              <strong className="font-extrabold text-indigo-700 dark:text-indigo-400">מ</strong>דור{' '}
+              <strong className="font-extrabold text-indigo-700 dark:text-indigo-400">נ</strong>חשון
             </p>
           </div>
 
           {/* Row 2 on Mobile (Inline on Desktop): Sync Badge + Install/Notify + User Identity + Admin + Desktop CTA */}
-          <div className="flex items-center justify-between lg:justify-end gap-1.5 sm:gap-2 overflow-x-auto no-scrollbar pt-1 lg:pt-0 border-t lg:border-t-0 border-slate-100">
+          <div className="flex items-center justify-between lg:justify-end gap-1.5 sm:gap-2 overflow-x-auto no-scrollbar pt-1 lg:pt-0 border-t lg:border-t-0 border-slate-100 dark:border-slate-800/80">
             {/* Live Sync Indicator & App Download / Notifications */}
             <div className="flex items-center gap-1.5 shrink-0">
               <button
@@ -325,10 +331,10 @@ export const Navbar: React.FC<NavbarProps> = ({
                 <button
                   type="button"
                   onClick={onOpenAdminToolsModal}
-                  className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl border border-slate-300 bg-white hover:bg-indigo-50 hover:border-indigo-400 text-slate-800 hover:text-indigo-700 text-[11px] sm:text-xs font-extrabold transition cursor-pointer shrink-0 shadow-xs"
+                  className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 hover:bg-indigo-50 dark:hover:bg-slate-700 hover:border-indigo-400 text-slate-800 dark:text-slate-200 hover:text-indigo-700 dark:hover:text-indigo-400 text-[11px] sm:text-xs font-extrabold transition cursor-pointer shrink-0 shadow-xs"
                   title="כלי ניהול ושליטה"
                 >
-                  <MoreHorizontal className="w-4 h-4 text-indigo-600" />
+                  <MoreHorizontal className="w-4 h-4 text-indigo-600 dark:text-indigo-400" />
                   <span>כלי מנהל</span>
                   {archivedSystems.length > 0 && (
                     <span className="w-2 h-2 rounded-full bg-amber-500" title="יש מערכות בארכיון" />
@@ -338,19 +344,36 @@ export const Navbar: React.FC<NavbarProps> = ({
             </div>
 
             <div className="flex items-center gap-1.5 sm:gap-2 shrink-0">
+              {/* Theme Mode Toggle (Light / Dark) */}
+              {onToggleTheme && (
+                <button
+                  type="button"
+                  onClick={onToggleTheme}
+                  className="flex items-center justify-center w-8 h-8 sm:w-9 sm:h-9 rounded-xl bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-700 dark:text-amber-400 border border-slate-200 dark:border-slate-700 shadow-2xs transition cursor-pointer shrink-0"
+                  title={theme === 'dark' ? 'עבור למצב יום (בהיר)' : 'עבור למצב לילה (כהה)'}
+                  aria-label="החלף מצב כהה/בהיר"
+                >
+                  {theme === 'dark' ? (
+                    <Sun className="w-4 h-4 text-amber-400 animate-in spin-in-180 duration-300" />
+                  ) : (
+                    <Moon className="w-4 h-4 text-slate-600 dark:text-slate-300 animate-in spin-in-180 duration-300" />
+                  )}
+                </button>
+              )}
+
               {/* Logged-In User Badge */}
-              <div className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl bg-slate-100 border border-slate-200 text-[11px] sm:text-xs font-medium text-slate-700">
-                <UserCheck className="w-3.5 h-3.5 text-indigo-600 shrink-0" />
-                <span className="font-bold text-slate-900 max-w-[100px] sm:max-w-[130px] truncate rtl-safe">
+              <div className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl bg-slate-100 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-[11px] sm:text-xs font-medium text-slate-700 dark:text-slate-300">
+                <UserCheck className="w-3.5 h-3.5 text-indigo-600 dark:text-indigo-400 shrink-0" />
+                <span className="font-bold text-slate-900 dark:text-slate-100 max-w-[100px] sm:max-w-[130px] truncate rtl-safe">
                   {currentUserName}
                 </span>
                 <span
                   className={`px-1.5 py-0.2 rounded text-[10px] font-bold ${
                     isAdmin
-                      ? 'bg-amber-100 text-amber-800'
+                      ? 'bg-amber-100 text-amber-800 dark:bg-amber-950 dark:text-amber-300'
                       : currentUserRole === 'dev'
-                      ? 'bg-purple-100 text-purple-700'
-                      : 'bg-sky-100 text-sky-700'
+                      ? 'bg-purple-100 text-purple-700 dark:bg-purple-950 dark:text-purple-300'
+                      : 'bg-sky-100 text-sky-700 dark:bg-sky-950 dark:text-sky-300'
                   }`}
                 >
                   {isAdmin ? 'מנהל' : currentUserRole === 'dev' ? 'מפתח' : 'בודק QA'}
@@ -361,7 +384,7 @@ export const Navbar: React.FC<NavbarProps> = ({
               <button
                 type="button"
                 onClick={onLogoutUser}
-                className="flex items-center gap-1 px-2.5 py-1.5 rounded-xl bg-slate-100 hover:bg-red-50 text-slate-600 hover:text-red-600 border border-slate-200 hover:border-red-200 text-[11px] sm:text-xs font-semibold transition cursor-pointer"
+                className="flex items-center gap-1 px-2.5 py-1.5 rounded-xl bg-slate-100 dark:bg-slate-800 hover:bg-red-50 dark:hover:bg-red-950/40 text-slate-600 dark:text-slate-300 hover:text-red-600 dark:hover:text-red-400 border border-slate-200 dark:border-slate-700 hover:border-red-200 dark:hover:border-red-800 text-[11px] sm:text-xs font-semibold transition cursor-pointer"
                 title="התנתק / החלף משתמש"
               >
                 <LogOut className="w-3.5 h-3.5" />
@@ -404,8 +427,8 @@ export const Navbar: React.FC<NavbarProps> = ({
                       isAdmin && (onManageSystem || onRequestRemoveSystem) ? 'rounded-r-xl' : 'rounded-xl'
                     } ${
                       isSelected
-                        ? 'bg-slate-900 text-white shadow-sm'
-                        : 'bg-slate-100 hover:bg-slate-200/80 text-slate-700'
+                        ? 'bg-slate-900 dark:bg-indigo-600 text-white shadow-sm'
+                        : 'bg-slate-100 dark:bg-slate-800 hover:bg-slate-200/80 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-300'
                     }`}
                   >
                     <span className="bidi-isolate">{sys}</span>
@@ -413,7 +436,7 @@ export const Navbar: React.FC<NavbarProps> = ({
                       className={`px-1.5 py-0.2 rounded-md text-[10px] sm:text-[11px] font-mono ${
                         isSelected
                           ? 'bg-white/20 text-white'
-                          : 'bg-white text-slate-600 border border-slate-200'
+                          : 'bg-white dark:bg-slate-900 text-slate-600 dark:text-slate-300 border border-slate-200 dark:border-slate-700'
                       }`}
                     >
                       {total}
@@ -431,8 +454,8 @@ export const Navbar: React.FC<NavbarProps> = ({
                       onClick={() => (onManageSystem ? onManageSystem(sys) : onRequestRemoveSystem?.(sys))}
                       className={`px-2 py-1.5 rounded-l-xl border-r text-xs transition cursor-pointer flex items-center justify-center ${
                         isSelected
-                          ? 'bg-slate-800 hover:bg-indigo-600 text-slate-300 hover:text-white border-slate-700'
-                          : 'bg-slate-200/80 hover:bg-indigo-100 hover:text-indigo-700 text-slate-500 border-slate-300'
+                          ? 'bg-slate-800 dark:bg-indigo-700 hover:bg-indigo-600 text-slate-300 hover:text-white border-slate-700 dark:border-indigo-500'
+                          : 'bg-slate-200/80 dark:bg-slate-700 hover:bg-indigo-100 dark:hover:bg-slate-600 hover:text-indigo-700 dark:hover:text-indigo-300 text-slate-500 dark:text-slate-300 border-slate-300 dark:border-slate-600'
                       }`}
                       title={`ניהול מערכת ${sys}: עריכת שם, ארכיון או מחיקה (מנהל בלבד)`}
                     >
@@ -465,7 +488,7 @@ export const Navbar: React.FC<NavbarProps> = ({
                 className={`flex items-center gap-1.5 sm:gap-2 px-3 sm:px-3.5 py-1.5 rounded-xl text-xs sm:text-sm font-semibold transition shrink-0 cursor-pointer ${
                   activeSystem === 'ALL'
                     ? 'bg-indigo-600 text-white shadow-sm'
-                    : 'bg-slate-100 hover:bg-slate-200/80 text-slate-600'
+                    : 'bg-slate-100 dark:bg-slate-800 hover:bg-slate-200/80 dark:hover:bg-slate-700 text-slate-600 dark:text-slate-300'
                 }`}
               >
                 <span>כל המערכות</span>
@@ -473,7 +496,7 @@ export const Navbar: React.FC<NavbarProps> = ({
                   className={`px-1.5 py-0.2 rounded-md text-[10px] sm:text-[11px] font-mono ${
                     activeSystem === 'ALL'
                       ? 'bg-white/20 text-white'
-                      : 'bg-white text-slate-600 border border-slate-200'
+                      : 'bg-white dark:bg-slate-900 text-slate-600 dark:text-slate-300 border border-slate-200 dark:border-slate-700'
                   }`}
                 >
                   {getCountForSystem('ALL')}

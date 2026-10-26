@@ -14,6 +14,8 @@ import { Navbar } from './components/Navbar';
 import { FilterBar } from './components/FilterBar';
 import { IssueCard } from './components/IssueCard';
 import { SmartTableView } from './components/SmartTableView';
+import { KanbanBoard } from './components/KanbanBoard';
+import { MobileBottomNav } from './components/MobileBottomNav';
 import { IssueFormModal } from './components/IssueFormModal';
 import { LightboxModal } from './components/LightboxModal';
 import { FirebaseSetupModal } from './components/FirebaseSetupModal';
@@ -130,12 +132,38 @@ export function App() {
   });
   const [isInstallModalOpen, setIsInstallModalOpen] = useState<boolean>(false);
 
+  // Theme State (Dark / Light Mode)
+  const [theme, setTheme] = useState<'light' | 'dark'>(() => {
+    try {
+      const saved = localStorage.getItem('tzavman_theme');
+      if (saved === 'dark' || saved === 'light') return saved;
+      return window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
+    } catch {
+      return 'light';
+    }
+  });
+
+  useEffect(() => {
+    try {
+      localStorage.setItem('tzavman_theme', theme);
+    } catch {}
+    if (theme === 'dark') {
+      document.documentElement.classList.add('dark');
+    } else {
+      document.documentElement.classList.remove('dark');
+    }
+  }, [theme]);
+
+  const toggleTheme = useCallback(() => {
+    setTheme((prev) => (prev === 'light' ? 'dark' : 'light'));
+  }, []);
+
   // Filters & View Mode (Default is Smart Table 'table' for everyone)
   const [searchQuery, setSearchQuery] = useState('');
   const [testCaseFilter, setTestCaseFilter] = useState('');
   const [platformFilter, setPlatformFilter] = useState<StdPlatform | 'ALL'>('ALL');
   const [statusFilter, setStatusFilter] = useState<StdStatus | 'ALL'>('ALL');
-  const [viewMode, setViewMode] = useState<'cards' | 'table'>('table');
+  const [viewMode, setViewMode] = useState<'cards' | 'table' | 'kanban'>('table');
 
   // Modals State
   const [isIssueModalOpen, setIsIssueModalOpen] = useState(false);
@@ -1254,7 +1282,7 @@ export function App() {
   }
 
   return (
-    <div className="min-h-screen flex flex-col bg-slate-50 text-slate-900" dir="rtl">
+    <div className="min-h-screen flex flex-col bg-slate-50 dark:bg-slate-950 text-slate-900 dark:text-slate-100 transition-colors" dir="rtl">
       {/* Top Navigation & System Bar */}
       <Navbar
         systems={visibleSystems}
@@ -1302,6 +1330,8 @@ export function App() {
         onLogoutUser={handleLogoutUser}
         notificationsEnabled={notificationsEnabled}
         onInstallAndNotify={handleInstallAndNotify}
+        theme={theme}
+        onToggleTheme={toggleTheme}
       />
 
       {/* Floating Real-Time Event Toast (when another team member updates something) */}
@@ -1313,12 +1343,12 @@ export function App() {
       )}
 
       {/* Main Content Area */}
-      <main className="flex-1 max-w-7xl w-full mx-auto px-3 sm:px-6 py-4 sm:py-6">
+      <main className="flex-1 max-w-7xl w-full mx-auto px-3 sm:px-6 py-4 sm:py-6 pb-24 md:pb-8">
         {/* Archived System Notice Banner if Admin is viewing an archived system */}
         {isAdmin && archivedSystems.includes(activeSystem) && (
-          <div className="flex flex-wrap items-center justify-between gap-2 mb-4 px-4 py-3 rounded-2xl bg-amber-50 border border-amber-300 text-amber-900 text-xs sm:text-sm">
+          <div className="flex flex-wrap items-center justify-between gap-2 mb-4 px-4 py-3 rounded-2xl bg-amber-50 dark:bg-amber-950/40 border border-amber-300 dark:border-amber-800 text-amber-900 dark:text-amber-200 text-xs sm:text-sm">
             <div className="flex items-center gap-2 font-bold">
-              <Archive className="w-4 h-4 text-amber-600 shrink-0" />
+              <Archive className="w-4 h-4 text-amber-600 dark:text-amber-400 shrink-0" />
               <span>
                 הנך צופה במערכת <span className="underline bidi-isolate">{activeSystem}</span> שנמצאת בארכיון (מוסתרת משאר הצוות).
               </span>
@@ -1338,12 +1368,12 @@ export function App() {
         {((showShortcutBanner && canCreateOrEdit) || showLastEventBanner) && (
           <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2.5 mb-4">
             {showShortcutBanner && canCreateOrEdit && (
-              <div className="flex-1 flex items-center justify-between gap-2 px-3.5 py-2.5 rounded-2xl bg-gradient-to-l from-indigo-50 via-white to-violet-50 border border-indigo-100 text-xs text-slate-600 shadow-2xs">
+              <div className="flex-1 flex items-center justify-between gap-2 px-3.5 py-2.5 rounded-2xl bg-gradient-to-l from-indigo-50 via-white to-violet-50 dark:from-slate-900 dark:via-indigo-950/40 dark:to-slate-900 border border-indigo-100 dark:border-indigo-900/60 text-xs text-slate-600 dark:text-slate-300 shadow-2xs">
                 <div className="flex items-center gap-2 min-w-0">
-                  <ClipboardPaste className="w-4 h-4 text-indigo-600 shrink-0" />
+                  <ClipboardPaste className="w-4 h-4 text-indigo-600 dark:text-indigo-400 shrink-0" />
                   <span className="leading-relaxed">
-                    <strong className="text-slate-900">קיצור דרך:</strong> צילמת מסך? לחץ{' '}
-                    <kbd className="px-1.5 py-0.5 rounded bg-white border border-slate-200 font-mono text-indigo-700 font-bold">
+                    <strong className="text-slate-900 dark:text-slate-100">קיצור דרך:</strong> צילמת מסך? לחץ{' '}
+                    <kbd className="px-1.5 py-0.5 rounded bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 font-mono text-indigo-700 dark:text-indigo-400 font-bold">
                       Ctrl + V
                     </kbd>{' '}
                     בעמוד כדי לפתוח מיד דיווח תקלה עם הצילום מוכן!
@@ -1352,7 +1382,7 @@ export function App() {
                 <button
                   type="button"
                   onClick={() => setShowShortcutBanner(false)}
-                  className="p-1 rounded-lg text-slate-400 hover:text-slate-700 hover:bg-slate-200/60 transition cursor-pointer shrink-0"
+                  className="p-1 rounded-lg text-slate-400 hover:text-slate-700 dark:hover:text-slate-200 hover:bg-slate-200/60 dark:hover:bg-slate-800 transition cursor-pointer shrink-0"
                   title="סגור חלונית קיצור דרך"
                 >
                   <X className="w-4 h-4" />
@@ -1361,9 +1391,9 @@ export function App() {
             )}
 
             {showLastEventBanner && (
-              <div className="w-full sm:w-auto flex items-start sm:items-center justify-between gap-2 px-3.5 py-2.5 rounded-2xl bg-emerald-50/80 border border-emerald-200/80 text-xs text-emerald-800 font-medium shadow-2xs">
+              <div className="w-full sm:w-auto flex items-start sm:items-center justify-between gap-2 px-3.5 py-2.5 rounded-2xl bg-emerald-50/80 dark:bg-emerald-950/40 border border-emerald-200/80 dark:border-emerald-800/60 text-xs text-emerald-800 dark:text-emerald-300 font-medium shadow-2xs">
                 <div className="flex items-start sm:items-center gap-2 min-w-0 flex-1">
-                  <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0 mt-0.5 sm:mt-0" />
+                  <CheckCircle2 className="w-4 h-4 text-emerald-600 dark:text-emerald-400 shrink-0 mt-0.5 sm:mt-0" />
                   <span className="rtl-safe leading-relaxed break-words">
                     <strong className="font-bold">פעולה אחרונה:</strong> {syncStatus.lastEventText}
                   </span>
@@ -1371,7 +1401,7 @@ export function App() {
                 <button
                   type="button"
                   onClick={() => setDismissedLastEventText(syncStatus.lastEventText || '')}
-                  className="p-1 rounded-lg text-emerald-600/70 hover:text-emerald-900 hover:bg-emerald-200/50 transition cursor-pointer shrink-0"
+                  className="p-1 rounded-lg text-emerald-600/70 hover:text-emerald-900 dark:hover:text-emerald-200 hover:bg-emerald-200/50 dark:hover:bg-emerald-900/40 transition cursor-pointer shrink-0"
                   title="סגור חלונית פעולה אחרונה"
                 >
                   <X className="w-4 h-4" />
@@ -1400,18 +1430,18 @@ export function App() {
           onResetFilters={resetFilters}
         />
 
-        {/* Issues Display: Empty Systems OR Empty Filter OR Cards Grid OR Smart Table */}
+        {/* Issues Display: Empty Systems OR Empty Filter OR Cards Grid OR Kanban Board OR Smart Table */}
         {visibleSystems.length === 0 ? (
-          <div className="bg-white rounded-3xl border border-slate-200/80 p-8 sm:p-12 text-center max-w-lg mx-auto my-10 shadow-2xs">
-            <div className="w-16 h-16 rounded-3xl bg-amber-50 text-amber-600 border border-amber-200 flex items-center justify-center mx-auto mb-4 shadow-2xs">
+          <div className="bg-white dark:bg-slate-900 rounded-3xl border border-slate-200/80 dark:border-slate-800 p-8 sm:p-12 text-center max-w-lg mx-auto my-10 shadow-2xs">
+            <div className="w-16 h-16 rounded-3xl bg-amber-50 dark:bg-amber-950/50 text-amber-600 dark:text-amber-400 border border-amber-200 dark:border-amber-800 flex items-center justify-center mx-auto mb-4 shadow-2xs">
               <ShieldAlert className="w-8 h-8" />
             </div>
-            <h3 className="text-lg font-black text-slate-900 mb-2">
+            <h3 className="text-lg font-black text-slate-900 dark:text-slate-100 mb-2">
               {!isAdmin && currentUserRole === 'dev'
                 ? 'אין לך הרשאות צפייה באף מערכת'
                 : 'לא קיימות מערכות פעילות במערכת'}
             </h3>
-            <p className="text-xs sm:text-sm text-slate-600 mb-6 leading-relaxed">
+            <p className="text-xs sm:text-sm text-slate-600 dark:text-slate-400 mb-6 leading-relaxed">
               {!isAdmin && currentUserRole === 'dev'
                 ? 'משתמש זה מוגדר כמפתח ללא מערכות משויכות. יש לפנות למנהל המערכת על מנת להגדיר עבורך מערכות לצפייה בהגדרות הצוות.'
                 : 'כל המערכות הועברו לארכיון או נמחקו. באפשרות מנהל המערכת להוסיף מערכת חדשה או לשחזר מערכת מהארכיון בסרגל העליון.'}
@@ -1433,21 +1463,21 @@ export function App() {
             )}
           </div>
         ) : filteredIssues.length === 0 ? (
-          <div className="bg-white rounded-3xl border border-slate-200/80 p-12 text-center max-w-lg mx-auto my-8 shadow-2xs">
-            <div className="w-14 h-14 rounded-2xl bg-indigo-50 text-indigo-600 flex items-center justify-center mx-auto mb-4">
+          <div className="bg-white dark:bg-slate-900 rounded-3xl border border-slate-200/80 dark:border-slate-800 p-12 text-center max-w-lg mx-auto my-8 shadow-2xs">
+            <div className="w-14 h-14 rounded-2xl bg-indigo-50 dark:bg-indigo-950/50 text-indigo-600 dark:text-indigo-400 flex items-center justify-center mx-auto mb-4">
               <Sparkles className="w-7 h-7" />
             </div>
-            <h3 className="text-lg font-extrabold text-slate-900 mb-1">
+            <h3 className="text-lg font-extrabold text-slate-900 dark:text-slate-100 mb-1">
               לא נמצאו תקלות התואמות לסינון
             </h3>
-            <p className="text-sm text-slate-500 mb-6">
+            <p className="text-sm text-slate-500 dark:text-slate-400 mb-6">
               נסה לשנות את מילות החיפוש או לבחור מערכת אחרת.
             </p>
             <div className="flex items-center justify-center gap-3">
               <button
                 type="button"
                 onClick={resetFilters}
-                className="px-4 py-2.5 rounded-xl border border-slate-300 text-slate-700 hover:bg-slate-50 text-xs font-bold transition cursor-pointer"
+                className="px-4 py-2.5 rounded-xl border border-slate-300 dark:border-slate-700 text-slate-700 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-800 text-xs font-bold transition cursor-pointer"
               >
                 איפוס סינונים
               </button>
@@ -1492,6 +1522,26 @@ export function App() {
               />
             ))}
           </div>
+        ) : viewMode === 'kanban' ? (
+          <KanbanBoard
+            issues={filteredIssues}
+            showSystemBadge={activeSystem === 'ALL'}
+            highlightedId={highlightedIssueId}
+            currentUserName={currentUserName}
+            currentUserRole={currentUserRole}
+            canEdit={canCreateOrEdit}
+            canDelete={isAdmin}
+            onStatusChange={handleStatusChange}
+            onEditIssue={(iss) => {
+              if (!canCreateOrEdit) return;
+              setEditingIssue(iss);
+              setIsIssueModalOpen(true);
+            }}
+            onDeleteIssue={handleRequestDeleteIssue}
+            onOpenLightbox={(images, index, title) =>
+              setLightboxData({ images, index, title })
+            }
+          />
         ) : (
           <SmartTableView
             issues={filteredIssues}
@@ -1515,6 +1565,29 @@ export function App() {
           />
         )}
       </main>
+
+      {/* Mobile Bottom Navigation Bar (Visible on mobile/tablet screens) */}
+      <MobileBottomNav
+        viewMode={viewMode}
+        onViewModeChange={setViewMode}
+        systems={visibleSystems}
+        activeSystem={activeSystem}
+        onSelectSystem={setActiveSystem}
+        canCreateOrEdit={canCreateOrEdit}
+        onOpenNewIssue={() => {
+          if (!canCreateOrEdit) return;
+          setEditingIssue(null);
+          setIsIssueModalOpen(true);
+        }}
+        syncStatus={syncStatus}
+        onManualSync={() => {
+          syncService.requestManualSync();
+          setLiveToast('🔄 מושך נתונים עדכניים מהענן...');
+          setTimeout(() => setLiveToast(null), 2500);
+        }}
+        theme={theme}
+        onToggleTheme={toggleTheme}
+      />
 
       {/* Create / Edit Issue Modal (QA & Admin only) */}
       {isIssueModalOpen && canCreateOrEdit && (
