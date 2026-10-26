@@ -57,7 +57,9 @@ import {
   Volume2,
   VolumeX,
   Download,
-  Smartphone
+  Smartphone,
+  ShieldAlert,
+  FolderPlus
 } from 'lucide-react';
 import {
   computeUserAuthSignature,
@@ -311,7 +313,11 @@ export function App() {
 
       const pastedImages = await extractImagesFromClipboardEvent(e);
       if (pastedImages.length > 0) {
-        const targetSys = activeSystem === 'ALL' ? (visibleSystems[0] || 'CARGO') : activeSystem;
+        if (visibleSystems.length === 0) {
+          alert('לא ניתן להדביק תקלה – אין מערכות פעילות או מורשות במערכת.');
+          return;
+        }
+        const targetSys = activeSystem === 'ALL' ? visibleSystems[0] : activeSystem;
         const nextId = getNextTestCaseIdForSystem(targetSys);
         setEditingIssue({
           id: '__NEW_FROM_PASTE__',
@@ -679,12 +685,16 @@ export function App() {
     return Array.from(set).sort((a, b) => Number(a) - Number(b));
   }, [systemIssues]);
 
-  // Next Test Case ID per system starting from 1 in ascending order
+  // Next Test Case ID per system starting from 1 in ascending order (natural numeric extraction)
   const getNextTestCaseIdForSystem = useCallback(
     (targetSystem: string, currentIssues: StdIssue[] = issues) => {
       const nums = currentIssues
         .filter((i) => i.system === targetSystem)
-        .map((i) => parseInt(i.testCaseId?.trim(), 10))
+        .map((i) => {
+          const raw = (i.testCaseId || '').trim();
+          const match = raw.match(/\d+/);
+          return match ? parseInt(match[0], 10) : NaN;
+        })
         .filter((n) => !isNaN(n) && n > 0);
       if (nums.length === 0) return '1';
       return String(Math.max(...nums) + 1);
@@ -749,6 +759,16 @@ export function App() {
     }
 
     if (isEditingExisting) {
+      const isStillInState = issues.some((item) => item.id === editingIssue.id);
+      const isMarkedDeleted = (syncService.getState().deletedIssueIds || []).includes(editingIssue.id);
+
+      if (!isStillInState || isMarkedDeleted) {
+        alert('תקלה זו נמחקה מהמערכת על ידי משתמש אחר, ולכן השינויים לא נשמרו.');
+        setIsIssueModalOpen(false);
+        setEditingIssue(null);
+        return;
+      }
+
       const auditEntry: StdAuditEntry = {
         id: `aud-${Date.now()}-${Math.random().toString(36).substring(2, 5)}`,
         actor: formattedUserDisplay,
@@ -1379,8 +1399,39 @@ export function App() {
           onResetFilters={resetFilters}
         />
 
-        {/* Issues Display: Cards Grid OR Smart Table */}
-        {filteredIssues.length === 0 ? (
+        {/* Issues Display: Empty Systems OR Empty Filter OR Cards Grid OR Smart Table */}
+        {visibleSystems.length === 0 ? (
+          <div className="bg-white rounded-3xl border border-slate-200/80 p-8 sm:p-12 text-center max-w-lg mx-auto my-10 shadow-2xs">
+            <div className="w-16 h-16 rounded-3xl bg-amber-50 text-amber-600 border border-amber-200 flex items-center justify-center mx-auto mb-4 shadow-2xs">
+              <ShieldAlert className="w-8 h-8" />
+            </div>
+            <h3 className="text-lg font-black text-slate-900 mb-2">
+              {!isAdmin && currentUserRole === 'dev'
+                ? 'אין לך הרשאות צפייה באף מערכת'
+                : 'לא קיימות מערכות פעילות במערכת'}
+            </h3>
+            <p className="text-xs sm:text-sm text-slate-600 mb-6 leading-relaxed">
+              {!isAdmin && currentUserRole === 'dev'
+                ? 'משתמש זה מוגדר כמפתח ללא מערכות משויכות. יש לפנות למנהל המערכת על מנת להגדיר עבורך מערכות לצפייה בהגדרות הצוות.'
+                : 'כל המערכות הועברו לארכיון או נמחקו. באפשרות מנהל המערכת להוסיף מערכת חדשה או לשחזר מערכת מהארכיון בסרגל העליון.'}
+            </p>
+            {isAdmin && (
+              <button
+                type="button"
+                onClick={() => {
+                  const name = window.prompt('הזן שם עבור מערכת חדשה:');
+                  if (name && name.trim()) {
+                    handleAddSystem(name.trim());
+                  }
+                }}
+                className="inline-flex items-center gap-2 px-5 py-2.5 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-bold transition shadow-sm cursor-pointer"
+              >
+                <FolderPlus className="w-4 h-4" />
+                <span>הוסף מערכת חדשה</span>
+              </button>
+            )}
+          </div>
+        ) : filteredIssues.length === 0 ? (
           <div className="bg-white rounded-3xl border border-slate-200/80 p-12 text-center max-w-lg mx-auto my-8 shadow-2xs">
             <div className="w-14 h-14 rounded-2xl bg-indigo-50 text-indigo-600 flex items-center justify-center mx-auto mb-4">
               <Sparkles className="w-7 h-7" />
@@ -1470,7 +1521,7 @@ export function App() {
           systems={visibleSystems}
           defaultSystem={activeSystem}
           suggestedTestCaseId={getNextTestCaseIdForSystem(
-            activeSystem === 'ALL' ? visibleSystems[0] || 'CARGO' : activeSystem
+            activeSystem === 'ALL' ? (visibleSystems[0] || 'כללי') : activeSystem
           )}
           editingIssue={editingIssue}
           existingIssues={issues}

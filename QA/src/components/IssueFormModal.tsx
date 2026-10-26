@@ -61,15 +61,20 @@ export const IssueFormModal: React.FC<IssueFormModalProps> = ({
 }) => {
   const isEditing = Boolean(editingIssue && editingIssue.id !== '__NEW_FROM_PASTE__');
 
+  const availableSystems = systems.length > 0 ? systems : ['כללי'];
   const [system, setSystem] = useState(
-    editingIssue?.system || (defaultSystem === 'ALL' ? systems[0] || 'CARGO' : defaultSystem)
+    editingIssue?.system || (defaultSystem === 'ALL' ? availableSystems[0] : defaultSystem) || availableSystems[0]
   );
 
-  // Compute next sequential ID for target system starting from 1
+  // Compute next sequential ID for target system starting from 1 (natural numeric extraction)
   const getNextIdForSystem = (targetSys: string) => {
     const sysNums = existingIssues
       .filter((i) => i.system === targetSys)
-      .map((i) => parseInt(i.testCaseId?.trim(), 10))
+      .map((i) => {
+        const raw = (i.testCaseId || '').trim();
+        const match = raw.match(/\d+/);
+        return match ? parseInt(match[0], 10) : NaN;
+      })
       .filter((n) => !isNaN(n) && n > 0);
     if (sysNums.length === 0) return '1';
     return String(Math.max(...sysNums) + 1);
@@ -79,7 +84,10 @@ export const IssueFormModal: React.FC<IssueFormModalProps> = ({
     if (isEditing && editingIssue?.testCaseId) {
       return editingIssue.testCaseId;
     }
-    const initialSys = editingIssue?.system || (defaultSystem === 'ALL' ? systems[0] || 'CARGO' : defaultSystem);
+    const initialSys =
+      editingIssue?.system ||
+      (defaultSystem === 'ALL' ? availableSystems[0] : defaultSystem) ||
+      availableSystems[0];
     return getNextIdForSystem(initialSys);
   });
 
@@ -246,7 +254,7 @@ export const IssueFormModal: React.FC<IssueFormModalProps> = ({
                 onChange={(e) => handleSystemChange(e.target.value)}
                 className="w-full px-3.5 py-2.5 rounded-xl border border-slate-300 bg-slate-50/70 focus:bg-white text-sm font-bold text-slate-900 focus:outline-none focus:ring-2 focus:ring-indigo-500/30 focus:border-indigo-500 transition cursor-pointer"
               >
-                {systems.map((sys) => (
+                {availableSystems.map((sys) => (
                   <option key={sys} value={sys}>
                     {sys}
                   </option>

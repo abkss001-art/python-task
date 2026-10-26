@@ -106,12 +106,14 @@ export const SmartTableView: React.FC<SmartTableViewProps> = ({
     return [...issues].sort((a, b) => {
       let cmp = 0;
       if (sortKey === 'testCaseId') {
-        const numA = parseFloat(a.testCaseId);
-        const numB = parseFloat(b.testCaseId);
+        const matchA = (a.testCaseId || '').match(/\d+/);
+        const matchB = (b.testCaseId || '').match(/\d+/);
+        const numA = matchA ? parseInt(matchA[0], 10) : NaN;
+        const numB = matchB ? parseInt(matchB[0], 10) : NaN;
         if (!isNaN(numA) && !isNaN(numB)) {
           cmp = numA - numB;
         } else {
-          cmp = a.testCaseId.localeCompare(b.testCaseId, 'he');
+          cmp = (a.testCaseId || '').localeCompare(b.testCaseId || '', 'he', { numeric: true });
         }
       } else if (sortKey === 'platform') {
         cmp = a.platform.localeCompare(b.platform, 'he');

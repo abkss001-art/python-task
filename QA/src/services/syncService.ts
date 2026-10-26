@@ -412,7 +412,23 @@ class RealtimeSyncService {
     try {
       localStorage.setItem('std_qa_fallback_cache', JSON.stringify(payload));
     } catch {
-      // IndexedDB handles large states when localStorage reaches 5MB
+      // If localStorage is full, save a stripped metadata cache (exclude heavy base64 strings)
+      try {
+        const lightCache: SyncStatePayload = {
+          ...payload,
+          issues: (payload.issues || []).map((iss) => ({
+            ...iss,
+            screenshots: (iss.screenshots || []).filter((s) => !isDataUrlImage(s)),
+            comments: (iss.comments || []).map((c) => ({
+              ...c,
+              screenshot: c.screenshot && !isDataUrlImage(c.screenshot) ? c.screenshot : undefined
+            }))
+          }))
+        };
+        localStorage.setItem('std_qa_fallback_cache', JSON.stringify(lightCache));
+      } catch {
+        // IndexedDB handles full offline dataset
+      }
     }
   }
 

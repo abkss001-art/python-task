@@ -37,12 +37,15 @@ export async function processScreenshotFile(file: File | Blob): Promise<string> 
         ctx.imageSmoothingQuality = 'high';
         ctx.drawImage(img, 0, 0, width, height);
 
-        let compressed = canvas.toDataURL('image/webp', 0.8);
-        if (compressed.length > 180_000) {
-          compressed = canvas.toDataURL('image/webp', 0.68);
+        // Attempt webp first for optimal size/clarity balance
+        let compressed = canvas.toDataURL('image/webp', 0.82);
+
+        // If browser does not support webp export (falls back to uncompressed png) or size > 200KB:
+        if (compressed.startsWith('data:image/png') || compressed.length > 200_000) {
+          compressed = canvas.toDataURL('image/jpeg', 0.8);
         }
         if (compressed.length > 220_000) {
-          compressed = canvas.toDataURL('image/jpeg', 0.65);
+          compressed = canvas.toDataURL('image/jpeg', 0.68);
         }
         resolve(compressed);
       };
