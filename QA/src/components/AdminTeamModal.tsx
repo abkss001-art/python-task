@@ -43,6 +43,18 @@ export const AdminTeamModal: React.FC<AdminTeamModalProps> = ({
   const [newAllowedSystems, setNewAllowedSystems] = useState<string[]>([]);
   const [statusMsg, setStatusMsg] = useState<string | null>(null);
 
+  // Role filter state to view developers, QA, or admins separately
+  const [roleFilter, setRoleFilter] = useState<'ALL' | 'dev' | 'qa' | 'admin'>('ALL');
+
+  const devCount = members.filter((m) => m.role === 'dev').length;
+  const qaCount = members.filter((m) => m.role === 'qa').length;
+  const adminCount = members.filter((m) => m.role === 'admin').length;
+
+  const filteredMembers = members.filter((m) => {
+    if (roleFilter === 'ALL') return true;
+    return m.role === roleFilter;
+  });
+
   // Editing state for an existing member
   const [editingMemberId, setEditingMemberId] = useState<string | null>(null);
   const [editingRole, setEditingRole] = useState<TeamRole>('qa');
@@ -302,15 +314,76 @@ export const AdminTeamModal: React.FC<AdminTeamModalProps> = ({
             )}
           </form>
 
-          {/* Members List */}
-          <div className="space-y-2">
-            <div className="flex items-center justify-between text-xs font-bold text-slate-700 px-1">
-              <span>חברי צוות מורשים ({members.length}):</span>
-              <span className="text-[11px] text-slate-400">השמות מופיעים בהשלמה האוטומטית בכניסה</span>
+          {/* Members List with Role Filter */}
+          <div className="space-y-2.5 pt-1">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 px-1">
+              <span className="text-xs font-black text-slate-800">
+                חברי צוות ({filteredMembers.length} מתוך {members.length}):
+              </span>
+
+              {/* Role Filter Tabs (Developers / QA / Admins) */}
+              <div className="flex items-center gap-1 p-1 bg-slate-100 rounded-xl text-xs font-bold border border-slate-200/80">
+                <button
+                  type="button"
+                  onClick={() => setRoleFilter('ALL')}
+                  className={`px-2.5 py-1 rounded-lg transition cursor-pointer flex items-center gap-1 ${
+                    roleFilter === 'ALL'
+                      ? 'bg-white text-indigo-700 shadow-xs'
+                      : 'text-slate-600 hover:text-slate-900'
+                  }`}
+                >
+                  <span>הכל</span>
+                  <span className="text-[10px] opacity-75">({members.length})</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setRoleFilter('dev')}
+                  className={`px-2.5 py-1 rounded-lg transition cursor-pointer flex items-center gap-1 ${
+                    roleFilter === 'dev'
+                      ? 'bg-purple-600 text-white shadow-xs'
+                      : 'text-purple-700 hover:bg-purple-50'
+                  }`}
+                >
+                  <Code className="w-3 h-3" />
+                  <span>מפתחים</span>
+                  <span className="text-[10px] opacity-75">({devCount})</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setRoleFilter('qa')}
+                  className={`px-2.5 py-1 rounded-lg transition cursor-pointer flex items-center gap-1 ${
+                    roleFilter === 'qa'
+                      ? 'bg-sky-600 text-white shadow-xs'
+                      : 'text-sky-700 hover:bg-sky-50'
+                  }`}
+                >
+                  <ShieldCheck className="w-3 h-3" />
+                  <span>בודקים</span>
+                  <span className="text-[10px] opacity-75">({qaCount})</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setRoleFilter('admin')}
+                  className={`px-2.5 py-1 rounded-lg transition cursor-pointer flex items-center gap-1 ${
+                    roleFilter === 'admin'
+                      ? 'bg-amber-600 text-white shadow-xs'
+                      : 'text-amber-700 hover:bg-amber-50'
+                  }`}
+                >
+                  <UserCheck className="w-3 h-3" />
+                  <span>מנהלים</span>
+                  <span className="text-[10px] opacity-75">({adminCount})</span>
+                </button>
+              </div>
             </div>
 
             <div className="divide-y divide-slate-100 rounded-2xl border border-slate-200 bg-white overflow-hidden max-h-72 overflow-y-auto">
-              {members.map((m) => {
+              {filteredMembers.length === 0 ? (
+                <div className="p-8 text-center text-xs text-slate-500 font-medium">
+                  לא נמצאו אנשי צוות תחת תפקיד זה.
+                </div>
+              ) : (
+                filteredMembers.map((m) => {
                 const isEditing = editingMemberId === m.id;
 
                 if (isEditing) {
@@ -531,7 +604,7 @@ export const AdminTeamModal: React.FC<AdminTeamModalProps> = ({
                     </div>
                   </div>
                 );
-              })}
+              }))}
             </div>
           </div>
         </div>

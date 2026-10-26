@@ -134,6 +134,11 @@ function normalizePlatform(rawPlatform: string | undefined): 'IOS' | 'אנדרו
   return 'מחשב';
 }
 
+export function isSystemAdminAction(actionText: string | undefined): boolean {
+  if (!actionText) return true;
+  return /מערכת|צוות|אבטחה|ארכיון|שחזור|אתחול|גיבוי|הגדרות/i.test(actionText);
+}
+
 const INITIAL_DEMO_ISSUES: StdIssue[] = [
   {
     id: 'std-101',
@@ -521,9 +526,10 @@ class RealtimeSyncService {
                 connected: true,
                 projectId: config.projectId,
                 lastSyncAt: Date.now(),
-                lastEventText: normalized.lastAction
-                  ? `${normalized.lastUpdatedBy || 'צוות'}: ${normalized.lastAction}`
-                  : undefined,
+                lastEventText:
+                  normalized.lastAction && !isSystemAdminAction(normalized.lastAction)
+                    ? `${normalized.lastUpdatedBy || 'צוות'}: ${normalized.lastAction}`
+                    : undefined,
                 errorMessage: undefined
               });
               this.notifyState(isRemote);
@@ -579,9 +585,10 @@ class RealtimeSyncService {
                 connected: true,
                 projectId: config.projectId,
                 lastSyncAt: Date.now(),
-                lastEventText: normalized.lastAction
-                  ? `${normalized.lastUpdatedBy || 'צוות'}: ${normalized.lastAction}`
-                  : undefined,
+                lastEventText:
+                  normalized.lastAction && !isSystemAdminAction(normalized.lastAction)
+                    ? `${normalized.lastUpdatedBy || 'צוות'}: ${normalized.lastAction}`
+                    : undefined,
                 errorMessage: undefined
               });
               this.notifyState(isRemote);
@@ -964,9 +971,10 @@ class RealtimeSyncService {
       mode: 'live-server',
       connected: true,
       lastSyncAt: Date.now(),
-      lastEventText: merged.lastAction
-        ? `${merged.lastUpdatedBy || 'צוות'}: ${merged.lastAction}`
-        : undefined
+      lastEventText:
+        merged.lastAction && !isSystemAdminAction(merged.lastAction)
+          ? `${merged.lastUpdatedBy || 'צוות'}: ${merged.lastAction}`
+          : undefined
     });
     this.notifyState(isRemote);
 
@@ -1496,7 +1504,7 @@ class RealtimeSyncService {
       securityConfig?: CustomSecurityConfig;
       replaceAll?: boolean;
     },
-    actionSummary: string,
+    actionSummary?: string,
     actorName = 'חבר צוות'
   ) {
     const nextRevision =
@@ -1512,6 +1520,11 @@ class RealtimeSyncService {
       this.currentState.securityConfig ||
       getStoredSecurityConfig();
 
+    const effectiveAction =
+      actionSummary !== undefined ? actionSummary : this.currentState.lastAction;
+    const effectiveActor =
+      actionSummary ? actorName : (this.currentState.lastUpdatedBy || actorName);
+
     const candidatePayload: SyncStatePayload = {
       systems: nextState.systems,
       archivedSystems: nextState.archivedSystems ?? this.currentState.archivedSystems ?? [],
@@ -1522,8 +1535,8 @@ class RealtimeSyncService {
       issues: nextState.issues,
       teamMembers: effectiveTeamMembers,
       securityConfig: effectiveSecurityConfig,
-      lastUpdatedBy: actorName,
-      lastAction: actionSummary,
+      lastUpdatedBy: effectiveActor,
+      lastAction: effectiveAction,
       updatedAt: Date.now(),
       revision: nextRevision,
       clientId: this.clientId,
@@ -1543,8 +1556,8 @@ class RealtimeSyncService {
     }
 
     payload.revision = nextRevision;
-    payload.lastUpdatedBy = actorName;
-    payload.lastAction = actionSummary;
+    payload.lastUpdatedBy = effectiveActor;
+    payload.lastAction = effectiveAction;
     payload.updatedAt = Date.now();
     payload.clientId = this.clientId;
 

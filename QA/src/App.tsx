@@ -9,7 +9,7 @@ import {
   StdStatus,
   SyncStatusInfo
 } from './types/std';
-import { syncService } from './services/syncService';
+import { syncService, isSystemAdminAction } from './services/syncService';
 import { Navbar } from './components/Navbar';
 import { FilterBar } from './components/FilterBar';
 import { IssueCard } from './components/IssueCard';
@@ -240,7 +240,7 @@ export function App() {
           }
         }
 
-        if (state.lastAction) {
+        if (state.lastAction && !isSystemAdminAction(state.lastAction)) {
           setLiveToast(`${state.lastUpdatedBy || 'חבר צוות'}: ${state.lastAction}`);
           setTimeout(() => setLiveToast(null), 4000);
         }
@@ -377,7 +377,7 @@ export function App() {
         teamMembers: updated,
         securityConfig: getStoredSecurityConfig()
       },
-      `עדכון רשימת צוות (${updated.length} חברים)`,
+      undefined,
       currentUserName
     );
   };
@@ -411,7 +411,7 @@ export function App() {
         teamMembers: updatedMembers,
         securityConfig: secConfig
       },
-      `עדכון הגדרות אבטחה ושם מנהל-על: ${newSuperAdminName}`,
+      undefined,
       newSuperAdminName
     );
   };
@@ -456,7 +456,7 @@ export function App() {
         deletedSystemIds: nextDeletedSystems,
         issues
       },
-      `הוספת מערכת חדשה (${newSys})`,
+      undefined,
       currentUserName
     );
   };
@@ -524,7 +524,7 @@ export function App() {
         issues: nextIssues,
         teamMembers: updatedTeamMembers
       },
-      `שינוי שם מערכת מ-"${oldName}" ל-"${cleanNewName}"`,
+      undefined,
       currentUserName
     );
 
@@ -546,7 +546,7 @@ export function App() {
     setSystemToRemove(null);
     syncService.pushStateToCloud(
       { systems: nextSystems, archivedSystems: nextArchived, issues },
-      `העברת מערכת לארכיון (${sysToArchive})`,
+      undefined,
       currentUserName
     );
   };
@@ -562,7 +562,7 @@ export function App() {
     setActiveSystem(sysToRestore);
     syncService.pushStateToCloud(
       { systems: nextSystems, archivedSystems: nextArchived, issues },
-      `שחזור מערכת מהארכיון (${sysToRestore})`,
+      undefined,
       currentUserName
     );
   };
@@ -617,7 +617,7 @@ export function App() {
         issues: nextIssues,
         teamMembers: updatedTeamMembers
       },
-      `מחיקת מערכת לצמיתות (${sysToDelete})`,
+      undefined,
       currentUserName
     );
   };
@@ -994,6 +994,7 @@ export function App() {
 
   const showLastEventBanner =
     Boolean(syncStatus.lastEventText) &&
+    !isSystemAdminAction(syncStatus.lastEventText) &&
     syncStatus.lastEventText !== dismissedLastEventText;
 
   // Render Interactive Notification Settings & App Installation Modal
