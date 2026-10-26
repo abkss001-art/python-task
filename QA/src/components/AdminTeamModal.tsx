@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { X, Users, UserPlus, Trash2, CheckCircle2, ShieldCheck, Code, UserCheck, Lock, ShieldAlert } from 'lucide-react';
 import { TeamMember } from '../utils/teamMembers';
 import { TeamRole } from '../types/std';
@@ -15,6 +15,12 @@ export const AdminTeamModal: React.FC<AdminTeamModalProps> = ({
   onClose
 }) => {
   const [members, setMembers] = useState<TeamMember[]>(teamMembers);
+
+  useEffect(() => {
+    if (teamMembers && teamMembers.length > 0) {
+      setMembers(teamMembers);
+    }
+  }, [teamMembers]);
   const [newFullName, setNewFullName] = useState('');
   const [newRole, setNewRole] = useState<TeamRole>('qa');
   const [statusMsg, setStatusMsg] = useState<string | null>(null);

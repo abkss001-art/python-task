@@ -64,27 +64,19 @@ export function mergeCloudTeamMembers(cloudMembers: TeamMember[]): TeamMember[] 
     return getStoredTeamMembers();
   }
 
+  // Deduplicate incoming cloud members by trimmed lowercased name
   const memberMap = new Map<string, TeamMember>();
-
-  // Add default members as baseline
-  for (const m of DEFAULT_TEAM_MEMBERS) {
-    if (m && m.fullName) {
-      memberMap.set(m.fullName.trim().toLowerCase(), m);
-    }
-  }
-
-  // Overlay current local members
-  const local = getStoredTeamMembers();
-  for (const m of local) {
-    if (m && m.fullName) {
-      memberMap.set(m.fullName.trim().toLowerCase(), m);
-    }
-  }
-
-  // Overlay incoming cloud members
   for (const m of cloudMembers) {
-    if (m && m.fullName) {
-      memberMap.set(m.fullName.trim().toLowerCase(), m);
+    if (m && m.fullName && typeof m.fullName === 'string') {
+      const key = m.fullName.trim().toLowerCase();
+      if (!memberMap.has(key)) {
+        memberMap.set(key, {
+          id: m.id || `tm-${Date.now()}-${Math.random().toString(36).substring(2, 5)}`,
+          fullName: m.fullName.trim(),
+          role: m.role || 'qa',
+          isSuperAdmin: Boolean(m.isSuperAdmin)
+        });
+      }
     }
   }
 

@@ -253,6 +253,8 @@ class RealtimeSyncService {
   private currentState: SyncStatePayload = {
     systems: DEFAULT_SYSTEMS,
     issues: INITIAL_DEMO_ISSUES,
+    teamMembers: getStoredTeamMembers(),
+    securityConfig: getStoredSecurityConfig(),
     revision: 0
   };
 
@@ -413,7 +415,9 @@ class RealtimeSyncService {
   }
 
   private computeFingerprint(state: SyncStatePayload): string {
-    return `${state.revision || 0}_${state.updatedAt || 0}_${state.issues.length}_${state.systems.join(',')}_${state.lastAction || ''}`;
+    const tmCount = state.teamMembers ? state.teamMembers.length : 0;
+    const tmHash = state.teamMembers ? state.teamMembers.map((m) => m.fullName).join('|') : '';
+    return `${state.revision || 0}_${state.updatedAt || 0}_${state.issues.length}_${state.systems.join(',')}_${tmCount}_${tmHash}_${state.lastAction || ''}`;
   }
 
   private cleanupConnections() {
@@ -780,10 +784,16 @@ class RealtimeSyncService {
     const finalSystems =
       systemsSet.size > 0 ? Array.from(systemsSet) : DEFAULT_SYSTEMS;
 
-    const mergedTeamMembers =
-      incomingState.teamMembers && incomingState.teamMembers.length > 0
-        ? mergeCloudTeamMembers(incomingState.teamMembers)
-        : localState.teamMembers || getStoredTeamMembers();
+    const chosenTeamMembers =
+      primary.teamMembers && primary.teamMembers.length > 0
+        ? primary.teamMembers
+        : incomingState.teamMembers && incomingState.teamMembers.length > 0
+        ? incomingState.teamMembers
+        : localState.teamMembers && localState.teamMembers.length > 0
+        ? localState.teamMembers
+        : getStoredTeamMembers();
+
+    const mergedTeamMembers = mergeCloudTeamMembers(chosenTeamMembers);
 
     const mergedSecurityConfig: CustomSecurityConfig = {
       ...getStoredSecurityConfig(),
@@ -1476,6 +1486,13 @@ class RealtimeSyncService {
     const payload: SyncStatePayload = nextState.replaceAll
       ? candidatePayload
       : this.mergeWorkspaceStates(this.currentState, candidatePayload);
+
+    if (nextState.teamMembers) {
+      payload.teamMembers = nextState.teamMembers;
+    }
+    if (nextState.securityConfig) {
+      payload.securityConfig = nextState.securityConfig;
+    }
 
     payload.revision = nextRevision;
     payload.lastUpdatedBy = actorName;
