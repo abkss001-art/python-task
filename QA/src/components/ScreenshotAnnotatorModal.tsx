@@ -257,9 +257,12 @@ export const ScreenshotAnnotatorModal: React.FC<ScreenshotAnnotatorModalProps> =
       return;
     }
     try {
-      let out = canvas.toDataURL('image/webp', 0.88);
-      if (out.length > 750_000) {
-        out = canvas.toDataURL('image/jpeg', 0.82);
+      let out = canvas.toDataURL('image/webp', 0.82);
+      if (out.startsWith('data:image/png') || out.length > 250_000) {
+        out = canvas.toDataURL('image/jpeg', 0.8);
+      }
+      if (out.length > 250_000) {
+        out = canvas.toDataURL('image/jpeg', 0.7);
       }
       onSave(out);
     } catch {

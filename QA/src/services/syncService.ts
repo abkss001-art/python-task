@@ -334,11 +334,11 @@ class RealtimeSyncService {
       // Instant pull from cloud whenever phone screen wakes up or user switches back to tab!
       document.addEventListener('visibilitychange', () => {
         if (document.visibilityState === 'visible') {
-          this.pullLatestFromCloud();
+          this.pullLatestFromCloud(true);
         }
       });
       window.addEventListener('focus', () => {
-        this.pullLatestFromCloud();
+        this.pullLatestFromCloud(true);
       });
     }
 
@@ -1035,8 +1035,11 @@ class RealtimeSyncService {
       }
     });
 
-    // 2. Start Time-Based Auto-Refresh every 5 seconds in the background
+    // 2. Start Time-Based Auto-Refresh every 5 seconds (suspended when tab is hidden to save mobile battery)
     this.autoRefreshTimer = setInterval(() => {
+      if (typeof document !== 'undefined' && document.visibilityState === 'hidden') {
+        return;
+      }
       this.pullLatestFromCloud(false);
     }, AUTO_REFRESH_INTERVAL_MS);
 
@@ -1112,7 +1115,9 @@ class RealtimeSyncService {
       });
 
       this.heartbeatTimer = setInterval(() => {
-        publishPresenceOnline();
+        if (typeof document === 'undefined' || document.visibilityState === 'visible') {
+          publishPresenceOnline();
+        }
         const nowLocal = Date.now();
         for (const [id, seenAtLocal] of this.activePeers.entries()) {
           if (id !== this.clientId && nowLocal - seenAtLocal > 70000) {
