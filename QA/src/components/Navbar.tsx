@@ -170,6 +170,7 @@ export const Navbar: React.FC<NavbarProps> = ({
   // O(N) memoized counter map for all systems so rendering 10+ system tabs is instant O(1)
   const systemCounters = useMemo(() => {
     const archivedSet = new Set(archivedSystems);
+    const systemsSet = new Set(systems);
     const totalBySys: Record<string, number> = {};
     const openBySys: Record<string, number> = {};
     let allTotal = 0;
@@ -181,7 +182,7 @@ export const Navbar: React.FC<NavbarProps> = ({
       if (iss.status === 'פתוח') {
         openBySys[sys] = (openBySys[sys] || 0) + 1;
       }
-      if (!archivedSet.has(sys)) {
+      if (!archivedSet.has(sys) && systemsSet.has(sys)) {
         allTotal++;
         if (iss.status === 'פתוח') {
           allOpen++;
@@ -190,7 +191,7 @@ export const Navbar: React.FC<NavbarProps> = ({
     }
 
     return { totalBySys, openBySys, allTotal, allOpen };
-  }, [issues, archivedSystems]);
+  }, [issues, archivedSystems, systems]);
 
   const getCountForSystem = (sys: string) => {
     if (sys === 'ALL') return systemCounters.allTotal;
@@ -457,26 +458,28 @@ export const Navbar: React.FC<NavbarProps> = ({
               </button>
             )}
 
-            <button
-              type="button"
-              onClick={() => onSelectSystem('ALL')}
-              className={`flex items-center gap-1.5 sm:gap-2 px-3 sm:px-3.5 py-1.5 rounded-xl text-xs sm:text-sm font-semibold transition shrink-0 cursor-pointer ${
-                activeSystem === 'ALL'
-                  ? 'bg-indigo-600 text-white shadow-sm'
-                  : 'bg-slate-100 hover:bg-slate-200/80 text-slate-600'
-              }`}
-            >
-              <span>כל המערכות</span>
-              <span
-                className={`px-1.5 py-0.2 rounded-md text-[10px] sm:text-[11px] font-mono ${
+            {!(systems.length <= 1 && !isAdmin && currentUserRole === 'dev') && (
+              <button
+                type="button"
+                onClick={() => onSelectSystem('ALL')}
+                className={`flex items-center gap-1.5 sm:gap-2 px-3 sm:px-3.5 py-1.5 rounded-xl text-xs sm:text-sm font-semibold transition shrink-0 cursor-pointer ${
                   activeSystem === 'ALL'
-                    ? 'bg-white/20 text-white'
-                    : 'bg-white text-slate-600 border border-slate-200'
+                    ? 'bg-indigo-600 text-white shadow-sm'
+                    : 'bg-slate-100 hover:bg-slate-200/80 text-slate-600'
                 }`}
               >
-                {getCountForSystem('ALL')}
-              </span>
-            </button>
+                <span>כל המערכות</span>
+                <span
+                  className={`px-1.5 py-0.2 rounded-md text-[10px] sm:text-[11px] font-mono ${
+                    activeSystem === 'ALL'
+                      ? 'bg-white/20 text-white'
+                      : 'bg-white text-slate-600 border border-slate-200'
+                  }`}
+                >
+                  {getCountForSystem('ALL')}
+                </span>
+              </button>
+            )}
 
             {/* Admin-Only Controls: + Add System & Archive Drawer */}
             {isAdmin && (

@@ -6,6 +6,7 @@ export interface TeamMember {
   fullName: string;
   role: TeamRole;
   isSuperAdmin?: boolean;
+  allowedSystems?: string[];
 }
 
 export const DEFAULT_TEAM_MEMBERS: TeamMember[] = [
@@ -74,7 +75,11 @@ export function mergeCloudTeamMembers(cloudMembers: TeamMember[]): TeamMember[] 
           id: m.id || `tm-${Date.now()}-${Math.random().toString(36).substring(2, 5)}`,
           fullName: m.fullName.trim(),
           role: m.role || 'qa',
-          isSuperAdmin: Boolean(m.isSuperAdmin)
+          isSuperAdmin: Boolean(m.isSuperAdmin),
+          allowedSystems:
+            Array.isArray(m.allowedSystems) && m.allowedSystems.length > 0
+              ? m.allowedSystems.filter((s): s is string => typeof s === 'string' && Boolean(s.trim()))
+              : undefined
         });
       }
     }

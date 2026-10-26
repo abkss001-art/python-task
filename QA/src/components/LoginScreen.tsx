@@ -30,6 +30,7 @@ export interface AuthenticatedUser {
   fullName: string;
   role: TeamRole;
   isAdmin: boolean;
+  allowedSystems?: string[];
   authSignature?: string;
 }
 
@@ -170,7 +171,11 @@ export const LoginScreen: React.FC<LoginScreenProps> = ({
       lastName: lName,
       fullName: finalFullName,
       role: isAdmin ? 'qa' : matchedMember.role,
-      isAdmin
+      isAdmin,
+      allowedSystems:
+        matchedMember.role === 'dev' && Array.isArray(matchedMember.allowedSystems)
+          ? matchedMember.allowedSystems
+          : undefined
     };
     userObj.authSignature = computeUserAuthSignature(userObj);
     onLoginSuccess(userObj);

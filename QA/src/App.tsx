@@ -576,13 +576,59 @@ export function App() {
     );
   };
 
-  // Issues belonging to the currently selected system tab (excluding archived systems when viewing 'ALL')
-  const systemIssues = useMemo(() => {
-    if (activeSystem === 'ALL') {
-      return issues.filter((i) => !archivedSystems.includes(i.system));
+  // Find current logged in member's record to get latest allowed systems in real-time
+  const currentMember = useMemo(() => {
+    if (!authUser) return null;
+    return teamMembers.find(
+      (m) => m.fullName.trim().toLowerCase() === authUser.fullName.trim().toLowerCase()
+    );
+  }, [authUser, teamMembers]);
+
+  // If role is dev and has allowedSystems defined, restrict systems
+  const userAllowedSystems = useMemo(() => {
+    if (!authUser || authUser.isAdmin || currentUserRole !== 'dev') {
+      return null; // No restrictions for QA or Admin
     }
-    return issues.filter((i) => i.system === activeSystem);
-  }, [issues, activeSystem, archivedSystems]);
+    const rawAllowed = currentMember?.allowedSystems || authUser.allowedSystems;
+    if (Array.isArray(rawAllowed) && rawAllowed.length > 0) {
+      // Filter by systems that actually exist in the current workspace
+      const valid = rawAllowed.filter((s) => systems.includes(s));
+      return valid.length > 0 ? valid : null;
+    }
+    return null; // fallback: all systems
+  }, [authUser, currentUserRole, currentMember, systems]);
+
+  const visibleSystems = useMemo(() => {
+    if (!userAllowedSystems) return systems;
+    return systems.filter((s) => userAllowedSystems.includes(s));
+  }, [systems, userAllowedSystems]);
+
+  // Automatically adjust activeSystem when userAllowedSystems is restricted
+  useEffect(() => {
+    if (userAllowedSystems && userAllowedSystems.length > 0) {
+      if (userAllowedSystems.length === 1) {
+        if (activeSystem !== userAllowedSystems[0]) {
+          setActiveSystem(userAllowedSystems[0]);
+        }
+      } else {
+        if (activeSystem !== 'ALL' && !userAllowedSystems.includes(activeSystem)) {
+          setActiveSystem('ALL');
+        }
+      }
+    }
+  }, [userAllowedSystems, activeSystem]);
+
+  // Issues belonging to the currently selected system tab (respecting developer allowed systems & archived systems)
+  const systemIssues = useMemo(() => {
+    let baseIssues = issues;
+    if (userAllowedSystems) {
+      baseIssues = baseIssues.filter((i) => userAllowedSystems.includes(i.system));
+    }
+    if (activeSystem === 'ALL') {
+      return baseIssues.filter((i) => !archivedSystems.includes(i.system));
+    }
+    return baseIssues.filter((i) => i.system === activeSystem);
+  }, [issues, activeSystem, archivedSystems, userAllowedSystems]);
 
   // Unique testCaseIds for autocomplete suggestions
   const availableTestCaseIds = useMemo(() => {
@@ -1157,7 +1203,7 @@ export function App() {
     <div className="min-h-screen flex flex-col bg-slate-50 text-slate-900" dir="rtl">
       {/* Top Navigation & System Bar */}
       <Navbar
-        systems={systems}
+        systems={visibleSystems}
         archivedSystems={archivedSystems}
         activeSystem={activeSystem}
         onSelectSystem={setActiveSystem}
@@ -1388,7 +1434,7 @@ export function App() {
       {/* Create / Edit Issue Modal (QA & Admin only) */}
       {isIssueModalOpen && canCreateOrEdit && (
         <IssueFormModal
-          systems={systems}
+          systems={visibleSystems}
           defaultSystem={activeSystem}
           suggestedTestCaseId={getSuggestedTestCaseId()}
           editingIssue={editingIssue}
@@ -1645,6 +1691,7 @@ export function App() {
       {/* Admin Team Members Management Modal (Admin Only) */}
       {isTeamModalOpen && isAdmin && (
         <AdminTeamModal
+          systems={systems}
           teamMembers={teamMembers}
           onSaveTeamMembers={handleSaveTeamMembers}
           onClose={() => setIsTeamModalOpen(false)}
