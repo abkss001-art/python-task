@@ -120,26 +120,26 @@ export const FilterBar: React.FC<FilterBarProps> = ({
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:flex lg:flex-wrap items-center gap-2.5 flex-1">
             {/* Free Text Search */}
             <div className="relative flex-1 min-w-[200px]">
-              <Search className="w-4 h-4 text-slate-400 absolute right-3.5 top-1/2 -translate-y-1/2 pointer-events-none" />
+              <Search className="w-4 h-4 text-slate-400 dark:text-slate-400 absolute right-3.5 top-1/2 -translate-y-1/2 pointer-events-none" />
               <input
                 type="text"
                 value={searchQuery}
                 onChange={(e) => onSearchChange(e.target.value)}
                 placeholder="חיפוש חופשי בנושא, מהות השגיאה, הערות או כותב..."
-                className="w-full pr-10 pl-3 py-2 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50/70 dark:bg-slate-800/60 focus:bg-white dark:focus:bg-slate-800 text-sm text-slate-900 dark:text-slate-100 placeholder:text-slate-400 dark:placeholder:text-slate-500 focus:outline-none focus:ring-2 focus:ring-indigo-500/30 focus:border-indigo-500 transition rtl-safe"
+                className="w-full pr-10 pl-3 py-2 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50/70 dark:bg-slate-800 focus:bg-white dark:focus:bg-slate-800 text-sm text-slate-900 dark:text-slate-100 placeholder:text-slate-400 dark:placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-indigo-500/30 focus:border-indigo-500 transition rtl-safe"
               />
             </div>
 
             {/* Filter by Test Case ID (מזהה תסריט) */}
             <div className="relative sm:w-44">
-              <Hash className="w-4 h-4 text-slate-400 absolute right-3 top-1/2 -translate-y-1/2 pointer-events-none" />
+              <Hash className="w-4 h-4 text-slate-400 dark:text-slate-400 absolute right-3 top-1/2 -translate-y-1/2 pointer-events-none" />
               <input
                 type="text"
                 list="testcase-id-suggestions"
                 value={testCaseFilter}
                 onChange={(e) => onTestCaseFilterChange(e.target.value)}
                 placeholder="מזהה תסריט (10, 11...)"
-                className="w-full pr-9 pl-3 py-2 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50/70 dark:bg-slate-800/60 focus:bg-white dark:focus:bg-slate-800 text-sm text-slate-900 dark:text-slate-100 placeholder:text-slate-400 dark:placeholder:text-slate-500 focus:outline-none focus:ring-2 focus:ring-indigo-500/30 focus:border-indigo-500 transition rtl-safe"
+                className="w-full pr-9 pl-3 py-2 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50/70 dark:bg-slate-800 focus:bg-white dark:focus:bg-slate-800 text-sm text-slate-900 dark:text-slate-100 placeholder:text-slate-400 dark:placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-indigo-500/30 focus:border-indigo-500 transition rtl-safe"
               />
               <datalist id="testcase-id-suggestions">
                 {availableTestCaseIds.map((id) => (
@@ -150,15 +150,15 @@ export const FilterBar: React.FC<FilterBarProps> = ({
 
             {/* Filter by Platform */}
             <div className="relative sm:w-44">
-              <MonitorSmartphone className="w-4 h-4 text-slate-400 absolute right-3 top-1/2 -translate-y-1/2 pointer-events-none" />
+              <MonitorSmartphone className="w-4 h-4 text-slate-400 dark:text-slate-400 absolute right-3 top-1/2 -translate-y-1/2 pointer-events-none" />
               <select
                 value={platformFilter}
                 onChange={(e) => onPlatformFilterChange(e.target.value as StdPlatform | 'ALL')}
-                className="w-full pr-9 pl-3 py-2 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50/70 dark:bg-slate-800/60 focus:bg-white dark:focus:bg-slate-800 text-sm text-slate-800 dark:text-slate-200 font-medium focus:outline-none focus:ring-2 focus:ring-indigo-500/30 focus:border-indigo-500 transition cursor-pointer"
+                className="w-full pr-9 pl-3 py-2 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50/70 dark:bg-slate-800 focus:bg-white dark:focus:bg-slate-800 text-sm text-slate-800 dark:text-slate-100 font-medium focus:outline-none focus:ring-2 focus:ring-indigo-500/30 focus:border-indigo-500 transition cursor-pointer"
               >
-                <option value="ALL">כל הפלטפורמות</option>
+                <option value="ALL" className="bg-white dark:bg-slate-800 text-slate-900 dark:text-slate-100">כל הפלטפורמות</option>
                 {PLATFORMS.map((p) => (
-                  <option key={p} value={p}>
+                  <option key={p} value={p} className="bg-white dark:bg-slate-800 text-slate-900 dark:text-slate-100">
                     פלטפורמה: {p}
                   </option>
                 ))}
@@ -167,15 +167,15 @@ export const FilterBar: React.FC<FilterBarProps> = ({
 
             {/* Filter by Status */}
             <div className="relative sm:w-48">
-              <Filter className="w-4 h-4 text-slate-400 absolute right-3 top-1/2 -translate-y-1/2 pointer-events-none" />
+              <Filter className="w-4 h-4 text-slate-400 dark:text-slate-400 absolute right-3 top-1/2 -translate-y-1/2 pointer-events-none" />
               <select
                 value={statusFilter}
                 onChange={(e) => onStatusFilterChange(e.target.value as StdStatus | 'ALL')}
-                className="w-full pr-9 pl-3 py-2 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50/70 dark:bg-slate-800/60 focus:bg-white dark:focus:bg-slate-800 text-sm text-slate-800 dark:text-slate-200 font-medium focus:outline-none focus:ring-2 focus:ring-indigo-500/30 focus:border-indigo-500 transition cursor-pointer"
+                className="w-full pr-9 pl-3 py-2 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50/70 dark:bg-slate-800 focus:bg-white dark:focus:bg-slate-800 text-sm text-slate-800 dark:text-slate-100 font-medium focus:outline-none focus:ring-2 focus:ring-indigo-500/30 focus:border-indigo-500 transition cursor-pointer"
               >
-                <option value="ALL">כל הסטטוסים</option>
+                <option value="ALL" className="bg-white dark:bg-slate-800 text-slate-900 dark:text-slate-100">כל הסטטוסים</option>
                 {STATUSES.map((st) => (
-                  <option key={st} value={st}>
+                  <option key={st} value={st} className="bg-white dark:bg-slate-800 text-slate-900 dark:text-slate-100">
                     סטטוס: {st}
                   </option>
                 ))}

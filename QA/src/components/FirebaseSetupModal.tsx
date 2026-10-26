@@ -80,10 +80,10 @@ export const FirebaseSetupModal: React.FC<FirebaseSetupModalProps> = ({
 
   return (
     <div
-      className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/60 backdrop-blur-sm p-4 overflow-y-auto"
+      className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/60 dark:bg-slate-950/80 backdrop-blur-sm p-4 overflow-y-auto"
       dir="rtl"
     >
-      <div className="bg-white rounded-2xl shadow-2xl border border-slate-200 w-full max-w-2xl overflow-hidden">
+      <div className="bg-white dark:bg-slate-900 rounded-2xl shadow-2xl border border-slate-200 dark:border-slate-800 w-full max-w-2xl overflow-hidden">
         {/* Header */}
         <div className="flex items-center justify-between px-6 py-4 bg-gradient-to-l from-indigo-600 to-violet-600 text-white">
           <div className="flex items-center gap-3">
@@ -111,16 +111,16 @@ export const FirebaseSetupModal: React.FC<FirebaseSetupModalProps> = ({
           <div
             className={`flex items-center justify-between p-3.5 rounded-xl border ${
               syncStatus.mode.startsWith('firebase') && syncStatus.connected
-                ? 'bg-emerald-50 border-emerald-200 text-emerald-900'
-                : 'bg-indigo-50/70 border-indigo-200 text-slate-800'
+                ? 'bg-emerald-50 dark:bg-emerald-950/50 border-emerald-200 dark:border-emerald-800 text-emerald-900 dark:text-emerald-200'
+                : 'bg-indigo-50/70 dark:bg-indigo-950/50 border-indigo-200 dark:border-indigo-800 text-slate-800 dark:text-slate-200'
             }`}
           >
             <div className="flex items-center gap-2.5 text-sm">
               <CheckCircle2
                 className={`w-5 h-5 shrink-0 ${
                   syncStatus.mode.startsWith('firebase') && syncStatus.connected
-                    ? 'text-emerald-600'
-                    : 'text-indigo-600'
+                    ? 'text-emerald-600 dark:text-emerald-400'
+                    : 'text-indigo-600 dark:text-indigo-400'
                 }`}
               />
               <div>
@@ -131,7 +131,7 @@ export const FirebaseSetupModal: React.FC<FirebaseSetupModalProps> = ({
                     ? `מחובר לענן Firebase Firestore (${syncStatus.projectId})`
                     : 'פועל כעת על שרת סנכרון חי מובנה (SSE Live Server)'}
                 </div>
-                <div className="text-xs text-slate-600 mt-0.5">
+                <div className="text-xs text-slate-600 dark:text-slate-400 mt-0.5">
                   {syncStatus.mode.startsWith('firebase')
                     ? 'כל שינוי משודר מיד דרך Firebase לכל המשתמשים המחוברים.'
                     : 'ניתן להדביק למטה את הגדרות ה-Firebase של הפרויקט שלך כדי לעבור לסנכרון ענן גלובלי.'}
@@ -143,7 +143,7 @@ export const FirebaseSetupModal: React.FC<FirebaseSetupModalProps> = ({
               <button
                 type="button"
                 onClick={onDisconnectFirebase}
-                className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-red-50 hover:bg-red-100 text-red-700 border border-red-200 text-xs font-medium transition cursor-pointer shrink-0"
+                className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-red-50 dark:bg-red-950/60 hover:bg-red-100 dark:hover:bg-red-900 text-red-700 dark:text-red-300 border border-red-200 dark:border-red-800 text-xs font-medium transition cursor-pointer shrink-0"
               >
                 <Trash2 className="w-3.5 h-3.5" />
                 <span>נתק Firebase</span>
@@ -153,7 +153,7 @@ export const FirebaseSetupModal: React.FC<FirebaseSetupModalProps> = ({
 
           {/* Choose Firebase Service Mode */}
           <div>
-            <label className="block text-sm font-semibold text-slate-800 mb-2">
+            <label className="block text-sm font-semibold text-slate-800 dark:text-slate-200 mb-2">
               סוג מסד הנתונים ב-Firebase:
             </label>
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
@@ -162,16 +162,16 @@ export const FirebaseSetupModal: React.FC<FirebaseSetupModalProps> = ({
                 onClick={() => setDbMode('rtdb')}
                 className={`flex items-start gap-3 p-3.5 rounded-xl border text-right transition cursor-pointer ${
                   dbMode === 'rtdb'
-                    ? 'border-indigo-600 bg-indigo-50/60 ring-2 ring-indigo-500/20'
-                    : 'border-slate-200 hover:border-slate-300 bg-white'
+                    ? 'border-indigo-600 bg-indigo-50/60 dark:bg-indigo-950/60 ring-2 ring-indigo-500/20'
+                    : 'border-slate-200 dark:border-slate-700 hover:border-slate-300 dark:hover:border-slate-600 bg-white dark:bg-slate-800'
                 }`}
               >
-                <Database className="w-5 h-5 text-indigo-600 shrink-0 mt-0.5" />
+                <Database className="w-5 h-5 text-indigo-600 dark:text-indigo-400 shrink-0 mt-0.5" />
                 <div>
-                  <div className="font-bold text-sm text-slate-900">
+                  <div className="font-bold text-sm text-slate-900 dark:text-slate-100">
                     Realtime Database (מומלץ)
                   </div>
-                  <div className="text-xs text-slate-500 mt-0.5">
+                  <div className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
                     סנכרון WebSockets מהיר במיוחד + חיווי משתמשים מחוברים בזמן אמת
                   </div>
                 </div>
@@ -182,14 +182,14 @@ export const FirebaseSetupModal: React.FC<FirebaseSetupModalProps> = ({
                 onClick={() => setDbMode('firestore')}
                 className={`flex items-start gap-3 p-3.5 rounded-xl border text-right transition cursor-pointer ${
                   dbMode === 'firestore'
-                    ? 'border-indigo-600 bg-indigo-50/60 ring-2 ring-indigo-500/20'
-                    : 'border-slate-200 hover:border-slate-300 bg-white'
+                    ? 'border-indigo-600 bg-indigo-50/60 dark:bg-indigo-950/60 ring-2 ring-indigo-500/20'
+                    : 'border-slate-200 dark:border-slate-700 hover:border-slate-300 dark:hover:border-slate-600 bg-white dark:bg-slate-800'
                 }`}
               >
-                <Sparkles className="w-5 h-5 text-violet-600 shrink-0 mt-0.5" />
+                <Sparkles className="w-5 h-5 text-violet-600 dark:text-violet-400 shrink-0 mt-0.5" />
                 <div>
-                  <div className="font-bold text-sm text-slate-900">Cloud Firestore</div>
-                  <div className="text-xs text-slate-500 mt-0.5">
+                  <div className="font-bold text-sm text-slate-900 dark:text-slate-100">Cloud Firestore</div>
+                  <div className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
                     סנכרון מסמכים בזמן אמת באמצעות onSnapshot של Firestore
                   </div>
                 </div>
@@ -200,10 +200,10 @@ export const FirebaseSetupModal: React.FC<FirebaseSetupModalProps> = ({
           {/* Snippet Input */}
           <div>
             <div className="flex items-center justify-between mb-1.5">
-              <label className="block text-sm font-semibold text-slate-800">
+              <label className="block text-sm font-semibold text-slate-800 dark:text-slate-200">
                 הדבק את קוד ה-firebaseConfig מ-Firebase Console (או כתובת Database URL):
               </label>
-              <span className="text-xs text-slate-500">מזהה אוטומטית JS / JSON / URL</span>
+              <span className="text-xs text-slate-500 dark:text-slate-400">מזהה אוטומטית JS / JSON / URL</span>
             </div>
             <textarea
               dir="ltr"
@@ -211,36 +211,36 @@ export const FirebaseSetupModal: React.FC<FirebaseSetupModalProps> = ({
               value={rawSnippet}
               onChange={(e) => setRawSnippet(e.target.value)}
               placeholder={`const firebaseConfig = {\n  apiKey: "AIzaSy...",\n  authDomain: "your-project.firebaseapp.com",\n  databaseURL: "https://your-project-default-rtdb.firebaseio.com",\n  projectId: "your-project",\n  appId: "1:123456:web:abcdef"\n};`}
-              className="w-full rounded-xl border border-slate-300 bg-slate-950 text-emerald-400 font-mono text-xs p-3.5 focus:outline-none focus:ring-2 focus:ring-indigo-500 text-left"
+              className="w-full rounded-xl border border-slate-300 dark:border-slate-700 bg-slate-950 text-emerald-400 font-mono text-xs p-3.5 focus:outline-none focus:ring-2 focus:ring-indigo-500 text-left"
             />
-            <p className="text-xs text-slate-500 mt-1.5">
+            <p className="text-xs text-slate-500 dark:text-slate-400 mt-1.5">
               טיפ: ב-Firebase Console היכנס ל-Project Settings &rarr; Your apps &rarr; העתק את `firebaseConfig` והדבק כאן. ודא שה-Rules ב-Database מוגדרים למצב Test (`read: true, write: true`).
             </p>
           </div>
 
           {(error || syncStatus.errorMessage) && (
-            <div className="flex items-start gap-2.5 p-3.5 rounded-xl bg-red-50 border border-red-200 text-red-700 text-xs">
+            <div className="flex items-start gap-2.5 p-3.5 rounded-xl bg-red-50 dark:bg-red-950/60 border border-red-200 dark:border-red-800 text-red-700 dark:text-red-300 text-xs">
               <AlertCircle className="w-4 h-4 shrink-0 mt-0.5" />
               <div className="rtl-safe">{error || syncStatus.errorMessage}</div>
             </div>
           )}
 
           {/* Actions */}
-          <div className="flex flex-wrap items-center justify-between gap-3 pt-2 border-t border-slate-100">
+          <div className="flex flex-wrap items-center justify-between gap-3 pt-2 border-t border-slate-100 dark:border-slate-800">
             <button
               type="button"
               onClick={handleCopyShareLink}
               disabled={!rawSnippet.trim() && !currentConfig}
-              className="flex items-center gap-2 px-4 py-2.5 rounded-xl bg-slate-100 hover:bg-slate-200 disabled:opacity-40 text-slate-700 text-xs font-semibold transition cursor-pointer"
+              className="flex items-center gap-2 px-4 py-2.5 rounded-xl bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 disabled:opacity-40 text-slate-700 dark:text-slate-200 text-xs font-semibold transition cursor-pointer border border-slate-200 dark:border-slate-700"
             >
               {copiedLink ? (
                 <>
-                  <Check className="w-4 h-4 text-emerald-600" />
-                  <span className="text-emerald-700">קישור הצוות הועתק ללוח!</span>
+                  <Check className="w-4 h-4 text-emerald-600 dark:text-emerald-400" />
+                  <span className="text-emerald-700 dark:text-emerald-300">קישור הצוות הועתק ללוח!</span>
                 </>
               ) : (
                 <>
-                  <Link2 className="w-4 h-4 text-indigo-600" />
+                  <Link2 className="w-4 h-4 text-indigo-600 dark:text-indigo-400" />
                   <span>העתק קישור ישיר לצוות (כולל חיבור אוטומטי)</span>
                 </>
               )}
@@ -250,7 +250,7 @@ export const FirebaseSetupModal: React.FC<FirebaseSetupModalProps> = ({
               <button
                 type="button"
                 onClick={onClose}
-                className="px-4 py-2.5 rounded-xl border border-slate-300 text-slate-700 hover:bg-slate-50 text-sm font-medium transition cursor-pointer"
+                className="px-4 py-2.5 rounded-xl border border-slate-300 dark:border-slate-700 text-slate-700 dark:text-slate-200 hover:bg-slate-50 dark:hover:bg-slate-800 text-sm font-medium transition cursor-pointer"
               >
                 סגור
               </button>

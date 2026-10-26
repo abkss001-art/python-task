@@ -213,21 +213,21 @@ export const IssueFormModal: React.FC<IssueFormModalProps> = ({
 
   return (
     <div
-      className="fixed inset-0 z-40 flex items-center justify-center bg-slate-900/60 backdrop-blur-xs p-3 sm:p-4 overflow-y-auto"
+      className="fixed inset-0 z-40 flex items-center justify-center bg-slate-900/60 dark:bg-slate-950/80 backdrop-blur-xs p-3 sm:p-4 overflow-y-auto"
       dir="rtl"
     >
-      <div className="bg-white rounded-2xl shadow-2xl border border-slate-200 w-full max-w-2xl my-auto overflow-hidden">
+      <div className="bg-white dark:bg-slate-900 rounded-2xl shadow-2xl border border-slate-200 dark:border-slate-800 w-full max-w-2xl my-auto overflow-hidden">
         {/* Modal Header */}
-        <div className="flex items-center justify-between px-5 sm:px-6 py-4 bg-slate-900 text-white">
+        <div className="flex items-center justify-between px-5 sm:px-6 py-4 bg-slate-900 dark:bg-slate-950 text-white border-b border-slate-800">
           <div>
             <h2 className="text-base sm:text-lg font-extrabold">
               {editingIssue && editingIssue.id !== '__NEW_FROM_PASTE__'
                 ? `עריכת תקלה - תסריט #${editingIssue.testCaseId}`
                 : 'דיווח תקלה חדשה'}
             </h2>
-            <p className="text-xs text-slate-300 mt-0.5">
+            <p className="text-xs text-slate-300 dark:text-slate-400 mt-0.5">
               להדבקת צילום מסך לחץ{' '}
-              <kbd className="px-1.5 py-0.5 rounded bg-slate-800 text-indigo-300 font-mono">
+              <kbd className="px-1.5 py-0.5 rounded bg-slate-800 dark:bg-slate-800 text-indigo-300 font-mono">
                 Ctrl + V
               </kbd>{' '}
               במקלדת או לחץ על כפתור "הדבק מהלוח" למטה
@@ -246,16 +246,16 @@ export const IssueFormModal: React.FC<IssueFormModalProps> = ({
           {/* Top Row: System & Test Case ID */}
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             <div>
-              <label className="block text-xs font-bold text-slate-700 mb-1.5">
+              <label className="block text-xs font-bold text-slate-700 dark:text-slate-200 mb-1.5">
                 מערכת <span className="text-red-500">*</span>
               </label>
               <select
                 value={system}
                 onChange={(e) => handleSystemChange(e.target.value)}
-                className="w-full px-3.5 py-2.5 rounded-xl border border-slate-300 bg-slate-50/70 focus:bg-white text-sm font-bold text-slate-900 focus:outline-none focus:ring-2 focus:ring-indigo-500/30 focus:border-indigo-500 transition cursor-pointer"
+                className="w-full px-3.5 py-2.5 rounded-xl border border-slate-300 dark:border-slate-700 bg-slate-50/70 dark:bg-slate-800 focus:bg-white dark:focus:bg-slate-800 text-sm font-bold text-slate-900 dark:text-slate-100 focus:outline-none focus:ring-2 focus:ring-indigo-500/30 focus:border-indigo-500 transition cursor-pointer"
               >
                 {availableSystems.map((sys) => (
-                  <option key={sys} value={sys}>
+                  <option key={sys} value={sys} className="dark:bg-slate-800 dark:text-slate-100">
                     {sys}
                   </option>
                 ))}
@@ -263,17 +263,17 @@ export const IssueFormModal: React.FC<IssueFormModalProps> = ({
             </div>
 
             <div>
-              <label className="block text-xs font-bold text-slate-700 mb-1.5 flex items-center justify-between">
+              <label className="block text-xs font-bold text-slate-700 dark:text-slate-200 mb-1.5 flex items-center justify-between">
                 <span>מזהה תסריט בדיקה</span>
-                <span className="text-[11px] font-semibold text-slate-400 flex items-center gap-1">
-                  <Lock className="w-3 h-3 text-slate-400" />
+                <span className="text-[11px] font-semibold text-slate-400 dark:text-slate-500 flex items-center gap-1">
+                  <Lock className="w-3 h-3 text-slate-400 dark:text-slate-500" />
                   <span>מספור אוטומטי</span>
                 </span>
               </label>
-              <div className="flex items-center justify-between px-3.5 py-2.5 rounded-xl border border-slate-200 bg-slate-100/90 text-sm font-mono select-none shadow-2xs">
+              <div className="flex items-center justify-between px-3.5 py-2.5 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-100/90 dark:bg-slate-800/90 text-sm font-mono select-none shadow-2xs">
                 <div className="flex items-center gap-1.5">
-                  <span className="text-slate-400 font-bold text-xs">תסריט #</span>
-                  <span className="text-base font-black text-indigo-700">{testCaseId}</span>
+                  <span className="text-slate-400 dark:text-slate-400 font-bold text-xs">תסריט #</span>
+                  <span className="text-base font-black text-indigo-700 dark:text-indigo-400">{testCaseId}</span>
                 </div>
               </div>
             </div>
@@ -281,7 +281,7 @@ export const IssueFormModal: React.FC<IssueFormModalProps> = ({
 
           {/* Platform Selector Pills */}
           <div>
-            <label className="block text-xs font-bold text-slate-700 mb-1.5">
+            <label className="block text-xs font-bold text-slate-700 dark:text-slate-200 mb-1.5">
               פלטפורמה <span className="text-red-500">*</span>
             </label>
             <div className="grid grid-cols-3 gap-2">
@@ -295,12 +295,12 @@ export const IssueFormModal: React.FC<IssueFormModalProps> = ({
                     className={`flex items-center justify-center gap-2 py-2.5 px-3 rounded-xl border text-xs sm:text-sm font-bold transition cursor-pointer ${
                       isSelected
                         ? 'bg-indigo-600 text-white border-indigo-600 shadow-sm'
-                        : 'bg-slate-50 hover:bg-slate-100 text-slate-700 border-slate-200'
+                        : 'bg-slate-50 dark:bg-slate-800 hover:bg-slate-100 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 border-slate-200 dark:border-slate-700'
                     }`}
                   >
                     <PlatformIcon
                       platform={p}
-                      className={`w-4 h-4 ${isSelected ? 'text-white' : 'text-indigo-600'}`}
+                      className={`w-4 h-4 ${isSelected ? 'text-white' : 'text-indigo-600 dark:text-indigo-400'}`}
                     />
                     <span className="bidi-isolate">{p}</span>
                   </button>
@@ -313,7 +313,7 @@ export const IssueFormModal: React.FC<IssueFormModalProps> = ({
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             {/* Status Selector Pills */}
             <div>
-              <label className="block text-xs font-bold text-slate-700 mb-1.5">
+              <label className="block text-xs font-bold text-slate-700 dark:text-slate-200 mb-1.5">
                 סטטוס תקלה <span className="text-red-500">*</span>
               </label>
               <div className="grid grid-cols-2 gap-2">
@@ -328,7 +328,7 @@ export const IssueFormModal: React.FC<IssueFormModalProps> = ({
                       className={`flex items-center justify-center gap-1.5 py-2 px-2.5 rounded-xl border text-xs font-bold transition cursor-pointer ${
                         isSelected
                           ? `${cfg.bgBadge} ${cfg.textBadge} ${cfg.borderBadge} ring-2 ${cfg.activeRing}`
-                          : 'bg-white hover:bg-slate-50 text-slate-600 border-slate-200'
+                          : 'bg-white dark:bg-slate-800 hover:bg-slate-50 dark:hover:bg-slate-700 text-slate-600 dark:text-slate-300 border-slate-200 dark:border-slate-700'
                       }`}
                     >
                       <span className={`w-2 h-2 rounded-full ${cfg.dotColor}`} />
@@ -341,7 +341,7 @@ export const IssueFormModal: React.FC<IssueFormModalProps> = ({
 
             {/* Severity Selector Pills */}
             <div>
-              <label className="block text-xs font-bold text-slate-700 mb-1.5">
+              <label className="block text-xs font-bold text-slate-700 dark:text-slate-200 mb-1.5">
                 חומרת תקלה / עדיפות <span className="text-red-500">*</span>
               </label>
               <div className="grid grid-cols-2 gap-2">
@@ -356,7 +356,7 @@ export const IssueFormModal: React.FC<IssueFormModalProps> = ({
                       className={`flex items-center justify-center gap-1.5 py-2 px-2.5 rounded-xl border text-xs font-bold transition cursor-pointer ${
                         isSelected
                           ? `${sCfg.bgBadge} ${sCfg.textBadge} ${sCfg.borderBadge} ring-2 ring-indigo-500/20`
-                          : 'bg-white hover:bg-slate-50 text-slate-600 border-slate-200'
+                          : 'bg-white dark:bg-slate-800 hover:bg-slate-50 dark:hover:bg-slate-700 text-slate-600 dark:text-slate-300 border-slate-200 dark:border-slate-700'
                       }`}
                     >
                       {sev === 'קריטית' ? (
@@ -374,7 +374,7 @@ export const IssueFormModal: React.FC<IssueFormModalProps> = ({
 
           {/* Issue Subject */}
           <div>
-            <label className="block text-xs font-bold text-slate-700 mb-1.5">
+            <label className="block text-xs font-bold text-slate-700 dark:text-slate-200 mb-1.5">
               נושא התקלה <span className="text-red-500">*</span>
             </label>
             <input
@@ -383,13 +383,13 @@ export const IssueFormModal: React.FC<IssueFormModalProps> = ({
               value={subject}
               onChange={(e) => setSubject(e.target.value)}
               placeholder="תיאור קצר וממוקד של התקלה..."
-              className="w-full px-3.5 py-2.5 rounded-xl border border-slate-300 bg-slate-50/70 focus:bg-white text-sm text-slate-900 focus:outline-none focus:ring-2 focus:ring-indigo-500/30 focus:border-indigo-500 transition rtl-safe"
+              className="w-full px-3.5 py-2.5 rounded-xl border border-slate-300 dark:border-slate-700 bg-slate-50/70 dark:bg-slate-800 focus:bg-white dark:focus:bg-slate-800 text-sm text-slate-900 dark:text-slate-100 placeholder:text-slate-400 dark:placeholder:text-slate-500 focus:outline-none focus:ring-2 focus:ring-indigo-500/30 focus:border-indigo-500 transition rtl-safe"
             />
           </div>
 
           {/* Detailed Error Description */}
           <div>
-            <label className="block text-xs font-bold text-slate-700 mb-1.5">
+            <label className="block text-xs font-bold text-slate-700 dark:text-slate-200 mb-1.5">
               מהות השגיאה ותיאור מפורט <span className="text-red-500">*</span>
             </label>
             <textarea
@@ -398,18 +398,18 @@ export const IssueFormModal: React.FC<IssueFormModalProps> = ({
               value={description}
               onChange={(e) => setDescription(e.target.value)}
               placeholder="פרט את שלבי השחזור, התוצאה שהתקבלה בפועל והתוצאה המצופה..."
-              className="w-full px-3.5 py-2.5 rounded-xl border border-slate-300 bg-slate-50/70 focus:bg-white text-sm text-slate-900 focus:outline-none focus:ring-2 focus:ring-indigo-500/30 focus:border-indigo-500 transition rtl-safe"
+              className="w-full px-3.5 py-2.5 rounded-xl border border-slate-300 dark:border-slate-700 bg-slate-50/70 dark:bg-slate-800 focus:bg-white dark:focus:bg-slate-800 text-sm text-slate-900 dark:text-slate-100 placeholder:text-slate-400 dark:placeholder:text-slate-500 focus:outline-none focus:ring-2 focus:ring-indigo-500/30 focus:border-indigo-500 transition rtl-safe"
             />
           </div>
 
           {/* Screenshot Paste (Ctrl+V / Direct Clipboard Button) & Drag-and-Drop Zone */}
           <div>
             <div className="flex items-center justify-between mb-1.5">
-              <label className="block text-xs font-bold text-slate-700">
+              <label className="block text-xs font-bold text-slate-700 dark:text-slate-200">
                 צילומי מסך והמחשות
               </label>
               {pasteNotice && (
-                <span className="inline-flex items-center gap-1 text-xs font-bold text-emerald-600 animate-bounce">
+                <span className="inline-flex items-center gap-1 text-xs font-bold text-emerald-600 dark:text-emerald-400 animate-bounce">
                   <Sparkles className="w-3.5 h-3.5" />
                   <span>צילום מסך נוסף בהצלחה!</span>
                 </span>
@@ -426,8 +426,8 @@ export const IssueFormModal: React.FC<IssueFormModalProps> = ({
               onDrop={handleDrop}
               className={`border-2 border-dashed rounded-2xl p-4 text-center transition focus:outline-none focus:border-indigo-500 focus:bg-indigo-50/30 ${
                 isDraggingOver
-                  ? 'border-indigo-600 bg-indigo-50/80'
-                  : 'border-slate-300 bg-slate-50/60'
+                  ? 'border-indigo-600 bg-indigo-50/80 dark:bg-indigo-950/60'
+                  : 'border-slate-300 dark:border-slate-700 bg-slate-50/60 dark:bg-slate-800/40'
               }`}
             >
               <input
@@ -440,8 +440,8 @@ export const IssueFormModal: React.FC<IssueFormModalProps> = ({
               />
 
               <div className="flex flex-col items-center justify-center gap-3">
-                <div className="text-xs sm:text-sm font-bold text-slate-800">
-                  הדבק צילום מסך ישירות מהלוח (<kbd className="px-1.5 py-0.5 rounded bg-slate-200 text-slate-900 font-mono text-xs">Ctrl + V</kbd>) או השתמש בכפתורים:
+                <div className="text-xs sm:text-sm font-bold text-slate-800 dark:text-slate-200">
+                  הדבק צילום מסך ישירות מהלוח (<kbd className="px-1.5 py-0.5 rounded bg-slate-200 dark:bg-slate-700 text-slate-900 dark:text-slate-100 font-mono text-xs">Ctrl + V</kbd>) או השתמש בכפתורים:
                 </div>
 
                 {/* Two Distinct Action Buttons: 1) Paste from Clipboard, 2) Choose File */}
@@ -458,21 +458,21 @@ export const IssueFormModal: React.FC<IssueFormModalProps> = ({
                   <button
                     type="button"
                     onClick={() => fileInputRef.current?.click()}
-                    className="flex items-center gap-2 px-4 py-2 rounded-xl bg-white hover:bg-slate-100 text-slate-700 border border-slate-300 text-xs font-bold transition cursor-pointer"
+                    className="flex items-center gap-2 px-4 py-2 rounded-xl bg-white dark:bg-slate-800 hover:bg-slate-100 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 border border-slate-300 dark:border-slate-700 text-xs font-bold transition cursor-pointer"
                   >
-                    <UploadCloud className="w-4 h-4 text-indigo-600" />
+                    <UploadCloud className="w-4 h-4 text-indigo-600 dark:text-indigo-400" />
                     <span>בחר קובץ מהמחשב / מהנייד</span>
                   </button>
                 </div>
 
                 {clipboardHint && (
-                  <div className="flex items-center gap-1.5 text-xs text-amber-700 bg-amber-50 px-3 py-1.5 rounded-lg border border-amber-200">
+                  <div className="flex items-center gap-1.5 text-xs text-amber-700 dark:text-amber-300 bg-amber-50 dark:bg-amber-950/50 px-3 py-1.5 rounded-lg border border-amber-200 dark:border-amber-800">
                     <AlertCircle className="w-3.5 h-3.5 shrink-0" />
                     <span>{clipboardHint}</span>
                   </div>
                 )}
 
-                <div className="text-[11px] text-slate-500">
+                <div className="text-[11px] text-slate-500 dark:text-slate-400">
                   ניתן גם לגרור תמונות לכאן • לחץ על "סמן על התמונה" כדי לצייר חץ או להקיף את השגיאה
                 </div>
               </div>
@@ -484,7 +484,7 @@ export const IssueFormModal: React.FC<IssueFormModalProps> = ({
                 {screenshots.map((src, idx) => (
                   <div
                     key={idx}
-                    className="relative group rounded-xl bg-slate-900 border border-slate-200 h-36 p-1.5 flex items-center justify-center overflow-hidden"
+                    className="relative group rounded-xl bg-slate-900 border border-slate-200 dark:border-slate-700 h-36 p-1.5 flex items-center justify-center overflow-hidden"
                   >
                     <img
                       src={src}
@@ -522,7 +522,7 @@ export const IssueFormModal: React.FC<IssueFormModalProps> = ({
           {/* Optional Initial Comment (only when creating new issue) */}
           {(!editingIssue || editingIssue.id === '__NEW_FROM_PASTE__') && (
             <div>
-              <label className="block text-xs font-bold text-slate-700 mb-1.5">
+              <label className="block text-xs font-bold text-slate-700 dark:text-slate-200 mb-1.5">
                 הערה ראשונית
               </label>
               <input
@@ -530,17 +530,17 @@ export const IssueFormModal: React.FC<IssueFormModalProps> = ({
                 value={initialComment}
                 onChange={(e) => setInitialComment(e.target.value)}
                 placeholder="הערה נוספת לצוות..."
-                className="w-full px-3.5 py-2 rounded-xl border border-slate-300 bg-slate-50/70 focus:bg-white text-sm text-slate-900 focus:outline-none focus:ring-2 focus:ring-indigo-500/30 focus:border-indigo-500 transition rtl-safe"
+                className="w-full px-3.5 py-2 rounded-xl border border-slate-300 dark:border-slate-700 bg-slate-50/70 dark:bg-slate-800 focus:bg-white dark:focus:bg-slate-800 text-sm text-slate-900 dark:text-slate-100 placeholder:text-slate-400 dark:placeholder:text-slate-500 focus:outline-none focus:ring-2 focus:ring-indigo-500/30 focus:border-indigo-500 transition rtl-safe"
               />
             </div>
           )}
 
           {/* Form Footer Actions */}
-          <div className="flex items-center justify-end gap-2.5 pt-3 border-t border-slate-200">
+          <div className="flex items-center justify-end gap-2.5 pt-3 border-t border-slate-200 dark:border-slate-800">
             <button
               type="button"
               onClick={onClose}
-              className="px-4 py-2.5 rounded-xl border border-slate-300 text-slate-700 hover:bg-slate-50 text-sm font-semibold transition cursor-pointer"
+              className="px-4 py-2.5 rounded-xl border border-slate-300 dark:border-slate-700 text-slate-700 dark:text-slate-200 hover:bg-slate-50 dark:hover:bg-slate-800 text-sm font-semibold transition cursor-pointer"
             >
               ביטול
             </button>
@@ -549,7 +549,7 @@ export const IssueFormModal: React.FC<IssueFormModalProps> = ({
               disabled={!testCaseId.trim() || !subject.trim() || !description.trim()}
               className={`flex items-center gap-2 px-6 py-2.5 rounded-xl text-white text-sm font-bold shadow-md transition ${
                 !testCaseId.trim() || !subject.trim() || !description.trim()
-                  ? 'bg-slate-400 cursor-not-allowed opacity-60 shadow-none'
+                  ? 'bg-slate-400 dark:bg-slate-700 cursor-not-allowed opacity-60 shadow-none'
                   : 'bg-indigo-600 hover:bg-indigo-700 shadow-indigo-600/20 cursor-pointer'
               }`}
             >

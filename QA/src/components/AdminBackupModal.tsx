@@ -526,18 +526,18 @@ export const AdminBackupModal: React.FC<AdminBackupModalProps> = ({
 
   return (
     <div
-      className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/60 backdrop-blur-xs p-3 sm:p-4 overflow-y-auto"
+      className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/60 dark:bg-slate-950/80 backdrop-blur-xs p-3 sm:p-4 overflow-y-auto"
       dir="rtl"
     >
-      <div className="bg-white rounded-2xl shadow-2xl border border-slate-200 w-full max-w-2xl overflow-hidden my-auto max-h-[92vh] flex flex-col">
-        <div className="flex items-center justify-between px-6 py-4 bg-slate-900 text-white shrink-0">
+      <div className="bg-white dark:bg-slate-900 rounded-2xl shadow-2xl border border-slate-200 dark:border-slate-800 w-full max-w-2xl overflow-hidden my-auto max-h-[92vh] flex flex-col">
+        <div className="flex items-center justify-between px-6 py-4 bg-slate-900 dark:bg-slate-950 text-white border-b border-slate-800 shrink-0">
           <div className="flex items-center gap-2.5">
             <DatabaseBackup className="w-5 h-5 text-indigo-400" />
             <div>
               <h3 className="text-base font-extrabold">
                 אחסון Google Drive (5TB), גיבוי וייבוא אקסל (מנהל)
               </h3>
-              <p className="text-xs text-slate-300">
+              <p className="text-xs text-slate-300 dark:text-slate-400">
                 חיבור אוטומטי של כל צילומי המסך והגיבויים ל-Google Drive שלך ללא הגבלת מקום
               </p>
             </div>
@@ -556,21 +556,21 @@ export const AdminBackupModal: React.FC<AdminBackupModalProps> = ({
             <div
               className={`flex items-start gap-2 p-3.5 rounded-xl border text-xs font-bold leading-relaxed ${
                 statusMsg.type === 'success'
-                  ? 'bg-emerald-50 border-emerald-200 text-emerald-800'
-                  : 'bg-red-50 border-red-200 text-red-700'
+                  ? 'bg-emerald-50 dark:bg-emerald-950/60 border-emerald-200 dark:border-emerald-800 text-emerald-800 dark:text-emerald-300'
+                  : 'bg-red-50 dark:bg-red-950/60 border-red-200 dark:border-red-800 text-red-700 dark:text-red-300'
               }`}
             >
               {statusMsg.type === 'success' ? (
-                <CheckCircle2 className="w-4 h-4 shrink-0 text-emerald-600 mt-0.5" />
+                <CheckCircle2 className="w-4 h-4 shrink-0 text-emerald-600 dark:text-emerald-400 mt-0.5" />
               ) : (
-                <AlertCircle className="w-4 h-4 shrink-0 text-red-600 mt-0.5" />
+                <AlertCircle className="w-4 h-4 shrink-0 text-red-600 dark:text-red-400 mt-0.5" />
               )}
               <span>{statusMsg.text}</span>
             </div>
           )}
 
           {/* 0. Google Drive 5TB Integration Panel */}
-          <div className="p-4 sm:p-5 rounded-2xl bg-gradient-to-br from-indigo-50/90 via-white to-blue-50/80 border-2 border-indigo-200 space-y-3.5 shadow-2xs">
+          <div className="p-4 sm:p-5 rounded-2xl bg-gradient-to-br from-indigo-50/90 via-white to-blue-50/80 dark:from-slate-900 dark:via-indigo-950/40 dark:to-slate-900 border-2 border-indigo-200 dark:border-indigo-800/80 space-y-3.5 shadow-2xs">
             <div className="flex flex-wrap items-center justify-between gap-2">
               <div className="flex items-center gap-2">
                 <div className="w-9 h-9 rounded-xl bg-indigo-600 text-white flex items-center justify-center shadow-xs">
@@ -578,20 +578,20 @@ export const AdminBackupModal: React.FC<AdminBackupModalProps> = ({
                 </div>
                 <div>
                   <div className="flex items-center gap-2">
-                    <span className="text-sm font-black text-slate-900">
+                    <span className="text-sm font-black text-slate-900 dark:text-slate-100">
                       אחסון אוטומטי ב-Google Drive שלך (5TB)
                     </span>
                     <span
                       className={`px-2 py-0.5 rounded-full text-[10px] font-extrabold ${
                         isConnectedDrive
-                          ? 'bg-emerald-100 text-emerald-800 border border-emerald-300'
-                          : 'bg-amber-100 text-amber-800 border border-amber-300'
+                          ? 'bg-emerald-100 dark:bg-emerald-950 text-emerald-800 dark:text-emerald-300 border border-emerald-300 dark:border-emerald-800'
+                          : 'bg-amber-100 dark:bg-amber-950 text-amber-800 dark:text-amber-300 border border-amber-300 dark:border-amber-800'
                       }`}
                     >
                       {isConnectedDrive ? 'מחובר ופעיל לכל הצוות' : 'ממתין לחיבור חד-פעמי'}
                     </span>
                   </div>
-                  <p className="text-xs text-slate-600 mt-0.5">
+                  <p className="text-xs text-slate-600 dark:text-slate-400 mt-0.5">
                     שומר אוטומטית כל צילום מסך בתיקייה מסודרת לפי מערכת אצלך בדרייב ומשאיר את המערכת מהירה גם עם 10 מערכות ומאות תמונות!
                   </p>
                 </div>
@@ -600,7 +600,7 @@ export const AdminBackupModal: React.FC<AdminBackupModalProps> = ({
               <button
                 type="button"
                 onClick={() => setShowScriptInstructions((prev) => !prev)}
-                className="text-xs font-bold text-indigo-700 hover:text-indigo-900 underline cursor-pointer"
+                className="text-xs font-bold text-indigo-700 dark:text-indigo-400 hover:text-indigo-900 dark:hover:text-indigo-300 underline cursor-pointer"
               >
                 {showScriptInstructions ? 'הסתר הוראות הגדרה' : 'איך מחברים ב-30 שניות?'}
               </button>
@@ -608,17 +608,17 @@ export const AdminBackupModal: React.FC<AdminBackupModalProps> = ({
 
             {/* Stats Pill */}
             <div className="flex flex-wrap items-center gap-2 text-[11px] font-bold">
-              <span className="px-2.5 py-1 rounded-lg bg-white border border-slate-200 text-slate-700">
-                תמונות השמורות ב-Google Drive: <strong className="text-emerald-700">{driveImagesCount}</strong>
+              <span className="px-2.5 py-1 rounded-lg bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-300">
+                תמונות השמורות ב-Google Drive: <strong className="text-emerald-700 dark:text-emerald-400">{driveImagesCount}</strong>
               </span>
-              <span className="px-2.5 py-1 rounded-lg bg-white border border-slate-200 text-slate-700">
-                תמונות מקומיות שממתינות להעברה לדרייב: <strong className="text-indigo-700">{base64ImagesCount}</strong>
+              <span className="px-2.5 py-1 rounded-lg bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-300">
+                תמונות מקומיות שממתינות להעברה לדרייב: <strong className="text-indigo-700 dark:text-indigo-400">{base64ImagesCount}</strong>
               </span>
             </div>
 
             {showScriptInstructions && (
-              <div className="p-3.5 rounded-xl bg-white border border-indigo-100 space-y-2.5 text-xs text-slate-700 leading-relaxed">
-                <div className="font-extrabold text-slate-900">
+              <div className="p-3.5 rounded-xl bg-white dark:bg-slate-800 border border-indigo-100 dark:border-indigo-900/60 space-y-2.5 text-xs text-slate-700 dark:text-slate-300 leading-relaxed">
+                <div className="font-extrabold text-slate-900 dark:text-slate-100">
                   חיבור חד-פעמי ל-Google Drive שלך (לוקח 40 שניות):
                 </div>
                 <ol className="list-decimal list-inside space-y-1.5 text-[11px] sm:text-xs">
@@ -660,7 +660,7 @@ export const AdminBackupModal: React.FC<AdminBackupModalProps> = ({
                     href="https://script.google.com/home"
                     target="_blank"
                     rel="noreferrer"
-                    className="flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-white hover:bg-slate-50 text-indigo-700 border border-indigo-200 text-xs font-bold transition"
+                    className="flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-white dark:bg-slate-700 hover:bg-slate-50 dark:hover:bg-slate-600 text-indigo-700 dark:text-indigo-300 border border-indigo-200 dark:border-indigo-800 text-xs font-bold transition"
                   >
                     <ExternalLink className="w-4 h-4" />
                     <span>2. פתח את Google Apps Script</span>
@@ -671,7 +671,7 @@ export const AdminBackupModal: React.FC<AdminBackupModalProps> = ({
 
             {/* URL Input & Connect Button */}
             <div className="space-y-2">
-              <label className="block text-xs font-extrabold text-slate-800">
+              <label className="block text-xs font-extrabold text-slate-800 dark:text-slate-200">
                 כתובת ה-Web App של Google Drive שלך:
               </label>
               <div className="flex flex-col sm:flex-row gap-2">
@@ -681,7 +681,7 @@ export const AdminBackupModal: React.FC<AdminBackupModalProps> = ({
                   value={driveUrlInput}
                   onChange={(e) => setDriveUrlInput(e.target.value)}
                   placeholder="https://script.google.com/macros/s/.../exec"
-                  className="flex-1 px-3.5 py-2 rounded-xl bg-white border border-slate-300 focus:border-indigo-500 focus:outline-none text-xs font-mono text-slate-800"
+                  className="flex-1 px-3.5 py-2 rounded-xl bg-white dark:bg-slate-800 border border-slate-300 dark:border-slate-700 focus:border-indigo-500 focus:outline-none text-xs font-mono text-slate-800 dark:text-slate-100 placeholder:text-slate-400 dark:placeholder:text-slate-500"
                 />
                 <button
                   type="button"
@@ -706,7 +706,7 @@ export const AdminBackupModal: React.FC<AdminBackupModalProps> = ({
 
             {/* Actions when connected */}
             {isConnectedDrive && (
-              <div className="flex flex-wrap items-center justify-between gap-2 pt-2 border-t border-indigo-100">
+              <div className="flex flex-wrap items-center justify-between gap-2 pt-2 border-t border-indigo-100 dark:border-indigo-900/60">
                 <div className="flex flex-wrap items-center gap-2">
                   {base64ImagesCount > 0 && (
                     <button
@@ -734,7 +734,7 @@ export const AdminBackupModal: React.FC<AdminBackupModalProps> = ({
                       href={driveFolderUrl}
                       target="_blank"
                       rel="noreferrer"
-                      className="flex items-center gap-1.5 px-3 py-2 rounded-xl bg-white hover:bg-slate-50 text-indigo-700 border border-indigo-200 text-xs font-bold transition"
+                      className="flex items-center gap-1.5 px-3 py-2 rounded-xl bg-white dark:bg-slate-800 hover:bg-slate-50 dark:hover:bg-slate-700 text-indigo-700 dark:text-indigo-300 border border-indigo-200 dark:border-indigo-700 text-xs font-bold transition"
                     >
                       <ExternalLink className="w-3.5 h-3.5" />
                       <span>פתח תיקייה ב-Google Drive</span>
@@ -745,7 +745,7 @@ export const AdminBackupModal: React.FC<AdminBackupModalProps> = ({
                 <button
                   type="button"
                   onClick={handleDisconnectDrive}
-                  className="flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-red-600 hover:bg-red-50 text-[11px] font-bold transition cursor-pointer"
+                  className="flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-red-600 dark:text-rose-400 hover:bg-red-50 dark:hover:bg-rose-950/40 text-[11px] font-bold transition cursor-pointer"
                 >
                   <Trash2 className="w-3.5 h-3.5" />
                   <span>נתק דרייב</span>
@@ -755,11 +755,11 @@ export const AdminBackupModal: React.FC<AdminBackupModalProps> = ({
           </div>
 
           {/* 1. Full JSON Backup Download */}
-          <div className="p-4 rounded-2xl bg-slate-50 border border-slate-200 space-y-2">
-            <div className="text-sm font-extrabold text-slate-900">
+          <div className="p-4 rounded-2xl bg-slate-50 dark:bg-slate-800/60 border border-slate-200 dark:border-slate-700 space-y-2">
+            <div className="text-sm font-extrabold text-slate-900 dark:text-slate-100">
               1. הורדת גיבוי מלא למחשב (JSON)
             </div>
-            <p className="text-xs text-slate-600 leading-relaxed">
+            <p className="text-xs text-slate-600 dark:text-slate-400 leading-relaxed">
               שומר קובץ גיבוי מלא הכולל את כל המערכות, הארכיון, {issues.length} התקלות, ההערות וכל צילומי המסך המצורפים.
             </p>
             <button
@@ -773,11 +773,11 @@ export const AdminBackupModal: React.FC<AdminBackupModalProps> = ({
           </div>
 
           {/* 2. Restore from JSON Backup */}
-          <div className="p-4 rounded-2xl bg-slate-50 border border-slate-200 space-y-2">
-            <div className="text-sm font-extrabold text-slate-900">
+          <div className="p-4 rounded-2xl bg-slate-50 dark:bg-slate-800/60 border border-slate-200 dark:border-slate-700 space-y-2">
+            <div className="text-sm font-extrabold text-slate-900 dark:text-slate-100">
               2. שחזור מסד נתונים מקובץ גיבוי (JSON)
             </div>
-            <p className="text-xs text-slate-600 leading-relaxed">
+            <p className="text-xs text-slate-600 dark:text-slate-400 leading-relaxed">
               בחר קובץ גיבוי שהורדת בעבר כדי לשחזר ולסנכרן את כל הנתונים לענן.
             </p>
             <input
@@ -790,21 +790,21 @@ export const AdminBackupModal: React.FC<AdminBackupModalProps> = ({
             <button
               type="button"
               onClick={() => jsonFileInputRef.current?.click()}
-              className="flex items-center gap-2 px-4 py-2 rounded-xl bg-white hover:bg-slate-100 text-slate-800 border border-slate-300 text-xs font-bold transition cursor-pointer"
+              className="flex items-center gap-2 px-4 py-2 rounded-xl bg-white dark:bg-slate-800 hover:bg-slate-100 dark:hover:bg-slate-700 text-slate-800 dark:text-slate-200 border border-slate-300 dark:border-slate-700 text-xs font-bold transition cursor-pointer"
             >
-              <Upload className="w-4 h-4 text-indigo-600" />
+              <Upload className="w-4 h-4 text-indigo-600 dark:text-indigo-400" />
               <span>בחר קובץ גיבוי JSON לשחזור</span>
             </button>
           </div>
 
           {/* 3. Import Test Cases from CSV */}
-          <div className="p-4 rounded-2xl bg-slate-50 border border-slate-200 space-y-2">
-            <div className="text-sm font-extrabold text-slate-900">
+          <div className="p-4 rounded-2xl bg-slate-50 dark:bg-slate-800/60 border border-slate-200 dark:border-slate-700 space-y-2">
+            <div className="text-sm font-extrabold text-slate-900 dark:text-slate-100">
               3. ייבוא תסריטי בדיקה מקובץ Excel / CSV
             </div>
-            <p className="text-xs text-slate-600 leading-relaxed">
+            <p className="text-xs text-slate-600 dark:text-slate-400 leading-relaxed">
               ייבא רשימת תסריטים מקובץ CSV (תומך בקובץ שיוצא מהמערכת או בקובץ עם עמודות:{' '}
-              <code className="bg-white px-1 rounded border">מזהה תסריט, נושא, תיאור, פלטפורמה</code>).
+              <code className="bg-white dark:bg-slate-900 px-1 rounded border border-slate-200 dark:border-slate-700">מזהה תסריט, נושא, תיאור, פלטפורמה</code>).
             </p>
             <input
               ref={csvFileInputRef}
@@ -824,11 +824,11 @@ export const AdminBackupModal: React.FC<AdminBackupModalProps> = ({
           </div>
         </div>
 
-        <div className="flex justify-end px-6 py-3 bg-slate-50 border-t border-slate-200 shrink-0">
+        <div className="flex justify-end px-6 py-3 bg-slate-50 dark:bg-slate-950 border-t border-slate-200 dark:border-slate-800 shrink-0">
           <button
             type="button"
             onClick={onClose}
-            className="px-5 py-2 rounded-xl border border-slate-300 bg-white text-slate-700 hover:bg-slate-100 text-xs font-bold cursor-pointer"
+            className="px-5 py-2 rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-700 dark:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-700 text-xs font-bold cursor-pointer"
           >
             סגור
           </button>
