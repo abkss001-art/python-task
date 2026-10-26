@@ -161,26 +161,45 @@ export const AdminTeamModal: React.FC<AdminTeamModalProps> = ({
           {/* Add Member Form */}
           <form
             onSubmit={handleAddMember}
-            className="p-4 rounded-2xl bg-slate-50 border border-slate-200/90 space-y-3"
+            className="p-4 sm:p-5 rounded-2xl bg-slate-50 border border-slate-200 space-y-3.5 shadow-2xs"
           >
-            <div className="text-xs font-extrabold text-slate-800">הוספת איש צוות חדש:</div>
-            <div className="flex flex-col sm:flex-row gap-2">
+            <div className="flex items-center justify-between">
+              <span className="text-xs font-extrabold text-slate-800 flex items-center gap-1.5">
+                <UserPlus className="w-4 h-4 text-indigo-600" />
+                <span>הוספת איש צוות חדש למערכת:</span>
+              </span>
+            </div>
+
+            {/* Row 1: Name Input & Submit Button */}
+            <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2.5">
               <input
                 type="text"
                 required
                 value={newFullName}
                 onChange={(e) => setNewFullName(e.target.value)}
                 placeholder="שם מלא (למשל: דניאל כהן)..."
-                className="flex-1 px-3.5 py-2 rounded-xl bg-white border border-slate-300 text-xs text-slate-900 focus:outline-none focus:border-indigo-500 font-semibold"
+                className="flex-1 px-3.5 py-2.5 rounded-xl bg-white border border-slate-300 text-xs text-slate-900 focus:outline-none focus:border-indigo-500 font-semibold shadow-2xs"
               />
-              <div className="flex gap-1.5">
+              <button
+                type="submit"
+                className="px-5 py-2.5 rounded-xl bg-indigo-600 hover:bg-indigo-700 active:scale-[0.99] text-white text-xs font-black flex items-center justify-center gap-2 cursor-pointer shadow-md shadow-indigo-600/20 transition shrink-0"
+              >
+                <UserPlus className="w-4 h-4" />
+                <span>הוסף לצוות</span>
+              </button>
+            </div>
+
+            {/* Row 2: Role Selector Buttons */}
+            <div className="pt-2 border-t border-slate-200/80">
+              <div className="text-[11px] font-bold text-slate-600 mb-1.5">בחר תפקיד:</div>
+              <div className="grid grid-cols-3 gap-2">
                 <button
                   type="button"
                   onClick={() => setNewRole('qa')}
-                  className={`px-3 py-1.5 rounded-xl text-xs font-bold transition cursor-pointer flex items-center gap-1 ${
+                  className={`py-2 px-3 rounded-xl text-xs font-bold transition cursor-pointer flex items-center justify-center gap-1.5 ${
                     newRole === 'qa'
                       ? 'bg-sky-600 text-white shadow-xs'
-                      : 'bg-white text-slate-600 border border-slate-200'
+                      : 'bg-white text-slate-700 border border-slate-200 hover:bg-slate-100'
                   }`}
                 >
                   <ShieldCheck className="w-3.5 h-3.5" />
@@ -189,10 +208,10 @@ export const AdminTeamModal: React.FC<AdminTeamModalProps> = ({
                 <button
                   type="button"
                   onClick={() => setNewRole('dev')}
-                  className={`px-3 py-1.5 rounded-xl text-xs font-bold transition cursor-pointer flex items-center gap-1 ${
+                  className={`py-2 px-3 rounded-xl text-xs font-bold transition cursor-pointer flex items-center justify-center gap-1.5 ${
                     newRole === 'dev'
                       ? 'bg-purple-600 text-white shadow-xs'
-                      : 'bg-white text-slate-600 border border-slate-200'
+                      : 'bg-white text-slate-700 border border-slate-200 hover:bg-slate-100'
                   }`}
                 >
                   <Code className="w-3.5 h-3.5" />
@@ -201,23 +220,16 @@ export const AdminTeamModal: React.FC<AdminTeamModalProps> = ({
                 <button
                   type="button"
                   onClick={() => setNewRole('admin')}
-                  className={`px-3 py-1.5 rounded-xl text-xs font-bold transition cursor-pointer flex items-center gap-1 ${
+                  className={`py-2 px-3 rounded-xl text-xs font-bold transition cursor-pointer flex items-center justify-center gap-1.5 ${
                     newRole === 'admin'
                       ? 'bg-amber-600 text-white shadow-xs'
-                      : 'bg-white text-slate-600 border border-slate-200'
+                      : 'bg-white text-slate-700 border border-slate-200 hover:bg-slate-100'
                   }`}
                 >
                   <ShieldAlert className="w-3.5 h-3.5" />
                   <span>מנהל</span>
                 </button>
               </div>
-              <button
-                type="submit"
-                className="px-4 py-2 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-extrabold flex items-center justify-center gap-1.5 cursor-pointer shadow-xs shrink-0"
-              >
-                <UserPlus className="w-4 h-4" />
-                <span>הוסף לצוות</span>
-              </button>
             </div>
 
             {/* Role-Specific Systems Picker */}
@@ -449,20 +461,24 @@ export const AdminTeamModal: React.FC<AdminTeamModalProps> = ({
                             <span className="text-[10px] text-slate-500 font-semibold">
                               מערכות מורשות:
                             </span>
-                            {m.allowedSystems && m.allowedSystems.length > 0 ? (
-                              m.allowedSystems.map((sys) => (
-                                <span
-                                  key={sys}
-                                  className="px-1.5 py-0.2 rounded bg-purple-50 text-purple-700 border border-purple-200 text-[10px] font-bold"
-                                >
-                                  {sys}
+                            {(() => {
+                              const validSystems = (m.allowedSystems || []).filter((s) => systems.includes(s));
+                              if (validSystems.length > 0) {
+                                return validSystems.map((sys) => (
+                                  <span
+                                    key={sys}
+                                    className="px-1.5 py-0.2 rounded bg-purple-50 text-purple-700 border border-purple-200 text-[10px] font-bold"
+                                  >
+                                    {sys}
+                                  </span>
+                                ));
+                              }
+                              return (
+                                <span className="text-[10px] text-slate-400 font-medium">
+                                  כל המערכות
                                 </span>
-                              ))
-                            ) : (
-                              <span className="text-[10px] text-slate-400 font-medium">
-                                כל המערכות
-                              </span>
-                            )}
+                              );
+                            })()}
                           </div>
                         ) : (
                           <div className="text-[10px] text-emerald-600 font-medium mt-0.5">

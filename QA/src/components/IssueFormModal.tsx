@@ -8,7 +8,8 @@ import {
   Sparkles,
   AlertCircle,
   PenTool,
-  Flame
+  Flame,
+  Lock
 } from 'lucide-react';
 import {
   PLATFORMS,
@@ -58,52 +59,36 @@ export const IssueFormModal: React.FC<IssueFormModalProps> = ({
   onSave,
   onClose
 }) => {
+  const isEditing = Boolean(editingIssue && editingIssue.id !== '__NEW_FROM_PASTE__');
+
   const [system, setSystem] = useState(
     editingIssue?.system || (defaultSystem === 'ALL' ? systems[0] || 'CARGO' : defaultSystem)
   );
 
-  // Compute the truly next free unique testCaseId across all existing issues
-  const nextFreeId = React.useMemo(() => {
-    if (!existingIssues || existingIssues.length === 0) {
-      return suggestedTestCaseId || '10';
-    }
-    const used = new Set<number>();
-    for (const item of existingIssues) {
-      const num = parseInt(item.testCaseId?.trim(), 10);
-      if (!isNaN(num)) used.add(num);
-    }
-    let candidate = 10;
-    if (used.size > 0) {
-      candidate = Math.max(10, Math.max(...Array.from(used)) + 1);
-    }
-    while (used.has(candidate)) {
-      candidate++;
-    }
-    return String(candidate);
-  }, [existingIssues, suggestedTestCaseId]);
+  // Compute next sequential ID for target system starting from 1
+  const getNextIdForSystem = (targetSys: string) => {
+    const sysNums = existingIssues
+      .filter((i) => i.system === targetSys)
+      .map((i) => parseInt(i.testCaseId?.trim(), 10))
+      .filter((n) => !isNaN(n) && n > 0);
+    if (sysNums.length === 0) return '1';
+    return String(Math.max(...sysNums) + 1);
+  };
 
   const [testCaseId, setTestCaseId] = useState(() => {
-    if (editingIssue && editingIssue.id !== '__NEW_FROM_PASTE__') {
+    if (isEditing && editingIssue?.testCaseId) {
       return editingIssue.testCaseId;
     }
-    return suggestedTestCaseId || '10';
+    const initialSys = editingIssue?.system || (defaultSystem === 'ALL' ? systems[0] || 'CARGO' : defaultSystem);
+    return getNextIdForSystem(initialSys);
   });
 
-  // Check if testCaseId is taken by any other issue
-  const trimmedTestCaseId = testCaseId.trim();
-  const duplicateIssue = React.useMemo(() => {
-    if (!trimmedTestCaseId || !existingIssues) return null;
-    return (
-      existingIssues.find(
-        (item) =>
-          item.testCaseId?.trim().toLowerCase() === trimmedTestCaseId.toLowerCase() &&
-          (!editingIssue ||
-            (editingIssue.id !== '__NEW_FROM_PASTE__' && item.id !== editingIssue.id))
-      ) || null
-    );
-  }, [trimmedTestCaseId, existingIssues, editingIssue]);
-
-  const isDuplicateId = Boolean(duplicateIssue);
+  const handleSystemChange = (newSys: string) => {
+    setSystem(newSys);
+    if (!isEditing) {
+      setTestCaseId(getNextIdForSystem(newSys));
+    }
+  };
   const [platform, setPlatform] = useState<StdPlatform>(
     editingIssue?.platform || 'IOS'
   );
@@ -204,7 +189,6 @@ export const IssueFormModal: React.FC<IssueFormModalProps> = ({
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     if (!testCaseId.trim() || !subject.trim() || !description.trim()) return;
-    if (isDuplicateId) return;
 
     onSave({
       system,
@@ -259,7 +243,7 @@ export const IssueFormModal: React.FC<IssueFormModalProps> = ({
               </label>
               <select
                 value={system}
-                onChange={(e) => setSystem(e.target.value)}
+                onChange={(e) => handleSystemChange(e.target.value)}
                 className="w-full px-3.5 py-2.5 rounded-xl border border-slate-300 bg-slate-50/70 focus:bg-white text-sm font-bold text-slate-900 focus:outline-none focus:ring-2 focus:ring-indigo-500/30 focus:border-indigo-500 transition cursor-pointer"
               >
                 {systems.map((sys) => (
@@ -271,64 +255,22 @@ export const IssueFormModal: React.FC<IssueFormModalProps> = ({
             </div>
 
             <div>
-              <div className="flex items-center justify-between mb-1.5">
-                <label className="block text-xs font-bold text-slate-700">
-                  מזהה תסריט בדיקה <span className="text-red-500">*</span>
-                </label>
-                {testCaseId.trim() !== nextFreeId && (
-                  <button
-                    type="button"
-                    onClick={() => setTestCaseId(nextFreeId)}
-                    className="text-[11px] font-bold text-indigo-600 hover:text-indigo-800 bg-indigo-50 hover:bg-indigo-100 px-2 py-0.5 rounded-md transition cursor-pointer flex items-center gap-1"
-                    title="הקצה מספר פנוי ייחודי הבא"
-                  >
-                    <Sparkles className="w-3 h-3 text-indigo-500" />
-                    הקצה מזהה פנוי (#{nextFreeId})
-                  </button>
-                )}
-              </div>
-              <div className="relative">
-                <input
-                  type="text"
-                  required
-                  value={testCaseId}
-                  onChange={(e) => setTestCaseId(e.target.value)}
-                  placeholder={`לדוגמה: ${nextFreeId}`}
-                  className={`w-full px-3.5 py-2.5 rounded-xl border text-sm font-mono font-bold transition rtl-safe ${
-                    isDuplicateId
-                      ? 'border-red-500 bg-red-50/50 text-red-900 focus:ring-2 focus:ring-red-500/30 focus:border-red-500'
-                      : 'border-slate-300 bg-slate-50/70 focus:bg-white text-slate-900 focus:ring-2 focus:ring-indigo-500/30 focus:border-indigo-500'
-                  }`}
-                />
-                {isDuplicateId && (
-                  <div className="absolute left-3 top-1/2 -translate-y-1/2 text-red-500">
-                    <AlertCircle className="w-4 h-4" />
-                  </div>
-                )}
-              </div>
-
-              {isDuplicateId && duplicateIssue && (
-                <div className="mt-2 p-2.5 rounded-xl bg-red-50 border border-red-200 text-xs text-red-700 flex items-start gap-2 animate-in fade-in">
-                  <AlertCircle className="w-4 h-4 text-red-500 shrink-0 mt-0.5" />
-                  <div className="flex-1">
-                    <p className="font-bold">
-                      מזהה תסריט #{trimmedTestCaseId} כבר קיים במערכת!
-                    </p>
-                    <p className="text-[11px] text-red-600 mt-0.5 leading-relaxed">
-                      המזהה כבר משויך לתסריט במערכת "{duplicateIssue.system}" ("{duplicateIssue.subject}").
-                      לכל תסריט חייב להיות מזהה בלעדי.
-                    </p>
-                    <button
-                      type="button"
-                      onClick={() => setTestCaseId(nextFreeId)}
-                      className="mt-2 inline-flex items-center gap-1 px-2.5 py-1 bg-red-600 hover:bg-red-700 text-white font-bold rounded-lg text-xs transition cursor-pointer shadow-xs"
-                    >
-                      <Sparkles className="w-3.5 h-3.5" />
-                      החלף למזהה הפנוי הבא (#{nextFreeId})
-                    </button>
-                  </div>
+              <label className="block text-xs font-bold text-slate-700 mb-1.5 flex items-center justify-between">
+                <span>מזהה תסריט בדיקה</span>
+                <span className="text-[11px] font-semibold text-slate-400 flex items-center gap-1">
+                  <Lock className="w-3 h-3 text-slate-400" />
+                  <span>אוטומטי (מערכת: {system})</span>
+                </span>
+              </label>
+              <div className="flex items-center justify-between px-3.5 py-2.5 rounded-xl border border-slate-200 bg-slate-100/90 text-sm font-mono select-none shadow-2xs">
+                <div className="flex items-center gap-1.5">
+                  <span className="text-slate-400 font-bold text-xs">תסריט #</span>
+                  <span className="text-base font-black text-indigo-700">{testCaseId}</span>
                 </div>
-              )}
+                <span className="text-[11px] font-sans font-bold text-slate-500 bg-white px-2 py-0.5 rounded-md border border-slate-200">
+                  סדר עולה מ-1
+                </span>
+              </div>
             </div>
           </div>
 
@@ -599,9 +541,9 @@ export const IssueFormModal: React.FC<IssueFormModalProps> = ({
             </button>
             <button
               type="submit"
-              disabled={isDuplicateId || !testCaseId.trim() || !subject.trim() || !description.trim()}
+              disabled={!testCaseId.trim() || !subject.trim() || !description.trim()}
               className={`flex items-center gap-2 px-6 py-2.5 rounded-xl text-white text-sm font-bold shadow-md transition ${
-                isDuplicateId || !testCaseId.trim() || !subject.trim() || !description.trim()
+                !testCaseId.trim() || !subject.trim() || !description.trim()
                   ? 'bg-slate-400 cursor-not-allowed opacity-60 shadow-none'
                   : 'bg-indigo-600 hover:bg-indigo-700 shadow-indigo-600/20 cursor-pointer'
               }`}

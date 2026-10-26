@@ -311,10 +311,11 @@ export function App() {
 
       const pastedImages = await extractImagesFromClipboardEvent(e);
       if (pastedImages.length > 0) {
-        const nextId = getSuggestedTestCaseId();
+        const targetSys = activeSystem === 'ALL' ? (visibleSystems[0] || 'CARGO') : activeSystem;
+        const nextId = getNextTestCaseIdForSystem(targetSys);
         setEditingIssue({
           id: '__NEW_FROM_PASTE__',
-          system: activeSystem === 'ALL' ? systems[0] || 'CARGO' : activeSystem,
+          system: targetSys,
           testCaseId: nextId,
           platform: 'IOS',
           subject: '',
@@ -491,8 +492,32 @@ export function App() {
       setActiveSystem(cleanNewName);
     }
 
+    const prevState = syncService.getState();
+    const nextDeletedSystems = Array.from(
+      new Set([...(prevState.deletedSystemIds || []), oldName])
+    );
+
+    // Update team members' allowedSystems to replace oldName with cleanNewName
+    const updatedTeamMembers = teamMembers.map((m) => {
+      if (m.allowedSystems && m.allowedSystems.includes(oldName)) {
+        return {
+          ...m,
+          allowedSystems: m.allowedSystems.map((s) => (s === oldName ? cleanNewName : s))
+        };
+      }
+      return m;
+    });
+    setTeamMembers(updatedTeamMembers);
+    saveStoredTeamMembers(updatedTeamMembers);
+
     syncService.pushStateToCloud(
-      { systems: nextSystems, archivedSystems, issues: nextIssues },
+      {
+        systems: nextSystems,
+        archivedSystems,
+        deletedSystemIds: nextDeletedSystems,
+        issues: nextIssues,
+        teamMembers: updatedTeamMembers
+      },
       `שינוי שם מערכת מ-"${oldName}" ל-"${cleanNewName}"`,
       currentUserName
     );
@@ -556,6 +581,20 @@ export function App() {
       new Set([...(prevState.deletedSystemIds || []), sysToDelete])
     );
 
+    // Clean deleted system from all team members' allowedSystems
+    const updatedTeamMembers = teamMembers.map((m) => {
+      if (m.allowedSystems && m.allowedSystems.includes(sysToDelete)) {
+        const filtered = m.allowedSystems.filter((s) => s !== sysToDelete);
+        return {
+          ...m,
+          allowedSystems: filtered.length > 0 ? filtered : undefined
+        };
+      }
+      return m;
+    });
+    setTeamMembers(updatedTeamMembers);
+    saveStoredTeamMembers(updatedTeamMembers);
+
     setSystems(nextSystems);
     setArchivedSystems(nextArchived);
     setIssues(nextIssues);
@@ -569,7 +608,8 @@ export function App() {
         archivedSystems: nextArchived,
         deletedIssueIds: nextDeletedIssues,
         deletedSystemIds: nextDeletedSystems,
-        issues: nextIssues
+        issues: nextIssues,
+        teamMembers: updatedTeamMembers
       },
       `מחיקת מערכת לצמיתות (${sysToDelete})`,
       currentUserName
@@ -639,20 +679,18 @@ export function App() {
     return Array.from(set).sort((a, b) => Number(a) - Number(b));
   }, [systemIssues]);
 
-  // Suggested next unique Test Case ID across all systems
-  const getSuggestedTestCaseId = useCallback(() => {
-    const usedIds = new Set<number>();
-    issues.forEach((i) => {
-      const num = parseInt(i.testCaseId?.trim(), 10);
-      if (!isNaN(num)) usedIds.add(num);
-    });
-    if (usedIds.size === 0) return '10';
-    let candidate = Math.max(10, Math.max(...Array.from(usedIds)) + 1);
-    while (usedIds.has(candidate)) {
-      candidate++;
-    }
-    return String(candidate);
-  }, [issues]);
+  // Next Test Case ID per system starting from 1 in ascending order
+  const getNextTestCaseIdForSystem = useCallback(
+    (targetSystem: string, currentIssues: StdIssue[] = issues) => {
+      const nums = currentIssues
+        .filter((i) => i.system === targetSystem)
+        .map((i) => parseInt(i.testCaseId?.trim(), 10))
+        .filter((n) => !isNaN(n) && n > 0);
+      if (nums.length === 0) return '1';
+      return String(Math.max(...nums) + 1);
+    },
+    [issues]
+  );
 
   // Filtered Issues
   const filteredIssues = useMemo(() => {
@@ -704,15 +742,10 @@ export function App() {
     const isEditingExisting =
       editingIssue && editingIssue.id !== '__NEW_FROM_PASTE__';
 
-    // Strictly ensure testCaseId is unique across all scenarios
+    // Assign next sequential ID per system starting from 1 (or keep existing ID if editing)
     let finalTestCaseId = formData.testCaseId.trim();
-    const isDuplicate = issues.some(
-      (iss) =>
-        iss.testCaseId.trim().toLowerCase() === finalTestCaseId.toLowerCase() &&
-        (!isEditingExisting || iss.id !== editingIssue.id)
-    );
-    if (isDuplicate || !finalTestCaseId) {
-      finalTestCaseId = getSuggestedTestCaseId();
+    if (!isEditingExisting || !finalTestCaseId) {
+      finalTestCaseId = getNextTestCaseIdForSystem(formData.system);
     }
 
     if (isEditingExisting) {
@@ -1436,7 +1469,9 @@ export function App() {
         <IssueFormModal
           systems={visibleSystems}
           defaultSystem={activeSystem}
-          suggestedTestCaseId={getSuggestedTestCaseId()}
+          suggestedTestCaseId={getNextTestCaseIdForSystem(
+            activeSystem === 'ALL' ? visibleSystems[0] || 'CARGO' : activeSystem
+          )}
           editingIssue={editingIssue}
           existingIssues={issues}
           onSave={handleSaveIssue}

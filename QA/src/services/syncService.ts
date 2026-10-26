@@ -136,7 +136,7 @@ const INITIAL_DEMO_ISSUES: StdIssue[] = [
   {
     id: 'std-101',
     system: 'CARGO',
-    testCaseId: '10',
+    testCaseId: '1',
     platform: 'IOS',
     severity: 'גבוהה',
     subject: 'כפתור אישור משלוח נחתך במסך סיכום הזמנה',
@@ -167,7 +167,7 @@ const INITIAL_DEMO_ISSUES: StdIssue[] = [
   {
     id: 'std-102',
     system: 'CARGO',
-    testCaseId: '11',
+    testCaseId: '2',
     platform: 'מחשב',
     severity: 'בינונית',
     subject: 'שגיאת חישוב משקל כולל בעת הוספת מכולה שנייה',
@@ -191,7 +191,7 @@ const INITIAL_DEMO_ISSUES: StdIssue[] = [
   {
     id: 'std-103',
     system: 'CARGO',
-    testCaseId: '12',
+    testCaseId: '3',
     platform: 'אנדרואיד',
     severity: 'בינונית',
     subject: 'ייצוא תעודת משלוח ל-PDF מציג גופן הפוך בעברית',
@@ -215,7 +215,7 @@ const INITIAL_DEMO_ISSUES: StdIssue[] = [
   {
     id: 'std-201',
     system: 'נשקי ערד',
-    testCaseId: '13',
+    testCaseId: '1',
     platform: 'מחשב',
     severity: 'נמוכה',
     subject: 'איטיות בטעינת קטלוג דגמים בחיפוש לפי מספר סידורי',
@@ -737,31 +737,37 @@ class RealtimeSyncService {
       (a, b) => (b.updatedAt || 0) - (a.updatedAt || 0)
     );
 
-    // Guarantee that every scenario across all systems has a strictly unique testCaseId
-    const seenMergeCaseIds = new Set<string>();
-    let maxMergeNum = 9;
+    // Guarantee that every scenario within each system is uniquely numbered from 1 ascending
+    const seenMergeBySys = new Map<string, Set<string>>();
+    const maxMergeBySys = new Map<string, number>();
     for (const iss of mergedIssues) {
+      const sys = iss.system;
       const num = parseInt(iss.testCaseId, 10);
-      if (!isNaN(num) && num > maxMergeNum) {
-        maxMergeNum = num;
+      if (!isNaN(num) && num > (maxMergeBySys.get(sys) || 0)) {
+        maxMergeBySys.set(sys, num);
       }
     }
-    // Sort chronologically ascending so earlier created issues preserve their original testCaseId
     const chronologicalIssues = [...mergedIssues].sort(
       (a, b) => (a.createdAt || 0) - (b.createdAt || 0)
     );
     for (const iss of chronologicalIssues) {
+      const sys = iss.system;
+      if (!seenMergeBySys.has(sys)) {
+        seenMergeBySys.set(sys, new Set());
+      }
+      const seenSet = seenMergeBySys.get(sys)!;
       const trimmed = (iss.testCaseId || '').trim();
-      if (!trimmed || seenMergeCaseIds.has(trimmed.toLowerCase())) {
-        maxMergeNum++;
-        while (seenMergeCaseIds.has(String(maxMergeNum).toLowerCase())) {
-          maxMergeNum++;
+      if (!trimmed || seenSet.has(trimmed.toLowerCase())) {
+        let nextN = (maxMergeBySys.get(sys) || 0) + 1;
+        while (seenSet.has(String(nextN).toLowerCase())) {
+          nextN++;
         }
-        iss.testCaseId = String(maxMergeNum);
+        maxMergeBySys.set(sys, nextN);
+        iss.testCaseId = String(nextN);
       } else {
         iss.testCaseId = trimmed;
       }
-      seenMergeCaseIds.add(iss.testCaseId.toLowerCase());
+      seenSet.add(iss.testCaseId.toLowerCase());
     }
 
     const archivedSet = new Set<string>(
@@ -779,6 +785,10 @@ class RealtimeSyncService {
       if (iss.system && !deletedSystemSet.has(iss.system) && !archivedSet.has(iss.system)) {
         systemsSet.add(iss.system);
       }
+    }
+    // Explicitly purge any deleted or renamed systems from systemsSet
+    for (const d of deletedSystemSet) {
+      systemsSet.delete(d);
     }
 
     const finalSystems =
@@ -1287,30 +1297,37 @@ class RealtimeSyncService {
         updatedAt: Number(item.updatedAt || Date.now())
       }));
 
-    // Guarantee strictly unique testCaseId across all issues in the normalized payload
-    const seenNormCaseIds = new Set<string>();
-    let maxNormNum = 9;
+    // Guarantee testCaseId is sequentially numbered per system starting from 1
+    const seenNormBySys = new Map<string, Set<string>>();
+    const maxNormBySys = new Map<string, number>();
     for (const iss of issues) {
+      const sys = iss.system;
       const num = parseInt(iss.testCaseId, 10);
-      if (!isNaN(num) && num > maxNormNum) {
-        maxNormNum = num;
+      if (!isNaN(num) && num > (maxNormBySys.get(sys) || 0)) {
+        maxNormBySys.set(sys, num);
       }
     }
     const chronologicalNorm = [...issues].sort(
       (a, b) => (a.createdAt || 0) - (b.createdAt || 0)
     );
     for (const iss of chronologicalNorm) {
+      const sys = iss.system;
+      if (!seenNormBySys.has(sys)) {
+        seenNormBySys.set(sys, new Set());
+      }
+      const seenSet = seenNormBySys.get(sys)!;
       const trimmed = (iss.testCaseId || '').trim();
-      if (!trimmed || seenNormCaseIds.has(trimmed.toLowerCase())) {
-        maxNormNum++;
-        while (seenNormCaseIds.has(String(maxNormNum).toLowerCase())) {
-          maxNormNum++;
+      if (!trimmed || seenSet.has(trimmed.toLowerCase())) {
+        let nextN = (maxNormBySys.get(sys) || 0) + 1;
+        while (seenSet.has(String(nextN).toLowerCase())) {
+          nextN++;
         }
-        iss.testCaseId = String(maxNormNum);
+        maxNormBySys.set(sys, nextN);
+        iss.testCaseId = String(nextN);
       } else {
         iss.testCaseId = trimmed;
       }
-      seenNormCaseIds.add(iss.testCaseId.toLowerCase());
+      seenSet.add(iss.testCaseId.toLowerCase());
     }
 
     const decodedDriveUrl = decodeProtectedUrl(raw?.googleDriveUrl);

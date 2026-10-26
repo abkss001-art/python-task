@@ -393,18 +393,16 @@ export const AdminBackupModal: React.FC<AdminBackupModalProps> = ({
         const targetSys = activeSystem === 'ALL' ? systems[0] || 'CARGO' : activeSystem;
         const imported: StdIssue[] = [];
 
-        // Track used IDs to guarantee every imported scenario gets a unique ID
-        const usedTestCaseIds = new Set<string>();
+        // Track used IDs per system to guarantee every imported scenario gets a unique ID per system
+        const usedBySys = new Map<string, Set<string>>();
+        const maxNumBySys = new Map<string, number>();
         for (const iss of issues) {
-          if (iss.testCaseId) {
-            usedTestCaseIds.add(iss.testCaseId.trim().toLowerCase());
-          }
-        }
-        let maxExistingNum = 9;
-        for (const iss of issues) {
+          const sys = iss.system;
+          if (!usedBySys.has(sys)) usedBySys.set(sys, new Set());
+          if (iss.testCaseId) usedBySys.get(sys)!.add(iss.testCaseId.trim().toLowerCase());
           const num = parseInt(iss.testCaseId, 10);
-          if (!isNaN(num) && num > maxExistingNum) {
-            maxExistingNum = num;
+          if (!isNaN(num) && num > (maxNumBySys.get(sys) || 0)) {
+            maxNumBySys.set(sys, num);
           }
         }
 
@@ -466,15 +464,20 @@ export const AdminBackupModal: React.FC<AdminBackupModalProps> = ({
               ? rawSev
               : 'בינונית';
 
+          const cleanSys = sys.trim() || targetSys;
+          if (!usedBySys.has(cleanSys)) usedBySys.set(cleanSys, new Set());
+          const sysSet = usedBySys.get(cleanSys)!;
+
           let finalTestCaseId = testCaseId.trim();
-          if (!finalTestCaseId || usedTestCaseIds.has(finalTestCaseId.toLowerCase())) {
-            maxExistingNum++;
-            while (usedTestCaseIds.has(String(maxExistingNum).toLowerCase())) {
-              maxExistingNum++;
+          if (!finalTestCaseId || sysSet.has(finalTestCaseId.toLowerCase())) {
+            let nextN = (maxNumBySys.get(cleanSys) || 0) + 1;
+            while (sysSet.has(String(nextN).toLowerCase())) {
+              nextN++;
             }
-            finalTestCaseId = String(maxExistingNum);
+            maxNumBySys.set(cleanSys, nextN);
+            finalTestCaseId = String(nextN);
           }
-          usedTestCaseIds.add(finalTestCaseId.toLowerCase());
+          sysSet.add(finalTestCaseId.toLowerCase());
 
           imported.push({
             id: `std-${Date.now()}-${idx}-${Math.random().toString(36).substring(2, 6)}`,

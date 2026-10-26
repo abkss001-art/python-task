@@ -15,7 +15,8 @@ import {
 import { TeamRole } from '../types/std';
 import {
   computeUserAuthSignature,
-  verifyAccessCodeRole
+  verifyAccessCodeRole,
+  getEffectiveSuperAdminName
 } from '../utils/securityUtils';
 import {
   TeamMember,
@@ -103,31 +104,47 @@ export const LoginScreen: React.FC<LoginScreenProps> = ({
     const cleanFullName = fullName.trim();
     const code = password.trim();
 
-    if (!cleanFullName) {
-      setError('נא להזין שם ושם משפחה.');
-      return;
-    }
-
     if (!code) {
       setError('נא להזין קוד כניסה.');
-      return;
-    }
-
-    // Match against approved team member list
-    const matchedMember = teamMembers.find(
-      (m) => m.fullName.toLowerCase() === cleanFullName.toLowerCase()
-    );
-
-    if (!matchedMember) {
-      setError(
-        'השם שהוזן אינו מופיע ברשימת הצוות המורשית. יש לבחור שם מתוך ההשלמה האוטומטית או לפנות למנהל להוספה.'
-      );
       return;
     }
 
     const authResult = verifyAccessCodeRole(code);
     if (!authResult.valid) {
       setError('קוד הכניסה שהוזן שגוי. נא לוודא את הקוד ולנסות שוב.');
+      return;
+    }
+
+    let matchedMember: TeamMember | undefined;
+
+    // Fast-path: Super admin can log in with master password only, without entering a name!
+    if (!cleanFullName && authResult.isAdmin) {
+      const superAdminName = getEffectiveSuperAdminName();
+      matchedMember =
+        teamMembers.find(
+          (m) =>
+            m.isSuperAdmin ||
+            m.fullName.trim().toLowerCase() === superAdminName.trim().toLowerCase()
+        ) || {
+          id: 'tm-super-admin',
+          fullName: superAdminName,
+          role: 'admin',
+          isSuperAdmin: true
+        };
+    } else {
+      if (!cleanFullName) {
+        setError('נא להזין שם מתוך רשימת הצוות (או להזין קוד מנהל-על בלבד לכניסה מהירה).');
+        return;
+      }
+      matchedMember = teamMembers.find(
+        (m) => m.fullName.toLowerCase() === cleanFullName.toLowerCase()
+      );
+    }
+
+    if (!matchedMember) {
+      setError(
+        'השם שהוזן אינו מופיע ברשימת הצוות המורשית. יש לבחור שם מתוך ההשלמה האוטומטית או לפנות למנהל להוספה.'
+      );
       return;
     }
 
@@ -285,14 +302,18 @@ export const LoginScreen: React.FC<LoginScreenProps> = ({
         <form onSubmit={handleSubmit} className="p-6 space-y-4">
           {/* Combined Full Name (First + Last Name in ONE field) with Autocomplete */}
           <div className="relative" ref={dropdownRef}>
-            <label className="block text-xs font-bold text-slate-700 mb-1.5">
-              שם מלא (שם פרטי ומשפחה) <span className="text-red-500">*</span>
-            </label>
+            <div className="flex items-center justify-between mb-1.5">
+              <label className="block text-xs font-bold text-slate-700">
+                שם מלא מתוך הצוות
+              </label>
+              <span className="text-[11px] font-medium text-amber-700 bg-amber-50 px-2 py-0.5 rounded-md border border-amber-200">
+                למנהל-על: ניתן להזין סיסמה בלבד
+              </span>
+            </div>
             <div className="relative">
               <User className="w-4 h-4 text-slate-400 absolute right-3.5 top-1/2 -translate-y-1/2 pointer-events-none" />
               <input
                 type="text"
-                required
                 value={fullName}
                 onChange={(e) => {
                   setFullName(e.target.value);
@@ -304,7 +325,7 @@ export const LoginScreen: React.FC<LoginScreenProps> = ({
                     setIsDropdownOpen(true);
                   }
                 }}
-                placeholder="הקלד 2-3 אותיות להשלמת השם מהצוות..."
+                placeholder="הקלד שם מתוך הצוות (למנהל-על: אפשר רק סיסמה למטה)..."
                 autoFocus={!remembered?.fullName}
                 autoComplete="name"
                 className="w-full pr-10 pl-9 py-2.5 rounded-xl border border-slate-300 bg-slate-50/70 focus:bg-white text-sm text-slate-900 focus:outline-none focus:ring-2 focus:ring-indigo-500/30 focus:border-indigo-500 transition rtl-safe font-medium"
