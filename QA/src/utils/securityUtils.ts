@@ -9,6 +9,132 @@ const DEFAULT_SUPER_ADMIN_NAME = 'שמעון אבקסיס';
 const ENVELOPE_PREFIX = 'tzv_enc_v1:';
 const ENVELOPE_KEY = 'TzavMan_Nahshon_QA_Shield_2026';
 
+const MASTER_PIN_LOCKOUT_KEY = 'tzavman_lockout_master_pin_v1';
+const LOGIN_LOCKOUT_KEY = 'tzavman_lockout_login_v1';
+const MAX_LOCKOUT_ATTEMPTS = 5;
+const LOCKOUT_DURATION_MS = 60 * 1000; // 60 seconds
+
+const SYNC_SECRET_PASSPHRASE = 'TzavMan_Nahshon_Cloud_Secret_Key_2026_Secure';
+const ENCRYPTED_PAYLOAD_PREFIX = 'tzv_enc_v2:';
+
+interface LockoutState {
+  failedAttempts: number;
+  lockoutUntil: number;
+}
+
+function getStoredLockoutState(key: string): LockoutState {
+  try {
+    const raw = localStorage.getItem(key);
+    if (raw) {
+      const parsed = JSON.parse(raw);
+      if (
+        parsed &&
+        typeof parsed.failedAttempts === 'number' &&
+        typeof parsed.lockoutUntil === 'number'
+      ) {
+        return parsed;
+      }
+    }
+  } catch {
+    // ignore
+  }
+  return { failedAttempts: 0, lockoutUntil: 0 };
+}
+
+function saveStoredLockoutState(key: string, state: LockoutState): void {
+  try {
+    localStorage.setItem(key, JSON.stringify(state));
+  } catch {
+    // ignore
+  }
+}
+
+export interface LockoutStatus {
+  isLocked: boolean;
+  remainingSeconds: number;
+  attemptsLeft: number;
+}
+
+function evaluateLockout(key: string): LockoutStatus {
+  const state = getStoredLockoutState(key);
+  const now = Date.now();
+  if (state.lockoutUntil > now) {
+    const remainingSeconds = Math.ceil((state.lockoutUntil - now) / 1000);
+    return {
+      isLocked: true,
+      remainingSeconds,
+      attemptsLeft: 0
+    };
+  }
+
+  // Lockout expired or never locked
+  if (state.lockoutUntil > 0 && state.lockoutUntil <= now) {
+    saveStoredLockoutState(key, { failedAttempts: 0, lockoutUntil: 0 });
+    return {
+      isLocked: false,
+      remainingSeconds: 0,
+      attemptsLeft: MAX_LOCKOUT_ATTEMPTS
+    };
+  }
+
+  return {
+    isLocked: false,
+    remainingSeconds: 0,
+    attemptsLeft: Math.max(0, MAX_LOCKOUT_ATTEMPTS - state.failedAttempts)
+  };
+}
+
+function recordLockoutAttempt(key: string, success: boolean): LockoutStatus {
+  if (success) {
+    saveStoredLockoutState(key, { failedAttempts: 0, lockoutUntil: 0 });
+    return {
+      isLocked: false,
+      remainingSeconds: 0,
+      attemptsLeft: MAX_LOCKOUT_ATTEMPTS
+    };
+  }
+
+  const current = evaluateLockout(key);
+  if (current.isLocked) {
+    return current;
+  }
+
+  const state = getStoredLockoutState(key);
+  const nextFailed = state.failedAttempts + 1;
+  if (nextFailed >= MAX_LOCKOUT_ATTEMPTS) {
+    const lockoutUntil = Date.now() + LOCKOUT_DURATION_MS;
+    saveStoredLockoutState(key, { failedAttempts: nextFailed, lockoutUntil });
+    return {
+      isLocked: true,
+      remainingSeconds: Math.ceil(LOCKOUT_DURATION_MS / 1000),
+      attemptsLeft: 0
+    };
+  }
+
+  saveStoredLockoutState(key, { failedAttempts: nextFailed, lockoutUntil: 0 });
+  return {
+    isLocked: false,
+    remainingSeconds: 0,
+    attemptsLeft: Math.max(0, MAX_LOCKOUT_ATTEMPTS - nextFailed)
+  };
+}
+
+export function getMasterPinLockoutStatus(): LockoutStatus {
+  return evaluateLockout(MASTER_PIN_LOCKOUT_KEY);
+}
+
+export function recordMasterPinAttempt(success: boolean): LockoutStatus {
+  return recordLockoutAttempt(MASTER_PIN_LOCKOUT_KEY, success);
+}
+
+export function getLoginLockoutStatus(): LockoutStatus {
+  return evaluateLockout(LOGIN_LOCKOUT_KEY);
+}
+
+export function recordLoginAttempt(success: boolean): LockoutStatus {
+  return recordLockoutAttempt(LOGIN_LOCKOUT_KEY, success);
+}
+
 export interface CustomSecurityConfig {
   qaHash?: string;
   devHash?: string;
@@ -230,4 +356,138 @@ export function decodeProtectedUrl(raw: unknown): string | undefined {
   }
 
   return undefined;
+}
+
+let cachedCryptoKey: CryptoKey | null = null;
+
+async function getSubtleCryptoKey(): Promise<CryptoKey | null> {
+  if (cachedCryptoKey) return cachedCryptoKey;
+  if (typeof window === 'undefined' || !window.crypto || !window.crypto.subtle) {
+    return null;
+  }
+  try {
+    const enc = new TextEncoder();
+    const hash = await window.crypto.subtle.digest(
+      'SHA-256',
+      enc.encode(SYNC_SECRET_PASSPHRASE)
+    );
+    cachedCryptoKey = await window.crypto.subtle.importKey(
+      'raw',
+      hash,
+      { name: 'AES-GCM' },
+      false,
+      ['encrypt', 'decrypt']
+    );
+    return cachedCryptoKey;
+  } catch {
+    return null;
+  }
+}
+
+function fallbackCipher(text: string): string {
+  const enc = new TextEncoder();
+  const bytes = enc.encode(text);
+  const keyBytes = enc.encode(SYNC_SECRET_PASSPHRASE);
+  const out = new Uint8Array(bytes.length);
+  for (let i = 0; i < bytes.length; i++) {
+    out[i] = bytes[i] ^ keyBytes[i % keyBytes.length];
+  }
+  let binary = '';
+  for (let i = 0; i < out.length; i += 8192) {
+    const chunk = out.subarray(i, Math.min(i + 8192, out.length));
+    binary += String.fromCharCode.apply(null, Array.from(chunk));
+  }
+  return btoa(binary);
+}
+
+function fallbackDecipher(b64: string): string {
+  const bin = atob(b64);
+  const bytes = new Uint8Array(bin.length);
+  for (let i = 0; i < bin.length; i++) {
+    bytes[i] = bin.charCodeAt(i);
+  }
+  const enc = new TextEncoder();
+  const keyBytes = enc.encode(SYNC_SECRET_PASSPHRASE);
+  const out = new Uint8Array(bytes.length);
+  for (let i = 0; i < bytes.length; i++) {
+    out[i] = bytes[i] ^ keyBytes[i % keyBytes.length];
+  }
+  return new TextDecoder().decode(out);
+}
+
+/**
+ * הצפנת ערוץ סינכרון ציבורי (AES-256-GCM) לחסימת האזנה וחשיפת נתוני בדיקות, שמות ולוגים ב-MQTT ו-Bytebin
+ */
+export async function encryptSyncPayload(plainText: string): Promise<string> {
+  if (!plainText || typeof plainText !== 'string') return plainText;
+  try {
+    const key = await getSubtleCryptoKey();
+    if (key && window.crypto) {
+      const iv = window.crypto.getRandomValues(new Uint8Array(12));
+      const encoded = new TextEncoder().encode(plainText);
+      const cipherBuffer = await window.crypto.subtle.encrypt(
+        { name: 'AES-GCM', iv },
+        key,
+        encoded
+      );
+      const combined = new Uint8Array(iv.length + cipherBuffer.byteLength);
+      combined.set(iv, 0);
+      combined.set(new Uint8Array(cipherBuffer), iv.length);
+
+      let binary = '';
+      const len = combined.byteLength;
+      for (let i = 0; i < len; i += 8192) {
+        const chunk = combined.subarray(i, Math.min(i + 8192, len));
+        binary += String.fromCharCode.apply(null, Array.from(chunk));
+      }
+      return `${ENCRYPTED_PAYLOAD_PREFIX}${btoa(binary)}`;
+    }
+  } catch {
+    // fallback
+  }
+
+  return `${ENCRYPTED_PAYLOAD_PREFIX}fb:${fallbackCipher(plainText)}`;
+}
+
+/**
+ * פענוח חבילת סנכרון מוצפנת (עם תמיכה לאחור בחבילות ישנות שאינן מוצפנות)
+ */
+export async function decryptSyncPayload(cipherText: string): Promise<string> {
+  if (!cipherText || typeof cipherText !== 'string') return cipherText;
+  if (!cipherText.startsWith(ENCRYPTED_PAYLOAD_PREFIX)) {
+    // Not encrypted (legacy plain JSON backwards compatibility)
+    return cipherText;
+  }
+
+  const payload = cipherText.slice(ENCRYPTED_PAYLOAD_PREFIX.length);
+  if (payload.startsWith('fb:')) {
+    try {
+      return fallbackDecipher(payload.slice(3));
+    } catch {
+      return '{}';
+    }
+  }
+
+  try {
+    const key = await getSubtleCryptoKey();
+    if (key && window.crypto) {
+      const binStr = atob(payload);
+      const bytes = new Uint8Array(binStr.length);
+      for (let i = 0; i < binStr.length; i++) {
+        bytes[i] = binStr.charCodeAt(i);
+      }
+      const iv = bytes.subarray(0, 12);
+      const cipherData = bytes.subarray(12);
+      const decrypted = await window.crypto.subtle.decrypt(
+        { name: 'AES-GCM', iv },
+        key,
+        cipherData
+      );
+      return new TextDecoder().decode(decrypted);
+    }
+  } catch {
+    return '{}';
+  }
+
+  return '{}';
 }

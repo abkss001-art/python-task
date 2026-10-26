@@ -10,13 +10,16 @@ import {
   Zap,
   AlertCircle,
   ChevronDown,
-  UserCheck
+  UserCheck,
+  Clock
 } from 'lucide-react';
 import { TeamRole } from '../types/std';
 import {
   computeUserAuthSignature,
   verifyAccessCodeRole,
-  getEffectiveSuperAdminName
+  getEffectiveSuperAdminName,
+  getLoginLockoutStatus,
+  recordLoginAttempt
 } from '../utils/securityUtils';
 import {
   TeamMember,
@@ -67,6 +70,19 @@ export const LoginScreen: React.FC<LoginScreenProps> = ({
     remembered ? remembered.rememberMe : true
   );
   const [error, setError] = useState<string | null>(null);
+  const [lockout, setLockout] = useState(() => getLoginLockoutStatus());
+
+  useEffect(() => {
+    if (!lockout.isLocked) return;
+    const interval = setInterval(() => {
+      const current = getLoginLockoutStatus();
+      setLockout(current);
+      if (!current.isLocked) {
+        setError(null);
+      }
+    }, 1000);
+    return () => clearInterval(interval);
+  }, [lockout.isLocked]);
 
   const [isDropdownOpen, setIsDropdownOpen] = useState(false);
   const dropdownRef = useRef<HTMLDivElement | null>(null);
@@ -101,6 +117,13 @@ export const LoginScreen: React.FC<LoginScreenProps> = ({
     e.preventDefault();
     setError(null);
 
+    const currentLockout = getLoginLockoutStatus();
+    if (currentLockout.isLocked) {
+      setError(`המערכת נעולה זמנית עקב ריבוי ניסיונות שגויים. נסה שוב בעוד ${currentLockout.remainingSeconds} שניות.`);
+      setLockout(currentLockout);
+      return;
+    }
+
     const cleanFullName = fullName.trim();
     const code = password.trim();
 
@@ -111,9 +134,18 @@ export const LoginScreen: React.FC<LoginScreenProps> = ({
 
     const authResult = verifyAccessCodeRole(code);
     if (!authResult.valid) {
-      setError('קוד הכניסה שהוזן שגוי. נא לוודא את הקוד ולנסות שוב.');
+      const nextStatus = recordLoginAttempt(false);
+      setLockout(nextStatus);
+      if (nextStatus.isLocked) {
+        setError(`קוד כניסה שגוי. עקב 5 ניסיונות כושלים המערכת ננעלה ל-${nextStatus.remainingSeconds} שניות.`);
+      } else {
+        setError(`קוד הכניסה שהוזן שגוי. נותרו עוד ${nextStatus.attemptsLeft} ניסיונות לפני נעילה זמנית.`);
+      }
       return;
     }
+
+    // Success - reset failed attempts
+    recordLoginAttempt(true);
 
     let matchedMember: TeamMember | undefined;
 
@@ -391,14 +423,19 @@ export const LoginScreen: React.FC<LoginScreenProps> = ({
                 type="password"
                 inputMode="numeric"
                 required
+                disabled={lockout.isLocked}
                 value={password}
                 onChange={(e) => {
                   setPassword(e.target.value);
                   setError(null);
                 }}
                 autoFocus={Boolean(remembered?.fullName)}
-                placeholder="הזן קוד כניסה..."
-                className="w-full pr-10 pl-3.5 py-2.5 rounded-xl border border-slate-300 bg-slate-50/70 focus:bg-white text-sm font-mono text-slate-900 focus:outline-none focus:ring-2 focus:ring-indigo-500/30 focus:border-indigo-500 transition"
+                placeholder={lockout.isLocked ? `נעול (${lockout.remainingSeconds} שניות)` : "הזן קוד כניסה..."}
+                className={`w-full pr-10 pl-3.5 py-2.5 rounded-xl border text-sm font-mono text-slate-900 focus:outline-none transition ${
+                  lockout.isLocked
+                    ? 'bg-slate-100 border-slate-300 opacity-60 cursor-not-allowed'
+                    : 'border-slate-300 bg-slate-50/70 focus:bg-white focus:ring-2 focus:ring-indigo-500/30 focus:border-indigo-500'
+                }`}
               />
             </div>
           </div>
@@ -416,7 +453,14 @@ export const LoginScreen: React.FC<LoginScreenProps> = ({
             </span>
           </label>
 
-          {error && (
+          {lockout.isLocked && (
+            <div className="flex items-center justify-center gap-1.5 p-3 rounded-xl bg-amber-50 border border-amber-200 text-amber-800 text-xs font-bold">
+              <Clock className="w-4 h-4 text-amber-600 animate-spin" />
+              <span>נעילת אבטחה פעילה: שחרור בעוד {lockout.remainingSeconds} שניות</span>
+            </div>
+          )}
+
+          {error && !lockout.isLocked && (
             <div className="flex items-start gap-2 p-3 rounded-xl bg-red-50 border border-red-200 text-red-700 text-xs font-semibold leading-relaxed">
               <AlertCircle className="w-4 h-4 shrink-0 mt-0.5" />
               <span>{error}</span>
@@ -425,7 +469,12 @@ export const LoginScreen: React.FC<LoginScreenProps> = ({
 
           <button
             type="submit"
-            className="w-full flex items-center justify-center gap-2 py-3 px-5 rounded-xl bg-indigo-600 hover:bg-indigo-700 active:scale-[0.99] text-white font-bold text-sm shadow-lg shadow-indigo-600/25 transition cursor-pointer"
+            disabled={lockout.isLocked}
+            className={`w-full flex items-center justify-center gap-2 py-3 px-5 rounded-xl font-bold text-sm shadow-lg transition ${
+              lockout.isLocked
+                ? 'bg-slate-400 text-white cursor-not-allowed opacity-60 shadow-none'
+                : 'bg-indigo-600 hover:bg-indigo-700 active:scale-[0.99] text-white shadow-indigo-600/25 cursor-pointer'
+            }`}
           >
             <span>כניסה למערכת</span>
             <ArrowLeft className="w-4 h-4" />

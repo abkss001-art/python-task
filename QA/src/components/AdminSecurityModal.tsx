@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   X,
   ShieldAlert,
@@ -9,7 +9,8 @@ import {
   AlertTriangle,
   RotateCcw,
   Save,
-  UserCheck
+  UserCheck,
+  Clock
 } from 'lucide-react';
 import {
   verifyMasterSecurityPin,
@@ -18,7 +19,9 @@ import {
   getEffectiveSuperAdminName,
   setStoredSuperAdminName,
   resetSecurityConfigToDefaults,
-  hashAccessCode
+  hashAccessCode,
+  getMasterPinLockoutStatus,
+  recordMasterPinAttempt
 } from '../utils/securityUtils';
 
 interface AdminSecurityModalProps {
@@ -33,6 +36,19 @@ export const AdminSecurityModal: React.FC<AdminSecurityModalProps> = ({
   const [isUnlocked, setIsUnlocked] = useState(false);
   const [masterPinInput, setMasterPinInput] = useState('');
   const [pinError, setPinError] = useState<string | null>(null);
+  const [lockout, setLockout] = useState(() => getMasterPinLockoutStatus());
+
+  useEffect(() => {
+    if (!lockout.isLocked) return;
+    const interval = setInterval(() => {
+      const current = getMasterPinLockoutStatus();
+      setLockout(current);
+      if (!current.isLocked) {
+        setPinError(null);
+      }
+    }, 1000);
+    return () => clearInterval(interval);
+  }, [lockout.isLocked]);
 
   // Form fields once unlocked
   const [superAdminName, setSuperAdminName] = useState(() => getEffectiveSuperAdminName());
@@ -44,17 +60,33 @@ export const AdminSecurityModal: React.FC<AdminSecurityModalProps> = ({
   const handleUnlock = (e: React.FormEvent) => {
     e.preventDefault();
     setPinError(null);
+
+    const currentLockout = getMasterPinLockoutStatus();
+    if (currentLockout.isLocked) {
+      setPinError(`הגישה נחסמה זמנית עקב ריבוי ניסיונות שגויים. נסה שוב בעוד ${currentLockout.remainingSeconds} שניות.`);
+      setLockout(currentLockout);
+      return;
+    }
+
     if (!masterPinInput.trim()) {
       setPinError('נא להזין קוד אבטחה ראשי.');
       return;
     }
 
-    if (verifyMasterSecurityPin(masterPinInput.trim())) {
+    const isValid = verifyMasterSecurityPin(masterPinInput.trim());
+    const nextStatus = recordMasterPinAttempt(isValid);
+    setLockout(nextStatus);
+
+    if (isValid) {
       setIsUnlocked(true);
       setMasterPinInput('');
       setPinError(null);
     } else {
-      setPinError('קוד אבטחה ראשי שגוי. הגישה לאזור ניהול הסיסמאות נחסמה.');
+      if (nextStatus.isLocked) {
+        setPinError(`קוד אבטחה ראשי שגוי. עקב 5 ניסיונות כושלים הגישה נחסמה ל-${nextStatus.remainingSeconds} שניות.`);
+      } else {
+        setPinError(`קוד אבטחה ראשי שגוי. נותרו עוד ${nextStatus.attemptsLeft} ניסיונות לפני נעילה זמנית.`);
+      }
     }
   };
 
@@ -194,17 +226,29 @@ export const AdminSecurityModal: React.FC<AdminSecurityModalProps> = ({
                     inputMode="numeric"
                     required
                     autoFocus
+                    disabled={lockout.isLocked}
                     value={masterPinInput}
                     onChange={(e) => {
                       setMasterPinInput(e.target.value);
                       setPinError(null);
                     }}
-                    placeholder="הזן קוד אבטחה ראשי..."
-                    className="w-full pr-10 pl-4 py-2.5 rounded-xl border border-slate-300 bg-slate-50 focus:bg-white text-sm font-mono text-center text-slate-900 focus:outline-none focus:ring-2 focus:ring-amber-500/30 focus:border-amber-500 transition"
+                    placeholder={lockout.isLocked ? `נעול (${lockout.remainingSeconds} שניות)` : "הזן קוד אבטחה ראשי..."}
+                    className={`w-full pr-10 pl-4 py-2.5 rounded-xl border text-sm font-mono text-center text-slate-900 focus:outline-none transition ${
+                      lockout.isLocked
+                        ? 'bg-slate-100 border-slate-300 opacity-60 cursor-not-allowed'
+                        : 'border-slate-300 bg-slate-50 focus:bg-white focus:ring-2 focus:ring-amber-500/30 focus:border-amber-500'
+                    }`}
                   />
                 </div>
 
-                {pinError && (
+                {lockout.isLocked && (
+                  <div className="flex items-center justify-center gap-1.5 p-2 rounded-xl bg-amber-50 border border-amber-200 text-amber-800 text-xs font-bold">
+                    <Clock className="w-4 h-4 text-amber-600 animate-spin" />
+                    <span>נעילה פעילה: שחרור בעוד {lockout.remainingSeconds} שניות</span>
+                  </div>
+                )}
+
+                {pinError && !lockout.isLocked && (
                   <div className="text-xs font-bold text-red-600 bg-red-50 p-2 rounded-xl border border-red-200">
                     {pinError}
                   </div>
@@ -212,7 +256,12 @@ export const AdminSecurityModal: React.FC<AdminSecurityModalProps> = ({
 
                 <button
                   type="submit"
-                  className="w-full py-2.5 rounded-xl bg-gradient-to-l from-amber-600 to-indigo-600 hover:from-amber-700 hover:to-indigo-700 text-white text-xs font-extrabold flex items-center justify-center gap-2 cursor-pointer shadow-sm transition"
+                  disabled={lockout.isLocked}
+                  className={`w-full py-2.5 rounded-xl text-white text-xs font-extrabold flex items-center justify-center gap-2 shadow-sm transition ${
+                    lockout.isLocked
+                      ? 'bg-slate-400 cursor-not-allowed opacity-60'
+                      : 'bg-gradient-to-l from-amber-600 to-indigo-600 hover:from-amber-700 hover:to-indigo-700 cursor-pointer'
+                  }`}
                 >
                   <Unlock className="w-4 h-4" />
                   <span>אימות קוד אבטחה ופתיחת נעילה</span>

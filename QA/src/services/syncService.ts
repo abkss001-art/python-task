@@ -44,7 +44,9 @@ import {
   sanitizeImageUrl,
   CustomSecurityConfig,
   getStoredSecurityConfig,
-  mergeCloudSecurityConfig
+  mergeCloudSecurityConfig,
+  encryptSyncPayload,
+  decryptSyncPayload
 } from '../utils/securityUtils';
 import {
   TeamMember,
@@ -882,7 +884,9 @@ class RealtimeSyncService {
           cache: 'no-store'
         });
         if (!bRes.ok) return;
-        const fullData = await bRes.json();
+        const bText = await bRes.text();
+        const decryptedText = await decryptSyncPayload(bText);
+        const fullData = JSON.parse(decryptedText);
         if (fullData && Array.isArray(fullData.issues)) {
           this.lastBytebinFetched = regData.bytebinKey;
           const normalized = this.normalizePayload(fullData);
@@ -958,8 +962,11 @@ class RealtimeSyncService {
     if (normalized.bytebinKey && normalized.bytebinKey !== this.lastBytebinFetched) {
       this.lastBytebinFetched = normalized.bytebinKey;
       fetch(`${BYTEBIN_GET_BASE}${normalized.bytebinKey}`)
-        .then((r) => (r.ok ? r.json() : null))
-        .then((fullData) => {
+        .then((r) => (r.ok ? r.text() : null))
+        .then(async (bodyText) => {
+          if (!bodyText) return;
+          const decrypted = await decryptSyncPayload(bodyText);
+          const fullData = JSON.parse(decrypted);
           if (fullData && Array.isArray(fullData.issues)) {
             const fullNorm = this.normalizePayload(fullData);
             const fullMerged = this.mergeWorkspaceStates(this.currentState, fullNorm);
@@ -1101,13 +1108,14 @@ class RealtimeSyncService {
         });
       }, 20000);
 
-      client.on('message', (topic, message) => {
+      client.on('message', async (topic, message) => {
         try {
           const rawStr = message.toString();
           if (!rawStr) return;
 
           if (topic === CLOUD_TOPIC_STATE) {
-            const parsed = JSON.parse(rawStr);
+            const decryptedStr = await decryptSyncPayload(rawStr);
+            const parsed = JSON.parse(decryptedStr);
             const normalized = this.normalizePayload(parsed);
             this.handleIncomingCloudState(normalized);
           } else if (topic === CLOUD_TOPIC_PING) {
@@ -1177,10 +1185,11 @@ class RealtimeSyncService {
       // 1. If payload exceeds MQTT safe packet size (210KB), offload full snapshot to Bytebin
       if (fullJsonStr.length > MAX_SAFE_MQTT_BYTES) {
         try {
+          const encryptedFullStr = await encryptSyncPayload(fullJsonStr);
           const bRes = await fetch(BYTEBIN_POST_URL, {
             method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: fullJsonStr
+            headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+            body: encryptedFullStr
           });
           if (bRes.ok) {
             const bJson = await bRes.json();
@@ -1214,7 +1223,8 @@ class RealtimeSyncService {
           mqttJsonStr = JSON.stringify(lightPayload);
         }
 
-        this.mqttClient.publish(CLOUD_TOPIC_STATE, mqttJsonStr, {
+        const encryptedMqttStr = await encryptSyncPayload(mqttJsonStr);
+        this.mqttClient.publish(CLOUD_TOPIC_STATE, encryptedMqttStr, {
           qos: 1,
           retain: true
         });
