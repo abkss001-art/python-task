@@ -46,11 +46,17 @@ export const LoginScreen: React.FC<LoginScreenProps> = ({
   notificationsEnabled,
   teamMembers: propTeamMembers
 }) => {
-  const [teamMembers] = useState<TeamMember[]>(() => {
+  const [teamMembers, setTeamMembers] = useState<TeamMember[]>(() => {
     return propTeamMembers && propTeamMembers.length > 0
       ? propTeamMembers
       : getStoredTeamMembers();
   });
+
+  useEffect(() => {
+    if (propTeamMembers && propTeamMembers.length > 0) {
+      setTeamMembers(propTeamMembers);
+    }
+  }, [propTeamMembers]);
 
   const remembered = getRememberedLogin();
   const [fullName, setFullName] = useState<string>(remembered?.fullName || '');

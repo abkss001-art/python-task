@@ -55,6 +55,16 @@ export function setStoredSuperAdminName(name: string): void {
   saveStoredSecurityConfig(cfg);
 }
 
+export function mergeCloudSecurityConfig(cloudConfig: CustomSecurityConfig): void {
+  if (!cloudConfig || typeof cloudConfig !== 'object') return;
+  const current = getStoredSecurityConfig();
+  const merged: CustomSecurityConfig = {
+    ...current,
+    ...cloudConfig
+  };
+  saveStoredSecurityConfig(merged);
+}
+
 export function resetSecurityConfigToDefaults(): void {
   try {
     localStorage.removeItem(SECURITY_STORAGE_KEY);

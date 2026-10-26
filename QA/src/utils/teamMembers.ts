@@ -59,6 +59,40 @@ export function getStoredTeamMembers(): TeamMember[] {
   return ensureSuperAdminInMembers(DEFAULT_TEAM_MEMBERS);
 }
 
+export function mergeCloudTeamMembers(cloudMembers: TeamMember[]): TeamMember[] {
+  if (!Array.isArray(cloudMembers) || cloudMembers.length === 0) {
+    return getStoredTeamMembers();
+  }
+
+  const memberMap = new Map<string, TeamMember>();
+
+  // Add default members as baseline
+  for (const m of DEFAULT_TEAM_MEMBERS) {
+    if (m && m.fullName) {
+      memberMap.set(m.fullName.trim().toLowerCase(), m);
+    }
+  }
+
+  // Overlay current local members
+  const local = getStoredTeamMembers();
+  for (const m of local) {
+    if (m && m.fullName) {
+      memberMap.set(m.fullName.trim().toLowerCase(), m);
+    }
+  }
+
+  // Overlay incoming cloud members
+  for (const m of cloudMembers) {
+    if (m && m.fullName) {
+      memberMap.set(m.fullName.trim().toLowerCase(), m);
+    }
+  }
+
+  const merged = ensureSuperAdminInMembers(Array.from(memberMap.values()));
+  saveStoredTeamMembers(merged);
+  return merged;
+}
+
 export function saveStoredTeamMembers(members: TeamMember[]): void {
   try {
     const ensured = ensureSuperAdminInMembers(members);

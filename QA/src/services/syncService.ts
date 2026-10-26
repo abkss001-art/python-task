@@ -41,8 +41,16 @@ import {
 import {
   decodeProtectedUrl,
   encodeProtectedUrl,
-  sanitizeImageUrl
+  sanitizeImageUrl,
+  CustomSecurityConfig,
+  getStoredSecurityConfig,
+  mergeCloudSecurityConfig
 } from '../utils/securityUtils';
+import {
+  TeamMember,
+  getStoredTeamMembers,
+  mergeCloudTeamMembers
+} from '../utils/teamMembers';
 
 export interface SyncStatePayload {
   systems: string[];
@@ -50,6 +58,8 @@ export interface SyncStatePayload {
   deletedIssueIds?: string[];
   deletedSystemIds?: string[];
   issues: StdIssue[];
+  teamMembers?: TeamMember[];
+  securityConfig?: CustomSecurityConfig;
   lastUpdatedBy?: string;
   lastAction?: string;
   updatedAt?: number;
@@ -380,6 +390,20 @@ class RealtimeSyncService {
   }
 
   private persistLocally(payload: SyncStatePayload) {
+    if (payload.teamMembers && payload.teamMembers.length > 0) {
+      try {
+        mergeCloudTeamMembers(payload.teamMembers);
+      } catch {
+        // ignore
+      }
+    }
+    if (payload.securityConfig) {
+      try {
+        mergeCloudSecurityConfig(payload.securityConfig);
+      } catch {
+        // ignore
+      }
+    }
     saveWorkspaceToIndexedDB(payload);
     try {
       localStorage.setItem('std_qa_fallback_cache', JSON.stringify(payload));
@@ -729,12 +753,28 @@ class RealtimeSyncService {
     const finalSystems =
       systemsSet.size > 0 ? Array.from(systemsSet) : DEFAULT_SYSTEMS;
 
+    const mergedTeamMembers =
+      incomingState.teamMembers && incomingState.teamMembers.length > 0
+        ? mergeCloudTeamMembers(incomingState.teamMembers)
+        : localState.teamMembers || getStoredTeamMembers();
+
+    const mergedSecurityConfig: CustomSecurityConfig = {
+      ...getStoredSecurityConfig(),
+      ...(localState.securityConfig || {}),
+      ...(incomingState.securityConfig || {})
+    };
+    if (Object.keys(mergedSecurityConfig).length > 0) {
+      mergeCloudSecurityConfig(mergedSecurityConfig);
+    }
+
     return {
       systems: finalSystems,
       archivedSystems: Array.from(archivedSet),
       deletedIssueIds: Array.from(deletedIssueSet),
       deletedSystemIds: Array.from(deletedSystemSet),
       issues: mergedIssues,
+      teamMembers: mergedTeamMembers,
+      securityConfig: Object.keys(mergedSecurityConfig).length > 0 ? mergedSecurityConfig : undefined,
       lastUpdatedBy: primary.lastUpdatedBy || localState.lastUpdatedBy,
       lastAction: primary.lastAction || localState.lastAction,
       updatedAt: Math.max(incomingState.updatedAt || 0, localState.updatedAt || 0),
@@ -1215,12 +1255,26 @@ class RealtimeSyncService {
       setSavedGoogleDriveUrl(decodedDriveUrl);
     }
 
+    let teamMembers: TeamMember[] | undefined = undefined;
+    if (Array.isArray(raw?.teamMembers)) {
+      teamMembers = raw.teamMembers;
+    } else if (raw?.teamMembers && typeof raw.teamMembers === 'object') {
+      teamMembers = Object.values(raw.teamMembers);
+    }
+
+    let securityConfig: CustomSecurityConfig | undefined = undefined;
+    if (raw?.securityConfig && typeof raw.securityConfig === 'object') {
+      securityConfig = raw.securityConfig;
+    }
+
     return {
       systems,
       archivedSystems,
       deletedIssueIds,
       deletedSystemIds,
       issues,
+      teamMembers,
+      securityConfig,
       lastUpdatedBy: raw?.lastUpdatedBy,
       lastAction: raw?.lastAction,
       updatedAt: raw?.updatedAt,
@@ -1327,6 +1381,8 @@ class RealtimeSyncService {
       deletedIssueIds?: string[];
       deletedSystemIds?: string[];
       issues: StdIssue[];
+      teamMembers?: TeamMember[];
+      securityConfig?: CustomSecurityConfig;
       replaceAll?: boolean;
     },
     actionSummary: string,
@@ -1336,6 +1392,15 @@ class RealtimeSyncService {
       Math.max(this.currentState.revision || 0, this.highestSeenRevision) + 1;
     this.highestSeenRevision = nextRevision;
 
+    const effectiveTeamMembers =
+      nextState.teamMembers ||
+      this.currentState.teamMembers ||
+      getStoredTeamMembers();
+    const effectiveSecurityConfig =
+      nextState.securityConfig ||
+      this.currentState.securityConfig ||
+      getStoredSecurityConfig();
+
     const candidatePayload: SyncStatePayload = {
       systems: nextState.systems,
       archivedSystems: nextState.archivedSystems ?? this.currentState.archivedSystems ?? [],
@@ -1344,6 +1409,8 @@ class RealtimeSyncService {
       deletedSystemIds:
         nextState.deletedSystemIds ?? this.currentState.deletedSystemIds ?? [],
       issues: nextState.issues,
+      teamMembers: effectiveTeamMembers,
+      securityConfig: effectiveSecurityConfig,
       lastUpdatedBy: actorName,
       lastAction: actionSummary,
       updatedAt: Date.now(),

@@ -27,7 +27,8 @@ import { LoginScreen, AuthenticatedUser } from './components/LoginScreen';
 import {
   TeamMember,
   getStoredTeamMembers,
-  saveStoredTeamMembers
+  saveStoredTeamMembers,
+  mergeCloudTeamMembers
 } from './utils/teamMembers';
 import { extractImagesFromClipboardEvent } from './utils/imageUtils';
 import {
@@ -61,7 +62,9 @@ import {
 import {
   computeUserAuthSignature,
   isAdminAccessCode,
-  verifyUserAuthSignature
+  verifyUserAuthSignature,
+  getStoredSecurityConfig,
+  mergeCloudSecurityConfig
 } from './utils/securityUtils';
 
 const AUTH_STORAGE_KEY = 'std_qa_auth_user_v1';
@@ -246,6 +249,23 @@ export function App() {
       setSystems(state.systems);
       setArchivedSystems(state.archivedSystems || []);
       setIssues(state.issues);
+
+      if (state.teamMembers && state.teamMembers.length > 0) {
+        try {
+          const mergedMembers = mergeCloudTeamMembers(state.teamMembers);
+          setTeamMembers(mergedMembers);
+        } catch {
+          // ignore
+        }
+      }
+
+      if (state.securityConfig) {
+        try {
+          mergeCloudSecurityConfig(state.securityConfig);
+        } catch {
+          // ignore
+        }
+      }
     });
 
     const unsubStatus = syncService.subscribeStatus((status) => {
@@ -342,6 +362,17 @@ export function App() {
   const handleSaveTeamMembers = (updated: TeamMember[]) => {
     setTeamMembers(updated);
     saveStoredTeamMembers(updated);
+    syncService.pushStateToCloud(
+      {
+        systems,
+        archivedSystems,
+        issues,
+        teamMembers: updated,
+        securityConfig: getStoredSecurityConfig()
+      },
+      `עדכון רשימת צוות (${updated.length} חברים)`,
+      currentUserName
+    );
   };
 
   const handleLogoutUser = () => {
@@ -352,6 +383,7 @@ export function App() {
   const handleSecurityUpdated = (newSuperAdminName: string) => {
     const updatedMembers = getStoredTeamMembers();
     setTeamMembers(updatedMembers);
+    const secConfig = getStoredSecurityConfig();
     if (authUser && (authUser.isAdmin || authUser.fullName === newSuperAdminName)) {
       const parts = newSuperAdminName.split(/\s+/);
       const updatedUser: AuthenticatedUser = {
@@ -365,7 +397,13 @@ export function App() {
       localStorage.setItem(AUTH_STORAGE_KEY, JSON.stringify(updatedUser));
     }
     syncService.pushStateToCloud(
-      { systems, archivedSystems, issues },
+      {
+        systems,
+        archivedSystems,
+        issues,
+        teamMembers: updatedMembers,
+        securityConfig: secConfig
+      },
       `עדכון הגדרות אבטחה ושם מנהל-על: ${newSuperAdminName}`,
       newSuperAdminName
     );
