@@ -164,22 +164,8 @@ export const FilterBar: React.FC<FilterBarProps> = ({
 
         {/* 2. Filter Chips: Quick Presets + Platforms & Statuses (Drops underneath on small screens/mobile) */}
         <div className="flex flex-wrap items-center gap-2 pt-1 border-t border-slate-100 dark:border-slate-800/80">
-          {/* Quick Presets: כל התקלות, התקלות שלי, תקלות קריטיות */}
+          {/* Quick Presets: התקלות שלי, תקלות קריטיות */}
           <div className="flex items-center gap-1.5 sm:gap-2 flex-wrap">
-            {/* Quick Preset: ALL */}
-            <button
-              type="button"
-              onClick={() => onQuickPresetChange('ALL')}
-              className={`px-2.5 sm:px-3 py-1.5 rounded-xl text-xs font-bold transition cursor-pointer shrink-0 flex items-center gap-1.5 ${
-                quickPreset === 'ALL'
-                  ? 'bg-slate-900 dark:bg-indigo-600 text-white shadow-xs'
-                  : 'bg-white dark:bg-slate-800 text-slate-600 dark:text-slate-300 border border-slate-200 dark:border-slate-700 hover:bg-slate-50 dark:hover:bg-slate-700'
-              }`}
-            >
-              <span>כל התקלות</span>
-              <span className="text-[10px] opacity-80 font-mono">({systemIssues.length})</span>
-            </button>
-
             {/* Quick Preset: MY_ISSUES */}
             <button
               type="button"
