@@ -116,7 +116,7 @@ export const IssueFormModal: React.FC<IssueFormModalProps> = ({
   const [clipboardHint, setClipboardHint] = useState<string | null>(null);
 
   const fileInputRef = useRef<HTMLInputElement | null>(null);
-  const touchPasteInputRef = useRef<HTMLInputElement | null>(null);
+  const touchPasteRef = useRef<HTMLDivElement | null>(null);
 
   // Sync screenshots if editingIssue was opened via global board Ctrl+V
   useEffect(() => {
@@ -151,14 +151,17 @@ export const IssueFormModal: React.FC<IssueFormModalProps> = ({
         setTimeout(() => setPasteNotice(false), 2500);
         return;
       }
+      if (touchPasteRef.current) {
+        touchPasteRef.current.focus();
+      }
       setClipboardHint(
         window.innerWidth < 640
-          ? 'לא זוהתה תמונה בלוח. נסה לחיצה ארוכה על תיבת ההדבקה למטה ובחר "הדבק", או בחר קובץ מהגלריה.'
+          ? 'לא זוהתה תמונה בלוח. בטלפון: לחץ לחיצה ארוכה על התיבה המסומנת ובחר "הדבק", או בחר קובץ מהגלריה.'
           : 'לא נמצאה תמונה בלוח ההעתקה כרגע. צלם מסך או העתק תמונה ונסה שוב.'
       );
     } catch {
-      if (touchPasteInputRef.current) {
-        touchPasteInputRef.current.focus();
+      if (touchPasteRef.current) {
+        touchPasteRef.current.focus();
       }
       setClipboardHint(
         window.innerWidth < 640
@@ -477,24 +480,42 @@ export const IssueFormModal: React.FC<IssueFormModalProps> = ({
                   </button>
                 </div>
 
-                {/* Mobile Touch Paste Box - Allows Native Long-Press Paste on Mobile Devices */}
-                <div className="w-full max-w-sm sm:hidden mt-1">
-                  <input
-                    ref={touchPasteInputRef}
-                    type="text"
-                    readOnly
+                {/* Mobile Touch Paste Box - ContentEditable allows native long-press Paste on iOS & Android */}
+                <div className="w-full max-w-sm sm:hidden mt-1 space-y-1.5">
+                  <div
+                    ref={touchPasteRef}
+                    contentEditable={true}
+                    suppressContentEditableWarning={true}
+                    onFocus={(e) => {
+                      const range = document.createRange();
+                      range.selectNodeContents(e.currentTarget);
+                      const sel = window.getSelection();
+                      sel?.removeAllRanges();
+                      sel?.addRange(range);
+                    }}
                     onPaste={async (e) => {
+                      e.preventDefault();
                       const images = await extractImagesFromClipboardEvent(e);
                       if (images.length > 0) {
                         setClipboardHint(null);
                         setScreenshots((prev) => [...prev, ...images]);
                         setPasteNotice(true);
                         setTimeout(() => setPasteNotice(false), 2500);
+                      } else {
+                        setClipboardHint('לא זוהתה תמונה בהדבקה. נסה לבחור ישירות מהגלריה.');
+                      }
+                      if (touchPasteRef.current) {
+                        touchPasteRef.current.innerText = '📋 לחץ כאן לחיצה ארוכה ובחר "הדבק"';
                       }
                     }}
-                    placeholder="📋 בטלפון: לחץ כאן לחיצה ארוכה ובחר 'הדבק'..."
-                    className="w-full text-center py-2 px-3 rounded-xl border-2 border-dashed border-indigo-400 dark:border-indigo-600 bg-indigo-50/70 dark:bg-indigo-950/40 text-xs font-bold text-indigo-900 dark:text-indigo-200 placeholder:text-indigo-600/80 dark:placeholder:text-indigo-400/80 focus:outline-none focus:ring-2 focus:ring-indigo-500 cursor-pointer"
-                  />
+                    className="w-full py-2.5 px-3 rounded-xl border-2 border-dashed border-indigo-500 dark:border-indigo-400 bg-indigo-50/80 dark:bg-indigo-950/40 text-xs font-bold text-center text-indigo-950 dark:text-indigo-200 focus:outline-none focus:ring-2 focus:ring-indigo-500 cursor-text select-text"
+                    style={{ WebkitUserSelect: 'text', userSelect: 'text' }}
+                  >
+                    📋 לחץ כאן לחיצה ארוכה ובחר "הדבק"
+                  </div>
+                  <div className="text-[11px] text-slate-500 dark:text-slate-400 text-center">
+                    או השתמש בכפתור למעלה לבחירה מהירה מגלריית צילומי המסך
+                  </div>
                 </div>
 
                 {clipboardHint && (
