@@ -116,6 +116,23 @@ export function playNotificationSound() {
   }
 }
 
+function getNotificationAssetUrl(assetName: string, baseOverride?: string): string {
+  try {
+    const base = baseOverride || (typeof window !== 'undefined' ? window.location.href : './');
+    const url = new URL(base);
+    let pathname = url.pathname;
+    if (!pathname.endsWith('/') && !pathname.includes('.')) {
+      pathname += '/';
+    }
+    const folder = pathname.endsWith('/')
+      ? pathname
+      : pathname.substring(0, pathname.lastIndexOf('/') + 1);
+    return `${url.origin}${folder}${assetName}`;
+  } catch {
+    return `./${assetName}`;
+  }
+}
+
 export async function sendSystemNotification(
   title: string,
   body: string,
@@ -129,13 +146,11 @@ export async function sendSystemNotification(
   if (Notification.permission !== 'granted') return;
 
   try {
-    const baseUrl = window.location.href;
-    const iconUrl = new URL('icon-192.png', baseUrl).href;
-    const badgeUrl = new URL('badge-96.png', baseUrl).href;
-
     if ('serviceWorker' in navigator) {
       const reg = await navigator.serviceWorker.getRegistration();
       if (reg && 'showNotification' in reg) {
+        const iconUrl = getNotificationAssetUrl('icon-192.png', reg.scope);
+        const badgeUrl = getNotificationAssetUrl('badge-96.png', reg.scope);
         await reg.showNotification(title, {
           body,
           icon: iconUrl,
@@ -147,6 +162,7 @@ export async function sendSystemNotification(
         return;
       }
     }
+    const iconUrl = getNotificationAssetUrl('icon-192.png');
     new Notification(title, {
       body,
       icon: iconUrl,
