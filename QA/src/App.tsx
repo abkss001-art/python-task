@@ -161,7 +161,6 @@ export function App() {
 
   // Filters & View Mode (Default is Smart Table 'table' for everyone)
   const [searchQuery, setSearchQuery] = useState('');
-  const [testCaseFilter, setTestCaseFilter] = useState('');
   const [platformFilter, setPlatformFilter] = useState<StdPlatform | 'ALL'>('ALL');
   const [statusFilter, setStatusFilter] = useState<StdStatus | 'ALL'>('ALL');
   const [quickPreset, setQuickPreset] = useState<'ALL' | 'MY_ISSUES' | 'CRITICAL'>('ALL');
@@ -789,15 +788,6 @@ export function App() {
     return baseIssues.filter((i) => i.system === activeSystem);
   }, [issues, activeSystem, archivedSystems, userAllowedSystems]);
 
-  // Unique testCaseIds for autocomplete suggestions
-  const availableTestCaseIds = useMemo(() => {
-    const set = new Set<string>();
-    systemIssues.forEach((i) => {
-      if (i.testCaseId) set.add(i.testCaseId);
-    });
-    return Array.from(set).sort((a, b) => Number(a) - Number(b));
-  }, [systemIssues]);
-
   // Next Test Case ID per system starting from 1 in ascending order (natural numeric extraction)
   const getNextTestCaseIdForSystem = useCallback(
     (targetSystem: string, currentIssues: StdIssue[] = issues) => {
@@ -839,11 +829,6 @@ export function App() {
         if (statusFilter !== 'ALL' && issue.status !== statusFilter) {
           return false;
         }
-        if (testCaseFilter.trim()) {
-          if (!issue.testCaseId.toLowerCase().includes(testCaseFilter.trim().toLowerCase())) {
-            return false;
-          }
-        }
         if (searchQuery.trim()) {
           const q = searchQuery.trim().toLowerCase();
           const inSubject = issue.subject.toLowerCase().includes(q);
@@ -860,7 +845,7 @@ export function App() {
         return true;
       })
       .sort((a, b) => b.updatedAt - a.updatedAt);
-  }, [systemIssues, quickPreset, currentUserName, platformFilter, statusFilter, testCaseFilter, searchQuery]);
+  }, [systemIssues, quickPreset, currentUserName, platformFilter, statusFilter, searchQuery]);
 
   // Quick Preset Counts
   const myIssuesCount = useMemo(() => {
@@ -1133,7 +1118,6 @@ export function App() {
 
   const resetFilters = () => {
     setSearchQuery('');
-    setTestCaseFilter('');
     setPlatformFilter('ALL');
     setStatusFilter('ALL');
     setQuickPreset('ALL');
@@ -1534,8 +1518,6 @@ export function App() {
         <FilterBar
           searchQuery={searchQuery}
           onSearchChange={setSearchQuery}
-          testCaseFilter={testCaseFilter}
-          onTestCaseFilterChange={setTestCaseFilter}
           platformFilter={platformFilter}
           onPlatformFilterChange={setPlatformFilter}
           statusFilter={statusFilter}
@@ -1546,7 +1528,6 @@ export function App() {
           criticalIssuesCount={criticalIssuesCount}
           viewMode={viewMode}
           onViewModeChange={setViewMode}
-          availableTestCaseIds={availableTestCaseIds}
           systemIssues={systemIssues}
           filteredCount={filteredIssues.length}
           onExportCsv={handleExportCsv}
