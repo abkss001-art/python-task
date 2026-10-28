@@ -222,7 +222,7 @@ export const LoginScreen: React.FC<LoginScreenProps> = ({
       role: isAdmin ? 'qa' : matchedMember.role,
       isAdmin,
       allowedSystems:
-        matchedMember.role === 'dev' && Array.isArray(matchedMember.allowedSystems)
+        !isAdmin && Array.isArray(matchedMember.allowedSystems) && matchedMember.allowedSystems.length > 0
           ? matchedMember.allowedSystems
           : undefined
     };

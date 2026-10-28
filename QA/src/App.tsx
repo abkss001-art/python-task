@@ -30,7 +30,8 @@ import {
   TeamMember,
   getStoredTeamMembers,
   saveStoredTeamMembers,
-  mergeCloudTeamMembers
+  mergeCloudTeamMembers,
+  saveRememberedLogin
 } from './utils/teamMembers';
 import { extractImagesFromClipboardEvent } from './utils/imageUtils';
 import {
@@ -394,18 +395,101 @@ export function App() {
     localStorage.setItem(AUTH_STORAGE_KEY, JSON.stringify(user));
   };
 
-  const handleSaveTeamMembers = (updated: TeamMember[]) => {
+  const handleSaveTeamMembers = (
+    updated: TeamMember[],
+    renameInfo?: { oldName: string; newName: string }
+  ) => {
     setTeamMembers(updated);
     saveStoredTeamMembers(updated);
+
+    let nextIssues = issues;
+    const renameStats = { issues: 0, comments: 0, audits: 0 };
+
+    if (renameInfo && renameInfo.oldName.trim() !== renameInfo.newName.trim()) {
+      const oldName = renameInfo.oldName.trim();
+      const newName = renameInfo.newName.trim();
+
+      nextIssues = issues.map((iss) => {
+        let changed = false;
+        let createdBy = iss.createdBy;
+        if (iss.createdBy && iss.createdBy.trim() === oldName) {
+          createdBy = newName;
+          changed = true;
+          renameStats.issues++;
+        }
+
+        let comments = iss.comments;
+        if (Array.isArray(iss.comments) && iss.comments.length > 0) {
+          let commentsChanged = false;
+          comments = iss.comments.map((c) => {
+            if (c.author && c.author.trim() === oldName) {
+              commentsChanged = true;
+              renameStats.comments++;
+              return { ...c, author: newName };
+            }
+            return c;
+          });
+          if (commentsChanged) changed = true;
+        }
+
+        let auditLog = iss.auditLog;
+        if (Array.isArray(iss.auditLog) && iss.auditLog.length > 0) {
+          let auditChanged = false;
+          auditLog = iss.auditLog.map((a) => {
+            if (a.actor && a.actor.trim() === oldName) {
+              auditChanged = true;
+              renameStats.audits++;
+              return { ...a, actor: newName };
+            }
+            return a;
+          });
+          if (auditChanged) changed = true;
+        }
+
+        if (changed) {
+          return {
+            ...iss,
+            createdBy,
+            comments,
+            auditLog,
+            updatedAt: Date.now()
+          };
+        }
+        return iss;
+      });
+
+      setIssues(nextIssues);
+
+      // If current logged-in user is the renamed member, update session
+      if (authUser && authUser.fullName.trim() === oldName) {
+        const parts = newName.split(/\s+/);
+        const updatedAuth: AuthenticatedUser = {
+          ...authUser,
+          firstName: parts[0] || newName,
+          lastName: parts.slice(1).join(' ') || '',
+          fullName: newName
+        };
+        updatedAuth.authSignature = computeUserAuthSignature(updatedAuth);
+        setAuthUser(updatedAuth);
+        localStorage.setItem(AUTH_STORAGE_KEY, JSON.stringify(updatedAuth));
+        saveRememberedLogin(newName, true);
+      }
+    }
+
+    const toastText =
+      renameInfo && renameInfo.oldName.trim() !== renameInfo.newName.trim()
+        ? `✏️ עודכן שם איש צוות מ-${renameInfo.oldName} ל-${renameInfo.newName} (סונכרנו ${renameStats.issues} דיווחים ו-${renameStats.comments} הערות)`
+        : undefined;
+
     syncService.pushStateToCloud(
       {
         systems,
         archivedSystems,
-        issues,
+        issues: nextIssues,
         teamMembers: updated,
         securityConfig: getStoredSecurityConfig()
       },
-      undefined,
+      toastText,
       currentUserName
     );
   };
@@ -658,10 +742,10 @@ export function App() {
     );
   }, [authUser, teamMembers]);
 
-  // If role is dev and has allowedSystems defined, restrict systems
+  // If user has allowedSystems defined, restrict systems (applies to both Dev and QA)
   const userAllowedSystems = useMemo(() => {
-    if (!authUser || authUser.isAdmin || currentUserRole !== 'dev') {
-      return null; // No restrictions for QA or Admin
+    if (!authUser || authUser.isAdmin) {
+      return null; // No restrictions for Admin
     }
     const rawAllowed = currentMember?.allowedSystems || authUser.allowedSystems;
     if (Array.isArray(rawAllowed) && rawAllowed.length > 0) {
@@ -670,7 +754,7 @@ export function App() {
       return valid.length > 0 ? valid : null;
     }
     return null; // fallback: all systems
-  }, [authUser, currentUserRole, currentMember, systems]);
+  }, [authUser, currentMember, systems]);
 
   const visibleSystems = useMemo(() => {
     if (!userAllowedSystems) return systems;
