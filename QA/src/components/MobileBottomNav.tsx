@@ -211,15 +211,17 @@ export const MobileBottomNav: React.FC<MobileBottomNavProps> = ({
             setIsViewMenuOpen((prev) => !prev);
             setIsSystemMenuOpen(false);
           }}
-          className="flex flex-col items-center justify-center p-1.5 text-slate-600 dark:text-slate-300 hover:text-indigo-600 dark:hover:text-indigo-400 transition cursor-pointer"
-          title="החלף תצוגה"
+          className={`flex flex-col items-center justify-center p-1.5 transition cursor-pointer ${
+            isViewMenuOpen
+              ? 'text-indigo-600 dark:text-indigo-400'
+              : 'text-slate-600 dark:text-slate-300 hover:text-indigo-600 dark:hover:text-indigo-400'
+          }`}
+          title={`החלף סגנון תצוגה (פעיל: ${viewMode === 'table' ? 'טבלה' : viewMode === 'cards' ? 'כרטיסים' : 'קנבן'})`}
         >
           {viewMode === 'table' && <Table2 className="w-5 h-5 text-indigo-600 dark:text-indigo-400" />}
           {viewMode === 'cards' && <LayoutGrid className="w-5 h-5 text-indigo-600 dark:text-indigo-400" />}
           {viewMode === 'kanban' && <Columns3 className="w-5 h-5 text-indigo-600 dark:text-indigo-400" />}
-          <span className="text-[10px] font-bold mt-0.5">
-            {viewMode === 'table' ? 'טבלה' : viewMode === 'cards' ? 'כרטיסים' : 'קנבן'}
-          </span>
+          <span className="text-[10px] font-bold mt-0.5">תצוגה</span>
         </button>
 
         {/* System Selector Button */}
@@ -229,13 +231,15 @@ export const MobileBottomNav: React.FC<MobileBottomNavProps> = ({
             setIsSystemMenuOpen((prev) => !prev);
             setIsViewMenuOpen(false);
           }}
-          className="flex flex-col items-center justify-center p-1.5 text-slate-600 dark:text-slate-300 hover:text-indigo-600 dark:hover:text-indigo-400 transition cursor-pointer max-w-[70px]"
-          title="בחר מערכת"
+          className={`flex flex-col items-center justify-center p-1.5 transition cursor-pointer max-w-[70px] ${
+            isSystemMenuOpen
+              ? 'text-indigo-600 dark:text-indigo-400'
+              : 'text-slate-600 dark:text-slate-300 hover:text-indigo-600 dark:hover:text-indigo-400'
+          }`}
+          title={`בחר מערכת (פעילה: ${activeSystem === 'ALL' ? 'כל המערכות' : activeSystem})`}
         >
-          <Layers className="w-5 h-5 text-slate-600 dark:text-slate-300" />
-          <span className="text-[10px] font-bold mt-0.5 truncate w-full text-center">
-            {activeSystem === 'ALL' ? 'הכל' : activeSystem}
-          </span>
+          <Layers className="w-5 h-5 text-indigo-600 dark:text-indigo-400" />
+          <span className="text-[10px] font-bold mt-0.5 truncate w-full text-center">מערכות</span>
         </button>
 
         {/* Center Prominent New Issue (+) Button */}

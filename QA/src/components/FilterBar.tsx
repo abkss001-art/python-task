@@ -72,17 +72,37 @@ export const FilterBar: React.FC<FilterBarProps> = ({
           onClick={() => onStatusFilterChange('ALL')}
           className={`flex items-center justify-between p-3.5 rounded-2xl border text-right transition cursor-pointer ${
             statusFilter === 'ALL'
-              ? 'bg-slate-900 text-white border-slate-900 shadow-md dark:bg-indigo-950/80 dark:border-indigo-600 dark:text-white'
-              : 'bg-white hover:bg-slate-50 text-slate-800 border-slate-200/90 shadow-2xs dark:bg-slate-900 dark:border-slate-800 dark:text-slate-200 dark:hover:bg-slate-800/80'
+              ? 'bg-indigo-50/90 border-indigo-400 ring-2 ring-indigo-500/30 shadow-sm dark:bg-indigo-950/60 dark:border-indigo-500 dark:ring-indigo-500/40'
+              : 'bg-white hover:bg-slate-50 border-slate-200/90 shadow-2xs dark:bg-slate-900 dark:border-slate-800 dark:hover:bg-slate-800/80'
           }`}
         >
           <div>
-            <div className={`text-xs font-semibold ${statusFilter === 'ALL' ? 'text-slate-300 dark:text-indigo-200' : 'text-slate-500 dark:text-slate-300'}`}>
+            <div
+              className={`text-xs font-bold transition-colors ${
+                statusFilter === 'ALL'
+                  ? 'text-indigo-700 dark:text-indigo-300'
+                  : 'text-slate-500 dark:text-slate-400'
+              }`}
+            >
               סה"כ תקלות
             </div>
-            <div className="text-xl font-extrabold font-mono mt-0.5 text-slate-900 dark:text-slate-100">{systemIssues.length}</div>
+            <div
+              className={`text-xl font-extrabold font-mono mt-0.5 transition-colors ${
+                statusFilter === 'ALL'
+                  ? 'text-indigo-950 dark:text-indigo-100'
+                  : 'text-slate-900 dark:text-slate-100'
+              }`}
+            >
+              {systemIssues.length}
+            </div>
           </div>
-          <div className={`w-2.5 h-2.5 rounded-full ${statusFilter === 'ALL' ? 'bg-indigo-400' : 'bg-slate-300 dark:bg-slate-500'}`} />
+          <span
+            className={`w-3 h-3 rounded-full transition-colors ${
+              statusFilter === 'ALL'
+                ? 'bg-indigo-600 dark:bg-indigo-400 ring-2 ring-indigo-300 dark:ring-indigo-700'
+                : 'bg-slate-300 dark:bg-slate-600'
+            }`}
+          />
         </button>
 
         {STATUSES.map((st) => {
