@@ -69,7 +69,7 @@ export const STATUSES: StdStatus[] = ['פתוח', 'בטיפול', 'ניתן לב
 
 export const SEVERITIES: StdSeverity[] = ['קריטית', 'גבוהה', 'בינונית', 'נמוכה'];
 
-export const DEFAULT_SYSTEMS: string[] = ['CARGO', 'נשקי ערד'];
+export const DEFAULT_SYSTEMS: string[] = ['CARGO', 'נשקי ערד', 'נישקי ערד דוח'];
 
 export const SEVERITY_CONFIG: Record<
   StdSeverity,
