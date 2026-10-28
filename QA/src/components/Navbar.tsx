@@ -410,12 +410,7 @@ export const Navbar: React.FC<NavbarProps> = ({
         {/* Bottom Row: Fast System Switcher Bar (CARGO, נשקי ערד, etc.) */}
         <div className="flex items-center justify-between gap-2 py-2 overflow-x-auto no-scrollbar">
           <div className="flex items-center gap-1.5 sm:gap-2">
-            <span className="hidden sm:flex items-center gap-1.5 text-xs font-bold text-slate-500 ml-1 shrink-0">
-              <Layers className="w-3.5 h-3.5 text-indigo-500" />
-              <span>מערכת:</span>
-            </span>
-
-            {/* Home / System Hub Button */}
+            {/* 1. Home Button */}
             <button
               type="button"
               onClick={() => onSelectSystem('HOME')}
@@ -430,6 +425,16 @@ export const Navbar: React.FC<NavbarProps> = ({
               <span>דף הבית</span>
             </button>
 
+            {/* Divider */}
+            <div className="h-4 w-px bg-slate-200 dark:bg-slate-700 mx-0.5 shrink-0" />
+
+            {/* 2. Systems Label */}
+            <span className="flex items-center gap-1.5 text-xs font-bold text-slate-500 dark:text-slate-400 shrink-0">
+              <Layers className="w-3.5 h-3.5 text-indigo-500" />
+              <span>מערכות:</span>
+            </span>
+
+            {/* 3. System Buttons */}
             {systems.map((sys) => {
               const isSelected = activeSystem === sys;
               const total = getCountForSystem(sys);
