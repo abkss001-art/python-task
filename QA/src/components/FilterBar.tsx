@@ -289,8 +289,8 @@ export const FilterBar: React.FC<FilterBarProps> = ({
           </div>
         </div>
 
-        {/* 3. View Switcher (Smart Table, Cards, Kanban) + CSV Export (Placed below filters as requested) */}
-        <div className="flex items-center justify-between sm:justify-end gap-2 pt-2 border-t border-slate-100 dark:border-slate-800/80">
+        {/* 3. View Switcher (Smart Table, Cards, Kanban) + CSV Export (Aligned Right to Left under My Issues) */}
+        <div className="flex items-center justify-start gap-2.5 pt-2 border-t border-slate-100 dark:border-slate-800/80 flex-wrap">
           <div className="flex items-center bg-slate-100 dark:bg-slate-800 p-1 rounded-xl border border-slate-200/80 dark:border-slate-700">
             <button
               type="button"
