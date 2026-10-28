@@ -76,10 +76,8 @@ type StatusListener = (status: SyncStatusInfo) => void;
 
 const CLOUD_TOPIC_STATE = 'std_qa_cloud_abkss001_v2/workspace_state';
 const CLOUD_TOPIC_STATE_V3 = 'std_qa_cloud_tzavman_v3/workspace_state';
-const CLOUD_TOPIC_PRESENCE = 'std_qa_cloud_abkss001_v2/presence_active/';
-const CLOUD_TOPIC_PRESENCE_LEGACY = 'std_qa_cloud_abkss001_v2/presence/';
-const CLOUD_TOPIC_PRESENCE_V3 = 'std_qa_cloud_tzavman_v3/presence/';
-const CLOUD_TOPIC_PING = 'std_qa_cloud_abkss001_v2/presence_ping';
+const CLOUD_TOPIC_PRESENCE_V4 = 'std_qa_cloud_tzavman_v4/presence/';
+const CLOUD_TOPIC_PING_V4 = 'std_qa_cloud_tzavman_v4/presence_ping';
 
 const MAX_SAFE_MQTT_BYTES = 210_000; // Safe limit under broker.emqx.io 256KB max packet size
 const BYTEBIN_POST_URL = 'https://bytebin.lucko.me/post';
@@ -315,18 +313,14 @@ class RealtimeSyncService {
       const announceOffline = () => {
         if (this.mqttClient && this.mqttClient.connected) {
           try {
-            const offMsg = JSON.stringify({ online: false });
-            this.mqttClient.publish(`${CLOUD_TOPIC_PRESENCE}${this.clientId}`, offMsg, {
-              qos: 0,
-              retain: true
+            const offMsg = JSON.stringify({
+              online: false,
+              clientId: this.clientId,
+              timestamp: Date.now()
             });
-            this.mqttClient.publish(`${CLOUD_TOPIC_PRESENCE_LEGACY}${this.clientId}`, offMsg, {
+            this.mqttClient.publish(`${CLOUD_TOPIC_PRESENCE_V4}${this.clientId}`, offMsg, {
               qos: 0,
-              retain: true
-            });
-            this.mqttClient.publish(`${CLOUD_TOPIC_PRESENCE_V3}${this.clientId}`, offMsg, {
-              qos: 0,
-              retain: true
+              retain: false
             });
           } catch {
             // ignore
@@ -872,12 +866,13 @@ class RealtimeSyncService {
         }
         // Ask all connected peers if anyone has a newer revision or more issues
         this.mqttClient.publish(
-          CLOUD_TOPIC_PING,
+          CLOUD_TOPIC_PING_V4,
           JSON.stringify({
             type: 'STATE_SYNC_CHECK',
             clientId: this.clientId,
             revision: this.currentState.revision || 0,
-            issueCount: this.currentState.issues.length
+            issueCount: this.currentState.issues.length,
+            timestamp: Date.now()
           }),
           { qos: 0, retain: false }
         );
@@ -1060,10 +1055,10 @@ class RealtimeSyncService {
         connectTimeout: 8000,
         reconnectPeriod: 3000,
         will: {
-          topic: `${CLOUD_TOPIC_PRESENCE}${this.clientId}`,
-          payload: JSON.stringify({ online: false }),
+          topic: `${CLOUD_TOPIC_PRESENCE_V4}${this.clientId}`,
+          payload: JSON.stringify({ online: false, clientId: this.clientId, timestamp: Date.now() }),
           qos: 0,
-          retain: true
+          retain: false
         }
       });
 
@@ -1071,19 +1066,12 @@ class RealtimeSyncService {
 
       const publishPresenceOnline = () => {
         if (!client.connected) return;
-        this.activePeers.set(this.clientId, Date.now());
-        const onMsg = JSON.stringify({ online: true, clientId: this.clientId });
-        client.publish(`${CLOUD_TOPIC_PRESENCE}${this.clientId}`, onMsg, {
+        const now = Date.now();
+        this.activePeers.set(this.clientId, now);
+        const onMsg = JSON.stringify({ online: true, clientId: this.clientId, timestamp: now });
+        client.publish(`${CLOUD_TOPIC_PRESENCE_V4}${this.clientId}`, onMsg, {
           qos: 0,
-          retain: true
-        });
-        client.publish(`${CLOUD_TOPIC_PRESENCE_LEGACY}${this.clientId}`, onMsg, {
-          qos: 0,
-          retain: true
-        });
-        client.publish(`${CLOUD_TOPIC_PRESENCE_V3}${this.clientId}`, onMsg, {
-          qos: 0,
-          retain: true
+          retain: false
         });
         this.updateStatus({
           onlineCount: Math.max(1, this.activePeers.size)
@@ -1098,20 +1086,19 @@ class RealtimeSyncService {
         });
 
         client.subscribe(CLOUD_TOPIC_STATE, { qos: 1 });
-        client.subscribe(`${CLOUD_TOPIC_PRESENCE}+`, { qos: 0 });
-        client.subscribe(`${CLOUD_TOPIC_PRESENCE_LEGACY}+`, { qos: 0 });
-        client.subscribe(`${CLOUD_TOPIC_PRESENCE_V3}+`, { qos: 0 });
-        client.subscribe(CLOUD_TOPIC_PING, { qos: 0 });
+        client.subscribe(`${CLOUD_TOPIC_PRESENCE_V4}+`, { qos: 0 });
+        client.subscribe(CLOUD_TOPIC_PING_V4, { qos: 0 });
 
         publishPresenceOnline();
 
         client.publish(
-          CLOUD_TOPIC_PING,
+          CLOUD_TOPIC_PING_V4,
           JSON.stringify({
             type: 'STATE_SYNC_CHECK',
             clientId: this.clientId,
             revision: this.currentState.revision || 0,
-            issueCount: this.currentState.issues.length
+            issueCount: this.currentState.issues.length,
+            timestamp: Date.now()
           }),
           { qos: 0, retain: false }
         );
@@ -1128,14 +1115,15 @@ class RealtimeSyncService {
         }
         const nowLocal = Date.now();
         for (const [id, seenAtLocal] of this.activePeers.entries()) {
-          if (id !== this.clientId && nowLocal - seenAtLocal > 70000) {
+          // If a peer has not sent a heartbeat in 30 seconds, consider them disconnected
+          if (id !== this.clientId && nowLocal - seenAtLocal > 30000) {
             this.activePeers.delete(id);
           }
         }
         this.updateStatus({
           onlineCount: Math.max(1, this.activePeers.size)
         });
-      }, 20000);
+      }, 10000);
 
       client.on('message', async (topic, message) => {
         try {
@@ -1147,11 +1135,18 @@ class RealtimeSyncService {
             const parsed = JSON.parse(decryptedStr);
             const normalized = this.normalizePayload(parsed);
             this.handleIncomingCloudState(normalized);
-          } else if (topic === CLOUD_TOPIC_PING) {
+          } else if (topic === CLOUD_TOPIC_PING_V4) {
             const data = JSON.parse(rawStr);
             if (data && data.clientId) {
-              this.activePeers.set(data.clientId, Date.now());
-              this.activePeers.set(this.clientId, Date.now());
+              const now = Date.now();
+              // Ignore stale or delayed packets older than 25s
+              if (data.timestamp && Math.abs(now - data.timestamp) > 25000) {
+                return;
+              }
+              if (data.clientId !== this.clientId) {
+                this.activePeers.set(data.clientId, now);
+              }
+              this.activePeers.set(this.clientId, now);
               this.updateStatus({
                 onlineCount: Math.max(1, this.activePeers.size)
               });
@@ -1171,24 +1166,24 @@ class RealtimeSyncService {
                 }
               }
             }
-          } else if (
-            topic.startsWith(CLOUD_TOPIC_PRESENCE) ||
-            topic.startsWith(CLOUD_TOPIC_PRESENCE_LEGACY) ||
-            topic.startsWith(CLOUD_TOPIC_PRESENCE_V3)
-          ) {
-            const peerId = topic
-              .replace(CLOUD_TOPIC_PRESENCE, '')
-              .replace(CLOUD_TOPIC_PRESENCE_LEGACY, '')
-              .replace(CLOUD_TOPIC_PRESENCE_V3, '');
+          } else if (topic.startsWith(CLOUD_TOPIC_PRESENCE_V4)) {
+            const peerId = topic.replace(CLOUD_TOPIC_PRESENCE_V4, '');
             if (!peerId) return;
 
             const data = JSON.parse(rawStr);
+            const now = Date.now();
+            // Ignore stale packets
+            if (data && data.timestamp && Math.abs(now - data.timestamp) > 25000) {
+              return;
+            }
             if (data && data.online) {
-              this.activePeers.set(peerId, Date.now());
+              if (peerId !== this.clientId) {
+                this.activePeers.set(peerId, now);
+              }
             } else {
               this.activePeers.delete(peerId);
             }
-            this.activePeers.set(this.clientId, Date.now());
+            this.activePeers.set(this.clientId, now);
             this.updateStatus({
               onlineCount: Math.max(1, this.activePeers.size)
             });
