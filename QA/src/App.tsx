@@ -164,6 +164,7 @@ export function App() {
   const [testCaseFilter, setTestCaseFilter] = useState('');
   const [platformFilter, setPlatformFilter] = useState<StdPlatform | 'ALL'>('ALL');
   const [statusFilter, setStatusFilter] = useState<StdStatus | 'ALL'>('ALL');
+  const [quickPreset, setQuickPreset] = useState<'ALL' | 'MY_ISSUES' | 'CRITICAL'>('ALL');
   const [viewMode, setViewMode] = useState<'cards' | 'table' | 'kanban'>('table');
 
   // Modals State
@@ -818,6 +819,20 @@ export function App() {
   const filteredIssues = useMemo(() => {
     return systemIssues
       .filter((issue) => {
+        // Quick Presets
+        if (quickPreset === 'MY_ISSUES') {
+          const authorMatch = issue.createdBy.toLowerCase().includes(currentUserName.toLowerCase());
+          const commentMatch = (issue.comments || []).some((c) =>
+            c.author.toLowerCase().includes(currentUserName.toLowerCase())
+          );
+          if (!authorMatch && !commentMatch) return false;
+        }
+        if (quickPreset === 'CRITICAL') {
+          const isCritical = issue.severity === 'קריטית';
+          const isUnresolved = issue.status !== 'נבדק תקין';
+          if (!isCritical || !isUnresolved) return false;
+        }
+
         if (platformFilter !== 'ALL' && issue.platform !== platformFilter) {
           return false;
         }
@@ -845,7 +860,26 @@ export function App() {
         return true;
       })
       .sort((a, b) => b.updatedAt - a.updatedAt);
-  }, [systemIssues, platformFilter, statusFilter, testCaseFilter, searchQuery]);
+  }, [systemIssues, quickPreset, currentUserName, platformFilter, statusFilter, testCaseFilter, searchQuery]);
+
+  // Quick Preset Counts
+  const myIssuesCount = useMemo(() => {
+    if (!currentUserName) return 0;
+    const lowerName = currentUserName.toLowerCase();
+    return systemIssues.filter((issue) => {
+      const authorMatch = issue.createdBy.toLowerCase().includes(lowerName);
+      const commentMatch = (issue.comments || []).some((c) =>
+        c.author.toLowerCase().includes(lowerName)
+      );
+      return authorMatch || commentMatch;
+    }).length;
+  }, [systemIssues, currentUserName]);
+
+  const criticalIssuesCount = useMemo(() => {
+    return systemIssues.filter(
+      (issue) => issue.severity === 'קריטית' && issue.status !== 'נבדק תקין'
+    ).length;
+  }, [systemIssues]);
 
   // CRUD Handlers with Instant Live Cloud Sync
   const handleSaveIssue = (formData: {
@@ -1102,6 +1136,7 @@ export function App() {
     setTestCaseFilter('');
     setPlatformFilter('ALL');
     setStatusFilter('ALL');
+    setQuickPreset('ALL');
   };
 
   const showLastEventBanner =
@@ -1505,6 +1540,10 @@ export function App() {
           onPlatformFilterChange={setPlatformFilter}
           statusFilter={statusFilter}
           onStatusFilterChange={setStatusFilter}
+          quickPreset={quickPreset}
+          onQuickPresetChange={setQuickPreset}
+          myIssuesCount={myIssuesCount}
+          criticalIssuesCount={criticalIssuesCount}
           viewMode={viewMode}
           onViewModeChange={setViewMode}
           availableTestCaseIds={availableTestCaseIds}

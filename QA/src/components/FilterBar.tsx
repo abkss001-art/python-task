@@ -8,7 +8,9 @@ import {
   Hash,
   MonitorSmartphone,
   RotateCcw,
-  Download
+  Download,
+  Flame,
+  UserCheck
 } from 'lucide-react';
 import {
   PLATFORMS,
@@ -28,6 +30,10 @@ interface FilterBarProps {
   onPlatformFilterChange: (p: StdPlatform | 'ALL') => void;
   statusFilter: StdStatus | 'ALL';
   onStatusFilterChange: (s: StdStatus | 'ALL') => void;
+  quickPreset: 'ALL' | 'MY_ISSUES' | 'CRITICAL';
+  onQuickPresetChange: (preset: 'ALL' | 'MY_ISSUES' | 'CRITICAL') => void;
+  myIssuesCount: number;
+  criticalIssuesCount: number;
   viewMode: 'cards' | 'table' | 'kanban';
   onViewModeChange: (mode: 'cards' | 'table' | 'kanban') => void;
   availableTestCaseIds: string[];
@@ -46,6 +52,10 @@ export const FilterBar: React.FC<FilterBarProps> = ({
   onPlatformFilterChange,
   statusFilter,
   onStatusFilterChange,
+  quickPreset,
+  onQuickPresetChange,
+  myIssuesCount,
+  criticalIssuesCount,
   viewMode,
   onViewModeChange,
   availableTestCaseIds,
@@ -58,7 +68,8 @@ export const FilterBar: React.FC<FilterBarProps> = ({
     Boolean(searchQuery.trim()) ||
     Boolean(testCaseFilter.trim()) ||
     platformFilter !== 'ALL' ||
-    statusFilter !== 'ALL';
+    statusFilter !== 'ALL' ||
+    quickPreset !== 'ALL';
 
   const getStatusCount = (status: StdStatus) =>
     systemIssues.filter((i) => i.status === status).length;
@@ -131,6 +142,74 @@ export const FilterBar: React.FC<FilterBarProps> = ({
             </button>
           );
         })}
+      </div>
+
+      {/* Quick Filter Presets Strip (התקלות שלי | תקלות קריטיות) */}
+      <div className="flex items-center gap-2 overflow-x-auto no-scrollbar pb-0.5">
+        <span className="text-xs font-bold text-slate-500 dark:text-slate-400 shrink-0 flex items-center gap-1">
+          <Filter className="w-3.5 h-3.5 text-indigo-500" />
+          <span>סינון מהיר:</span>
+        </span>
+
+        {/* Preset: ALL (כל התקלות) */}
+        <button
+          type="button"
+          onClick={() => onQuickPresetChange('ALL')}
+          className={`px-3 py-1.5 rounded-xl text-xs font-bold transition cursor-pointer shrink-0 flex items-center gap-1.5 ${
+            quickPreset === 'ALL'
+              ? 'bg-slate-900 dark:bg-indigo-600 text-white shadow-xs'
+              : 'bg-white dark:bg-slate-800 text-slate-600 dark:text-slate-300 border border-slate-200 dark:border-slate-700 hover:bg-slate-50 dark:hover:bg-slate-700'
+          }`}
+        >
+          <span>כל התקלות</span>
+          <span className="text-[10px] opacity-75 font-mono">({systemIssues.length})</span>
+        </button>
+
+        {/* Preset: MY_ISSUES (התקלות שלי) */}
+        <button
+          type="button"
+          onClick={() => onQuickPresetChange(quickPreset === 'MY_ISSUES' ? 'ALL' : 'MY_ISSUES')}
+          className={`px-3 py-1.5 rounded-xl text-xs font-bold transition cursor-pointer shrink-0 flex items-center gap-1.5 ${
+            quickPreset === 'MY_ISSUES'
+              ? 'bg-indigo-600 text-white shadow-sm ring-2 ring-indigo-400'
+              : 'bg-white dark:bg-slate-800 text-indigo-700 dark:text-indigo-300 border border-indigo-200 dark:border-indigo-800/80 hover:bg-indigo-50/70 dark:hover:bg-indigo-950/40'
+          }`}
+        >
+          <UserCheck className="w-3.5 h-3.5" />
+          <span>התקלות שלי</span>
+          <span
+            className={`text-[10px] px-1.5 py-0.2 rounded-md font-mono ${
+              quickPreset === 'MY_ISSUES'
+                ? 'bg-white/20 text-white'
+                : 'bg-indigo-100 dark:bg-indigo-900/60 text-indigo-800 dark:text-indigo-200'
+            }`}
+          >
+            {myIssuesCount}
+          </span>
+        </button>
+
+        {/* Preset: CRITICAL (תקלות קריטיות) */}
+        <button
+          type="button"
+          onClick={() => onQuickPresetChange(quickPreset === 'CRITICAL' ? 'ALL' : 'CRITICAL')}
+          className={`px-3 py-1.5 rounded-xl text-xs font-bold transition cursor-pointer shrink-0 flex items-center gap-1.5 ${
+            quickPreset === 'CRITICAL'
+              ? 'bg-rose-600 text-white shadow-sm ring-2 ring-rose-400'
+              : 'bg-white dark:bg-slate-800 text-rose-700 dark:text-rose-400 border border-rose-200 dark:border-rose-900/60 hover:bg-rose-50/70 dark:hover:bg-rose-950/40'
+          }`}
+        >
+          <Flame className="w-3.5 h-3.5 text-rose-500 fill-rose-500" />
+          <span>תקלות קריטיות</span>
+          <span
+            className={`text-[10px] px-1.5 py-0.2 rounded-md font-mono ${
+              quickPreset === 'CRITICAL'
+                ? 'bg-white/20 text-white'
+                : 'bg-rose-100 dark:bg-rose-900/60 text-rose-800 dark:text-rose-200'
+            }`}
+          >
+            {criticalIssuesCount}
+          </span>
+        </button>
       </div>
 
       {/* Main Search & Filter Controls Card */}
