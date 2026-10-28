@@ -129,13 +129,17 @@ export async function sendSystemNotification(
   if (Notification.permission !== 'granted') return;
 
   try {
+    const baseUrl = window.location.href;
+    const iconUrl = new URL('icon-192.png', baseUrl).href;
+    const badgeUrl = new URL('badge-96.png', baseUrl).href;
+
     if ('serviceWorker' in navigator) {
       const reg = await navigator.serviceWorker.getRegistration();
       if (reg && 'showNotification' in reg) {
         await reg.showNotification(title, {
           body,
-          icon: './icon.svg',
-          badge: './icon.svg',
+          icon: iconUrl,
+          badge: badgeUrl,
           dir: 'rtl',
           lang: 'he',
           tag: `tzav-man-${Date.now()}`
@@ -145,7 +149,7 @@ export async function sendSystemNotification(
     }
     new Notification(title, {
       body,
-      icon: './icon.svg',
+      icon: iconUrl,
       dir: 'rtl',
       lang: 'he'
     });
