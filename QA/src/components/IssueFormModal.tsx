@@ -116,7 +116,6 @@ export const IssueFormModal: React.FC<IssueFormModalProps> = ({
   const [clipboardHint, setClipboardHint] = useState<string | null>(null);
 
   const fileInputRef = useRef<HTMLInputElement | null>(null);
-  const touchPasteRef = useRef<HTMLDivElement | null>(null);
 
   // Sync screenshots if editingIssue was opened via global board Ctrl+V
   useEffect(() => {
@@ -151,23 +150,18 @@ export const IssueFormModal: React.FC<IssueFormModalProps> = ({
         setTimeout(() => setPasteNotice(false), 2500);
         return;
       }
-      if (touchPasteRef.current) {
-        touchPasteRef.current.focus();
-      }
-      setClipboardHint(
-        window.innerWidth < 640
-          ? 'לא זוהתה תמונה בלוח. בטלפון: לחץ לחיצה ארוכה על התיבה המסומנת ובחר "הדבק", או בחר קובץ מהגלריה.'
-          : 'לא נמצאה תמונה בלוח ההעתקה כרגע. צלם מסך או העתק תמונה ונסה שוב.'
-      );
     } catch {
-      if (touchPasteRef.current) {
-        touchPasteRef.current.focus();
-      }
-      setClipboardHint(
-        window.innerWidth < 640
-          ? 'בטלפון: לחץ לחיצה ארוכה בתיבת ההדבקה למטה ובחר "הדבק", או לחץ על "בחר קובץ מהנייד".'
-          : 'לחץ כעת Ctrl + V במקלדת כדי להדביק את התמונה מהלוח.'
-      );
+      // Clipboard read rejected or not supported
+    }
+
+    // If on a phone or tablet: screenshots are saved as files in the phone's gallery!
+    if (typeof window !== 'undefined' && window.innerWidth < 768) {
+      setClipboardHint('בטלפון צילום מסך נשמר בגלריה – פותח את תיקיית התמונות לבחירה מהירה...');
+      setTimeout(() => {
+        fileInputRef.current?.click();
+      }, 350);
+    } else {
+      setClipboardHint('לא נמצאה תמונה בלוח ההעתקה כרגע. צלם מסך או בחר קובץ.');
     }
   };
 
@@ -476,46 +470,8 @@ export const IssueFormModal: React.FC<IssueFormModalProps> = ({
                     className="flex items-center gap-2 px-4 py-2 rounded-xl bg-white dark:bg-slate-800 hover:bg-slate-100 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 border border-slate-300 dark:border-slate-700 text-xs font-bold transition cursor-pointer"
                   >
                     <UploadCloud className="w-4 h-4 text-indigo-600 dark:text-indigo-400" />
-                    <span>בחר קובץ מהמחשב / מהנייד</span>
+                    <span>בחר צילום מסך מהגלריה / מהנייד</span>
                   </button>
-                </div>
-
-                {/* Mobile Touch Paste Box - ContentEditable allows native long-press Paste on iOS & Android */}
-                <div className="w-full max-w-sm sm:hidden mt-1 space-y-1.5">
-                  <div
-                    ref={touchPasteRef}
-                    contentEditable={true}
-                    suppressContentEditableWarning={true}
-                    onFocus={(e) => {
-                      const range = document.createRange();
-                      range.selectNodeContents(e.currentTarget);
-                      const sel = window.getSelection();
-                      sel?.removeAllRanges();
-                      sel?.addRange(range);
-                    }}
-                    onPaste={async (e) => {
-                      e.preventDefault();
-                      const images = await extractImagesFromClipboardEvent(e);
-                      if (images.length > 0) {
-                        setClipboardHint(null);
-                        setScreenshots((prev) => [...prev, ...images]);
-                        setPasteNotice(true);
-                        setTimeout(() => setPasteNotice(false), 2500);
-                      } else {
-                        setClipboardHint('לא זוהתה תמונה בהדבקה. נסה לבחור ישירות מהגלריה.');
-                      }
-                      if (touchPasteRef.current) {
-                        touchPasteRef.current.innerText = '📋 לחץ כאן לחיצה ארוכה ובחר "הדבק"';
-                      }
-                    }}
-                    className="w-full py-2.5 px-3 rounded-xl border-2 border-dashed border-indigo-500 dark:border-indigo-400 bg-indigo-50/80 dark:bg-indigo-950/40 text-xs font-bold text-center text-indigo-950 dark:text-indigo-200 focus:outline-none focus:ring-2 focus:ring-indigo-500 cursor-text select-text"
-                    style={{ WebkitUserSelect: 'text', userSelect: 'text' }}
-                  >
-                    📋 לחץ כאן לחיצה ארוכה ובחר "הדבק"
-                  </div>
-                  <div className="text-[11px] text-slate-500 dark:text-slate-400 text-center">
-                    או השתמש בכפתור למעלה לבחירה מהירה מגלריית צילומי המסך
-                  </div>
                 </div>
 
                 {clipboardHint && (
