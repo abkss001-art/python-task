@@ -412,8 +412,8 @@ export function App() {
       nextIssues = issues.map((iss) => {
         let changed = false;
         let createdBy = iss.createdBy;
-        if (iss.createdBy && iss.createdBy.trim() === oldName) {
-          createdBy = newName;
+        if (iss.createdBy && (iss.createdBy.trim() === oldName || iss.createdBy.includes(oldName))) {
+          createdBy = iss.createdBy.replace(oldName, newName);
           changed = true;
           renameStats.issues++;
         }
@@ -422,10 +422,10 @@ export function App() {
         if (Array.isArray(iss.comments) && iss.comments.length > 0) {
           let commentsChanged = false;
           comments = iss.comments.map((c) => {
-            if (c.author && c.author.trim() === oldName) {
+            if (c.author && (c.author.trim() === oldName || c.author.includes(oldName))) {
               commentsChanged = true;
               renameStats.comments++;
-              return { ...c, author: newName };
+              return { ...c, author: c.author.replace(oldName, newName) };
             }
             return c;
           });
@@ -436,10 +436,10 @@ export function App() {
         if (Array.isArray(iss.auditLog) && iss.auditLog.length > 0) {
           let auditChanged = false;
           auditLog = iss.auditLog.map((a) => {
-            if (a.actor && a.actor.trim() === oldName) {
+            if (a.actor && (a.actor.trim() === oldName || a.actor.includes(oldName))) {
               auditChanged = true;
               renameStats.audits++;
-              return { ...a, actor: newName };
+              return { ...a, actor: a.actor.replace(oldName, newName) };
             }
             return a;
           });
