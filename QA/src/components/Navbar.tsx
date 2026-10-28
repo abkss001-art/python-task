@@ -24,7 +24,8 @@ import {
   ChevronDown,
   MoreHorizontal,
   Sun,
-  Moon
+  Moon,
+  Home
 } from 'lucide-react';
 import { StdIssue, SyncStatusInfo, TeamRole } from '../types/std';
 
@@ -414,6 +415,21 @@ export const Navbar: React.FC<NavbarProps> = ({
               <span>מערכת:</span>
             </span>
 
+            {/* Home / System Hub Button */}
+            <button
+              type="button"
+              onClick={() => onSelectSystem('HOME')}
+              className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs sm:text-sm font-bold transition shrink-0 cursor-pointer ${
+                activeSystem === 'HOME' || !activeSystem
+                  ? 'bg-slate-900 dark:bg-indigo-600 text-white shadow-sm'
+                  : 'bg-slate-100 dark:bg-slate-800 hover:bg-slate-200/80 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-300'
+              }`}
+              title="חזור לדף הבית לבחירת מערכת"
+            >
+              <Home className="w-3.5 h-3.5" />
+              <span>דף הבית</span>
+            </button>
+
             {systems.map((sys) => {
               const isSelected = activeSystem === sys;
               const total = getCountForSystem(sys);
@@ -481,28 +497,7 @@ export const Navbar: React.FC<NavbarProps> = ({
               </button>
             )}
 
-            {!(systems.length <= 1 && !isAdmin && currentUserRole === 'dev') && (
-              <button
-                type="button"
-                onClick={() => onSelectSystem('ALL')}
-                className={`flex items-center gap-1.5 sm:gap-2 px-3 sm:px-3.5 py-1.5 rounded-xl text-xs sm:text-sm font-semibold transition shrink-0 cursor-pointer ${
-                  activeSystem === 'ALL'
-                    ? 'bg-indigo-600 text-white shadow-sm'
-                    : 'bg-slate-100 dark:bg-slate-800 hover:bg-slate-200/80 dark:hover:bg-slate-700 text-slate-600 dark:text-slate-300'
-                }`}
-              >
-                <span>כל המערכות</span>
-                <span
-                  className={`px-1.5 py-0.2 rounded-md text-[10px] sm:text-[11px] font-mono ${
-                    activeSystem === 'ALL'
-                      ? 'bg-white/20 text-white'
-                      : 'bg-white dark:bg-slate-900 text-slate-600 dark:text-slate-300 border border-slate-200 dark:border-slate-700'
-                  }`}
-                >
-                  {getCountForSystem('ALL')}
-                </span>
-              </button>
-            )}
+
 
             {/* Admin-Only Controls: + Add System & Archive Drawer */}
             {isAdmin && (

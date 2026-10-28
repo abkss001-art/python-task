@@ -10,7 +10,8 @@ import {
   Sun,
   Moon,
   ChevronUp,
-  Check
+  Check,
+  Home
 } from 'lucide-react';
 import { SyncStatusInfo } from '../types/std';
 
@@ -89,17 +90,20 @@ export const MobileBottomNav: React.FC<MobileBottomNavProps> = ({
             <button
               type="button"
               onClick={() => {
-                onSelectSystem('ALL');
+                onSelectSystem('HOME');
                 setIsSystemMenuOpen(false);
               }}
               className={`flex items-center justify-between px-3 py-2 rounded-xl text-xs font-bold transition cursor-pointer ${
-                activeSystem === 'ALL'
+                activeSystem === 'HOME' || !activeSystem
                   ? 'bg-indigo-600 text-white shadow-xs'
                   : 'bg-slate-50 dark:bg-slate-800 text-slate-700 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-700'
               }`}
             >
-              <span>כל המערכות</span>
-              {activeSystem === 'ALL' && <Check className="w-3.5 h-3.5" />}
+              <span className="flex items-center gap-1.5">
+                <Home className="w-3.5 h-3.5" />
+                <span>דף הבית</span>
+              </span>
+              {(activeSystem === 'HOME' || !activeSystem) && <Check className="w-3.5 h-3.5" />}
             </button>
 
             {systems.map((sys) => {

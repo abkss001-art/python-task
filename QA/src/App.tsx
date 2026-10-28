@@ -25,6 +25,7 @@ import { AdminTeamModal } from './components/AdminTeamModal';
 import { AdminSecurityModal } from './components/AdminSecurityModal';
 import { AdminSystemManageModal } from './components/AdminSystemManageModal';
 import { AdminToolsModal } from './components/AdminToolsModal';
+import { SystemSelectorHome } from './components/SystemSelectorHome';
 import { LoginScreen, AuthenticatedUser } from './components/LoginScreen';
 import {
   TeamMember,
@@ -62,7 +63,9 @@ import {
   Download,
   Smartphone,
   ShieldAlert,
-  FolderPlus
+  FolderPlus,
+  Home,
+  ArrowLeft
 } from 'lucide-react';
 import {
   computeUserAuthSignature,
@@ -73,11 +76,20 @@ import {
 } from './utils/securityUtils';
 
 const AUTH_STORAGE_KEY = 'std_qa_auth_user_v1';
+const LAST_ACTIVE_SYSTEM_KEY = 'std_qa_last_active_system_v1';
 
 export function App() {
   const [systems, setSystems] = useState<string[]>(DEFAULT_SYSTEMS);
   const [archivedSystems, setArchivedSystems] = useState<string[]>([]);
-  const [activeSystem, setActiveSystem] = useState<string>('CARGO');
+  const [activeSystem, setActiveSystem] = useState<string>(() => {
+    try {
+      const saved = localStorage.getItem(LAST_ACTIVE_SYSTEM_KEY);
+      if (saved && saved !== 'HOME' && saved !== 'ALL') {
+        return saved;
+      }
+    } catch {}
+    return 'HOME';
+  });
   const [issues, setIssues] = useState<StdIssue[]>([]);
   const [syncStatus, setSyncStatus] = useState<SyncStatusInfo>(syncService.getStatus());
 
@@ -547,10 +559,25 @@ export function App() {
     setIsInstallModalOpen(true);
   };
 
+  const handleSelectSystem = useCallback((sys: string) => {
+    setActiveSystem(sys);
+    setSearchQuery('');
+    setPlatformFilter('ALL');
+    setStatusFilter('ALL');
+    setQuickPreset('ALL');
+    try {
+      if (sys && sys !== 'HOME' && sys !== 'ALL') {
+        localStorage.setItem(LAST_ACTIVE_SYSTEM_KEY, sys);
+      } else {
+        localStorage.setItem(LAST_ACTIVE_SYSTEM_KEY, 'HOME');
+      }
+    } catch {}
+  }, []);
+
   const handleAddSystem = (newSys: string) => {
     if (!isAdmin) return;
     if (systems.includes(newSys)) {
-      setActiveSystem(newSys);
+      handleSelectSystem(newSys);
       return;
     }
     const nextArchived = archivedSystems.filter((s) => s !== newSys);
@@ -560,7 +587,7 @@ export function App() {
     const nextSystems = [...systems, newSys];
     setSystems(nextSystems);
     setArchivedSystems(nextArchived);
-    setActiveSystem(newSys);
+    handleSelectSystem(newSys);
     syncService.pushStateToCloud(
       {
         systems: nextSystems,
@@ -653,7 +680,7 @@ export function App() {
     setSystems(nextSystems);
     setArchivedSystems(nextArchived);
     if (activeSystem === sysToArchive) {
-      setActiveSystem(nextSystems[0] || 'ALL');
+      handleSelectSystem('HOME');
     }
     setSystemToRemove(null);
     syncService.pushStateToCloud(
@@ -671,7 +698,7 @@ export function App() {
       : [...systems, sysToRestore];
     setSystems(nextSystems);
     setArchivedSystems(nextArchived);
-    setActiveSystem(sysToRestore);
+    handleSelectSystem(sysToRestore);
     syncService.pushStateToCloud(
       { systems: nextSystems, archivedSystems: nextArchived, issues },
       undefined,
@@ -717,7 +744,7 @@ export function App() {
     setArchivedSystems(nextArchived);
     setIssues(nextIssues);
     if (activeSystem === sysToDelete) {
-      setActiveSystem(nextSystems[0] || 'ALL');
+      handleSelectSystem('HOME');
     }
     setSystemToRemove(null);
     syncService.pushStateToCloud(
@@ -766,15 +793,28 @@ export function App() {
     if (userAllowedSystems && userAllowedSystems.length > 0) {
       if (userAllowedSystems.length === 1) {
         if (activeSystem !== userAllowedSystems[0]) {
-          setActiveSystem(userAllowedSystems[0]);
+          handleSelectSystem(userAllowedSystems[0]);
         }
       } else {
-        if (activeSystem !== 'ALL' && !userAllowedSystems.includes(activeSystem)) {
-          setActiveSystem('ALL');
+        if (activeSystem !== 'HOME' && !userAllowedSystems.includes(activeSystem)) {
+          handleSelectSystem('HOME');
         }
       }
     }
-  }, [userAllowedSystems, activeSystem]);
+  }, [userAllowedSystems, activeSystem, handleSelectSystem]);
+
+  // Fallback to HOME if active system is not valid in workspace
+  useEffect(() => {
+    if (activeSystem && activeSystem !== 'HOME' && activeSystem !== 'ALL') {
+      if (
+        visibleSystems.length > 0 &&
+        !visibleSystems.includes(activeSystem) &&
+        !archivedSystems.includes(activeSystem)
+      ) {
+        handleSelectSystem('HOME');
+      }
+    }
+  }, [visibleSystems, archivedSystems, activeSystem, handleSelectSystem]);
 
   // Issues belonging to the currently selected system tab (respecting developer allowed systems & archived systems)
   const systemIssues = useMemo(() => {
@@ -782,7 +822,7 @@ export function App() {
     if (userAllowedSystems) {
       baseIssues = baseIssues.filter((i) => userAllowedSystems.includes(i.system));
     }
-    if (activeSystem === 'ALL') {
+    if (activeSystem === 'ALL' || activeSystem === 'HOME' || !activeSystem) {
       return baseIssues.filter((i) => !archivedSystems.includes(i.system));
     }
     return baseIssues.filter((i) => i.system === activeSystem);
@@ -1391,7 +1431,7 @@ export function App() {
         systems={visibleSystems}
         archivedSystems={archivedSystems}
         activeSystem={activeSystem}
-        onSelectSystem={setActiveSystem}
+        onSelectSystem={handleSelectSystem}
         onAddSystem={handleAddSystem}
         onManageSystem={(sys) => setSystemToManage(sys)}
         onRequestRemoveSystem={(sys) => setSystemToManage(sys)}
@@ -1514,10 +1554,60 @@ export function App() {
           </div>
         )}
 
-        {/* Search, Filter & View Switcher Bar */}
-        <FilterBar
-          searchQuery={searchQuery}
-          onSearchChange={setSearchQuery}
+        {/* System Selection Home Page OR System Issues Dashboard */}
+        {activeSystem === 'HOME' || !activeSystem ? (
+          <SystemSelectorHome
+            systems={visibleSystems}
+            archivedSystems={archivedSystems}
+            issues={issues}
+            currentUserName={currentUserName}
+            userTeamTitle={userTeamTitle}
+            isAdmin={isAdmin}
+            canCreateOrEdit={canCreateOrEdit}
+            onSelectSystem={handleSelectSystem}
+            onAddSystem={handleAddSystem}
+            onManageSystem={isAdmin ? (sys) => setSystemToManage(sys) : undefined}
+            onOpenArchiveModal={isAdmin ? () => setIsArchiveModalOpen(true) : undefined}
+            onOpenNewIssue={() => {
+              setEditingIssue(null);
+              setIsIssueModalOpen(true);
+            }}
+          />
+        ) : (
+          <>
+            {/* System Breadcrumb Navigation */}
+            <div className="flex items-center justify-between gap-3 mb-2 px-1">
+              <div className="flex items-center gap-2 text-xs text-slate-500 dark:text-slate-400">
+                <button
+                  type="button"
+                  onClick={() => handleSelectSystem('HOME')}
+                  className="flex items-center gap-1 font-bold text-indigo-600 dark:text-indigo-400 hover:underline cursor-pointer"
+                  title="חזור לדף הבית לבחירת מערכת"
+                >
+                  <Home className="w-3.5 h-3.5" />
+                  <span>דף הבית</span>
+                </button>
+                <span>/</span>
+                <span className="font-extrabold text-slate-800 dark:text-slate-200 bidi-isolate">
+                  מערכת {activeSystem}
+                </span>
+              </div>
+
+              <button
+                type="button"
+                onClick={() => handleSelectSystem('HOME')}
+                className="text-xs font-bold text-slate-600 hover:text-indigo-600 dark:text-slate-400 dark:hover:text-indigo-400 transition flex items-center gap-1.5 cursor-pointer bg-white dark:bg-slate-900 hover:bg-slate-100 dark:hover:bg-slate-800 px-3 py-1.5 rounded-xl border border-slate-200 dark:border-slate-800 shadow-2xs"
+                title="חזור לבחירת מערכת"
+              >
+                <span>החלף מערכת</span>
+                <ArrowLeft className="w-3.5 h-3.5" />
+              </button>
+            </div>
+
+            {/* Search, Filter & View Switcher Bar */}
+            <FilterBar
+              searchQuery={searchQuery}
+              onSearchChange={setSearchQuery}
           platformFilter={platformFilter}
           onPlatformFilterChange={setPlatformFilter}
           statusFilter={statusFilter}
@@ -1668,6 +1758,8 @@ export function App() {
             }
           />
         )}
+          </>
+        )}
       </main>
 
       {/* Mobile Bottom Navigation Bar (Visible on mobile/tablet screens) */}
@@ -1676,7 +1768,7 @@ export function App() {
         onViewModeChange={setViewMode}
         systems={visibleSystems}
         activeSystem={activeSystem}
-        onSelectSystem={setActiveSystem}
+        onSelectSystem={handleSelectSystem}
         canCreateOrEdit={canCreateOrEdit}
         onOpenNewIssue={() => {
           if (!canCreateOrEdit) return;
