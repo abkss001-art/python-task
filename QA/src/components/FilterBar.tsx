@@ -72,17 +72,17 @@ export const FilterBar: React.FC<FilterBarProps> = ({
           onClick={() => onStatusFilterChange('ALL')}
           className={`flex items-center justify-between p-3.5 rounded-2xl border text-right transition cursor-pointer ${
             statusFilter === 'ALL'
-              ? 'bg-slate-900 text-white border-slate-900 shadow-md dark:bg-slate-800 dark:border-slate-700'
+              ? 'bg-slate-900 text-white border-slate-900 shadow-md dark:bg-indigo-950/80 dark:border-indigo-600 dark:text-white'
               : 'bg-white hover:bg-slate-50 text-slate-800 border-slate-200/90 shadow-2xs dark:bg-slate-900 dark:border-slate-800 dark:text-slate-200 dark:hover:bg-slate-800/80'
           }`}
         >
           <div>
-            <div className={`text-xs font-medium ${statusFilter === 'ALL' ? 'text-slate-300' : 'text-slate-500 dark:text-slate-400'}`}>
+            <div className={`text-xs font-semibold ${statusFilter === 'ALL' ? 'text-slate-300 dark:text-indigo-200' : 'text-slate-500 dark:text-slate-300'}`}>
               סה"כ תקלות
             </div>
-            <div className="text-xl font-extrabold font-mono mt-0.5">{systemIssues.length}</div>
+            <div className="text-xl font-extrabold font-mono mt-0.5 text-slate-900 dark:text-slate-100">{systemIssues.length}</div>
           </div>
-          <div className={`w-2.5 h-2.5 rounded-full ${statusFilter === 'ALL' ? 'bg-indigo-400' : 'bg-slate-300 dark:bg-slate-600'}`} />
+          <div className={`w-2.5 h-2.5 rounded-full ${statusFilter === 'ALL' ? 'bg-indigo-400' : 'bg-slate-300 dark:bg-slate-500'}`} />
         </button>
 
         {STATUSES.map((st) => {
@@ -97,7 +97,7 @@ export const FilterBar: React.FC<FilterBarProps> = ({
               onClick={() => onStatusFilterChange(isSelected ? 'ALL' : st)}
               className={`flex items-center justify-between p-3.5 rounded-2xl border text-right transition cursor-pointer ${
                 isSelected
-                  ? `${cfg.bgBadge} ${cfg.borderBadge} ring-2 ${cfg.activeRing} shadow-sm dark:bg-opacity-20`
+                  ? `${cfg.bgBadge} ${cfg.borderBadge} ring-2 ${cfg.activeRing} shadow-sm`
                   : 'bg-white hover:bg-slate-50 border-slate-200/90 shadow-2xs dark:bg-slate-900 dark:border-slate-800 dark:hover:bg-slate-800/80'
               }`}
             >
@@ -120,26 +120,26 @@ export const FilterBar: React.FC<FilterBarProps> = ({
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:flex lg:flex-wrap items-center gap-2.5 flex-1">
             {/* Free Text Search */}
             <div className="relative flex-1 min-w-[200px]">
-              <Search className="w-4 h-4 text-slate-400 dark:text-slate-400 absolute right-3.5 top-1/2 -translate-y-1/2 pointer-events-none" />
+              <Search className="w-4 h-4 text-slate-400 dark:text-slate-300 absolute right-3.5 top-1/2 -translate-y-1/2 pointer-events-none" />
               <input
                 type="text"
                 value={searchQuery}
                 onChange={(e) => onSearchChange(e.target.value)}
                 placeholder="חיפוש חופשי בנושא, מהות השגיאה, הערות או כותב..."
-                className="w-full pr-10 pl-3 py-2 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50/70 dark:bg-slate-800 focus:bg-white dark:focus:bg-slate-800 text-sm text-slate-900 dark:text-slate-100 placeholder:text-slate-400 dark:placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-indigo-500/30 focus:border-indigo-500 transition rtl-safe"
+                className="w-full pr-10 pl-3 py-2 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50/70 dark:bg-slate-950/70 focus:bg-white dark:focus:bg-slate-950 text-sm text-slate-900 dark:text-slate-100 placeholder:text-slate-400 dark:placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-indigo-500/30 focus:border-indigo-500 transition rtl-safe"
               />
             </div>
 
             {/* Filter by Test Case ID (מזהה תסריט) */}
             <div className="relative sm:w-44">
-              <Hash className="w-4 h-4 text-slate-400 dark:text-slate-400 absolute right-3 top-1/2 -translate-y-1/2 pointer-events-none" />
+              <Hash className="w-4 h-4 text-slate-400 dark:text-slate-300 absolute right-3 top-1/2 -translate-y-1/2 pointer-events-none" />
               <input
                 type="text"
                 list="testcase-id-suggestions"
                 value={testCaseFilter}
                 onChange={(e) => onTestCaseFilterChange(e.target.value)}
                 placeholder="מזהה תסריט (10, 11...)"
-                className="w-full pr-9 pl-3 py-2 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50/70 dark:bg-slate-800 focus:bg-white dark:focus:bg-slate-800 text-sm text-slate-900 dark:text-slate-100 placeholder:text-slate-400 dark:placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-indigo-500/30 focus:border-indigo-500 transition rtl-safe"
+                className="w-full pr-9 pl-3 py-2 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50/70 dark:bg-slate-950/70 focus:bg-white dark:focus:bg-slate-950 text-sm text-slate-900 dark:text-slate-100 placeholder:text-slate-400 dark:placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-indigo-500/30 focus:border-indigo-500 transition rtl-safe"
               />
               <datalist id="testcase-id-suggestions">
                 {availableTestCaseIds.map((id) => (
@@ -150,15 +150,15 @@ export const FilterBar: React.FC<FilterBarProps> = ({
 
             {/* Filter by Platform */}
             <div className="relative sm:w-44">
-              <MonitorSmartphone className="w-4 h-4 text-slate-400 dark:text-slate-400 absolute right-3 top-1/2 -translate-y-1/2 pointer-events-none" />
+              <MonitorSmartphone className="w-4 h-4 text-slate-400 dark:text-slate-300 absolute right-3 top-1/2 -translate-y-1/2 pointer-events-none" />
               <select
                 value={platformFilter}
                 onChange={(e) => onPlatformFilterChange(e.target.value as StdPlatform | 'ALL')}
-                className="w-full pr-9 pl-3 py-2 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50/70 dark:bg-slate-800 focus:bg-white dark:focus:bg-slate-800 text-sm text-slate-800 dark:text-slate-100 font-medium focus:outline-none focus:ring-2 focus:ring-indigo-500/30 focus:border-indigo-500 transition cursor-pointer"
+                className="w-full pr-9 pl-3 py-2 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50/70 dark:bg-slate-950/70 focus:bg-white dark:focus:bg-slate-950 text-sm text-slate-800 dark:text-slate-100 font-medium focus:outline-none focus:ring-2 focus:ring-indigo-500/30 focus:border-indigo-500 transition cursor-pointer"
               >
-                <option value="ALL" className="bg-white dark:bg-slate-800 text-slate-900 dark:text-slate-100">כל הפלטפורמות</option>
+                <option value="ALL" className="bg-white dark:bg-slate-900 text-slate-900 dark:text-slate-100">כל הפלטפורמות</option>
                 {PLATFORMS.map((p) => (
-                  <option key={p} value={p} className="bg-white dark:bg-slate-800 text-slate-900 dark:text-slate-100">
+                  <option key={p} value={p} className="bg-white dark:bg-slate-900 text-slate-900 dark:text-slate-100">
                     פלטפורמה: {p}
                   </option>
                 ))}
@@ -167,15 +167,15 @@ export const FilterBar: React.FC<FilterBarProps> = ({
 
             {/* Filter by Status */}
             <div className="relative sm:w-48">
-              <Filter className="w-4 h-4 text-slate-400 dark:text-slate-400 absolute right-3 top-1/2 -translate-y-1/2 pointer-events-none" />
+              <Filter className="w-4 h-4 text-slate-400 dark:text-slate-300 absolute right-3 top-1/2 -translate-y-1/2 pointer-events-none" />
               <select
                 value={statusFilter}
                 onChange={(e) => onStatusFilterChange(e.target.value as StdStatus | 'ALL')}
-                className="w-full pr-9 pl-3 py-2 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50/70 dark:bg-slate-800 focus:bg-white dark:focus:bg-slate-800 text-sm text-slate-800 dark:text-slate-100 font-medium focus:outline-none focus:ring-2 focus:ring-indigo-500/30 focus:border-indigo-500 transition cursor-pointer"
+                className="w-full pr-9 pl-3 py-2 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50/70 dark:bg-slate-950/70 focus:bg-white dark:focus:bg-slate-950 text-sm text-slate-800 dark:text-slate-100 font-medium focus:outline-none focus:ring-2 focus:ring-indigo-500/30 focus:border-indigo-500 transition cursor-pointer"
               >
-                <option value="ALL" className="bg-white dark:bg-slate-800 text-slate-900 dark:text-slate-100">כל הסטטוסים</option>
+                <option value="ALL" className="bg-white dark:bg-slate-900 text-slate-900 dark:text-slate-100">כל הסטטוסים</option>
                 {STATUSES.map((st) => (
-                  <option key={st} value={st} className="bg-white dark:bg-slate-800 text-slate-900 dark:text-slate-100">
+                  <option key={st} value={st} className="bg-white dark:bg-slate-900 text-slate-900 dark:text-slate-100">
                     סטטוס: {st}
                   </option>
                 ))}
@@ -186,7 +186,7 @@ export const FilterBar: React.FC<FilterBarProps> = ({
               <button
                 type="button"
                 onClick={onResetFilters}
-                className="flex items-center justify-center gap-1.5 px-3 py-2 rounded-xl bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-300 text-xs font-semibold transition cursor-pointer"
+                className="flex items-center justify-center gap-1.5 px-3 py-2 rounded-xl bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 text-xs font-semibold transition cursor-pointer"
                 title="נקה את כל הסינונים"
               >
                 <RotateCcw className="w-3.5 h-3.5" />
@@ -204,7 +204,7 @@ export const FilterBar: React.FC<FilterBarProps> = ({
                 className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold transition cursor-pointer ${
                   viewMode === 'table'
                     ? 'bg-white dark:bg-slate-700 text-indigo-600 dark:text-indigo-400 shadow-xs'
-                    : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-200'
+                    : 'text-slate-600 dark:text-slate-300 hover:text-slate-900 dark:hover:text-slate-100'
                 }`}
               >
                 <Table2 className="w-4 h-4" />
@@ -217,7 +217,7 @@ export const FilterBar: React.FC<FilterBarProps> = ({
                 className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold transition cursor-pointer ${
                   viewMode === 'cards'
                     ? 'bg-white dark:bg-slate-700 text-indigo-600 dark:text-indigo-400 shadow-xs'
-                    : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-200'
+                    : 'text-slate-600 dark:text-slate-300 hover:text-slate-900 dark:hover:text-slate-100'
                 }`}
               >
                 <LayoutGrid className="w-4 h-4" />
@@ -230,7 +230,7 @@ export const FilterBar: React.FC<FilterBarProps> = ({
                 className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold transition cursor-pointer ${
                   viewMode === 'kanban'
                     ? 'bg-white dark:bg-slate-700 text-indigo-600 dark:text-indigo-400 shadow-xs'
-                    : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-200'
+                    : 'text-slate-600 dark:text-slate-300 hover:text-slate-900 dark:hover:text-slate-100'
                 }`}
               >
                 <Columns3 className="w-4 h-4" />
@@ -241,10 +241,10 @@ export const FilterBar: React.FC<FilterBarProps> = ({
             <button
               type="button"
               onClick={onExportCsv}
-              className="flex items-center gap-1.5 px-3 py-2 rounded-xl border border-slate-200 dark:border-slate-700 hover:bg-slate-50 dark:hover:bg-slate-800 text-slate-700 dark:text-slate-300 text-xs font-semibold transition cursor-pointer"
+              className="flex items-center gap-1.5 px-3 py-2 rounded-xl border border-slate-200 dark:border-slate-700 hover:bg-slate-50 dark:hover:bg-slate-800 text-slate-700 dark:text-slate-200 text-xs font-semibold transition cursor-pointer"
               title="ייצא את התקלות המסוננות לקובץ Excel / CSV"
             >
-              <Download className="w-3.5 h-3.5 text-slate-500 dark:text-slate-400" />
+              <Download className="w-3.5 h-3.5 text-slate-500 dark:text-slate-300" />
               <span className="hidden sm:inline">ייצוא Excel</span>
             </button>
           </div>

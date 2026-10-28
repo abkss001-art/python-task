@@ -213,14 +213,14 @@ export const AdminSecurityModal: React.FC<AdminSecurityModalProps> = ({
 
               <div>
                 <h4 className="text-sm font-black text-slate-900 dark:text-slate-100">אזור מוגן בקוד-על</h4>
-                <p className="text-xs text-slate-600 dark:text-slate-400 mt-1 max-w-xs mx-auto">
+                <p className="text-xs text-slate-600 dark:text-slate-300 mt-1 max-w-xs mx-auto font-medium">
                   כדי לשנות את קודי הכניסה למערכת או את שם מנהל-העל, נא להזין את קוד האבטחה הראשי שלך:
                 </p>
               </div>
 
               <form onSubmit={handleUnlock} className="max-w-xs mx-auto space-y-3">
                 <div className="relative">
-                  <KeyRound className="w-4 h-4 text-slate-400 absolute right-3.5 top-1/2 -translate-y-1/2 pointer-events-none" />
+                  <KeyRound className="w-4 h-4 text-slate-400 dark:text-slate-400 absolute right-3.5 top-1/2 -translate-y-1/2 pointer-events-none" />
                   <input
                     type="password"
                     inputMode="numeric"
@@ -233,10 +233,10 @@ export const AdminSecurityModal: React.FC<AdminSecurityModalProps> = ({
                       setPinError(null);
                     }}
                     placeholder={lockout.isLocked ? `נעול (${lockout.remainingSeconds} שניות)` : "הזן קוד אבטחה ראשי..."}
-                    className={`w-full pr-10 pl-4 py-2.5 rounded-xl border text-sm font-mono text-center text-slate-900 dark:text-slate-100 focus:outline-none transition ${
+                    className={`w-full pr-10 pl-4 py-2.5 rounded-xl border text-sm font-mono text-center text-slate-900 dark:text-slate-100 placeholder:text-slate-400 dark:placeholder:text-slate-400 focus:outline-none transition ${
                       lockout.isLocked
-                        ? 'bg-slate-100 dark:bg-slate-800 border-slate-300 dark:border-slate-700 opacity-60 cursor-not-allowed'
-                        : 'border-slate-300 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 focus:bg-white dark:focus:bg-slate-850 focus:ring-2 focus:ring-amber-500/30 focus:border-amber-500'
+                        ? 'bg-slate-100 dark:bg-slate-900 border-slate-300 dark:border-slate-700 opacity-60 cursor-not-allowed'
+                        : 'border-slate-300 dark:border-slate-700 bg-slate-50 dark:bg-slate-950 focus:bg-white dark:focus:bg-slate-950 focus:ring-2 focus:ring-amber-500/30 focus:border-amber-500'
                     }`}
                   />
                 </div>
@@ -297,9 +297,9 @@ export const AdminSecurityModal: React.FC<AdminSecurityModalProps> = ({
                   value={superAdminName}
                   onChange={(e) => setSuperAdminName(e.target.value)}
                   placeholder="הזן שם מנהל-על..."
-                  className="w-full px-3.5 py-2 rounded-xl bg-white dark:bg-slate-900 border border-amber-300 dark:border-amber-700 text-xs font-bold text-slate-900 dark:text-slate-100 placeholder:text-slate-400 dark:placeholder:text-slate-500 focus:outline-none focus:ring-2 focus:ring-amber-500/30"
+                  className="w-full px-3.5 py-2 rounded-xl bg-white dark:bg-slate-950 border border-amber-300 dark:border-amber-700 text-xs font-bold text-slate-900 dark:text-slate-100 placeholder:text-slate-400 dark:placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-amber-500/30"
                 />
-                <p className="text-[11px] text-amber-800/80 dark:text-amber-400/80 leading-relaxed">
+                <p className="text-[11px] text-amber-800/80 dark:text-amber-300 leading-relaxed">
                   שם זה מוגדר כמנהל הראשי של המערכת ולא ניתן למחיקה.
                 </p>
               </div>
@@ -322,7 +322,7 @@ export const AdminSecurityModal: React.FC<AdminSecurityModalProps> = ({
                     value={newQaCode}
                     onChange={(e) => setNewQaCode(e.target.value)}
                     placeholder="הזן קוד בודק חדש..."
-                    className="w-full px-3.5 py-2 rounded-xl bg-slate-50 dark:bg-slate-800 border border-slate-300 dark:border-slate-700 text-xs font-mono text-slate-900 dark:text-slate-100 placeholder:text-slate-400 dark:placeholder:text-slate-500 focus:bg-white dark:focus:bg-slate-850 focus:outline-none focus:border-indigo-500"
+                    className="w-full px-3.5 py-2 rounded-xl bg-slate-50 dark:bg-slate-950 border border-slate-300 dark:border-slate-700 text-xs font-mono text-slate-900 dark:text-slate-100 placeholder:text-slate-400 dark:placeholder:text-slate-400 focus:bg-white dark:focus:bg-slate-950 focus:outline-none focus:border-indigo-500"
                   />
                 </div>
 
@@ -337,7 +337,7 @@ export const AdminSecurityModal: React.FC<AdminSecurityModalProps> = ({
                     value={newDevCode}
                     onChange={(e) => setNewDevCode(e.target.value)}
                     placeholder="הזן קוד מפתח חדש..."
-                    className="w-full px-3.5 py-2 rounded-xl bg-slate-50 dark:bg-slate-800 border border-slate-300 dark:border-slate-700 text-xs font-mono text-slate-900 dark:text-slate-100 placeholder:text-slate-400 dark:placeholder:text-slate-500 focus:bg-white dark:focus:bg-slate-850 focus:outline-none focus:border-indigo-500"
+                    className="w-full px-3.5 py-2 rounded-xl bg-slate-50 dark:bg-slate-950 border border-slate-300 dark:border-slate-700 text-xs font-mono text-slate-900 dark:text-slate-100 placeholder:text-slate-400 dark:placeholder:text-slate-400 focus:bg-white dark:focus:bg-slate-950 focus:outline-none focus:border-indigo-500"
                   />
                 </div>
 
@@ -352,7 +352,7 @@ export const AdminSecurityModal: React.FC<AdminSecurityModalProps> = ({
                     value={newAdminCode}
                     onChange={(e) => setNewAdminCode(e.target.value)}
                     placeholder="הזן קוד מנהל חדש..."
-                    className="w-full px-3.5 py-2 rounded-xl bg-slate-50 dark:bg-slate-800 border border-slate-300 dark:border-slate-700 text-xs font-mono text-slate-900 dark:text-slate-100 placeholder:text-slate-400 dark:placeholder:text-slate-500 focus:bg-white dark:focus:bg-slate-850 focus:outline-none focus:border-indigo-500"
+                    className="w-full px-3.5 py-2 rounded-xl bg-slate-50 dark:bg-slate-950 border border-slate-300 dark:border-slate-700 text-xs font-mono text-slate-900 dark:text-slate-100 placeholder:text-slate-400 dark:placeholder:text-slate-400 focus:bg-white dark:focus:bg-slate-950 focus:outline-none focus:border-indigo-500"
                   />
                 </div>
               </div>

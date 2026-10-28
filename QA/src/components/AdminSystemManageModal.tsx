@@ -130,19 +130,19 @@ export const AdminSystemManageModal: React.FC<AdminSystemManageModalProps> = ({
                   setErrorMsg(null);
                 }}
                 placeholder="הזן שם חדש למערכת..."
-                className="flex-1 px-3.5 py-2.5 rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 text-xs font-bold text-slate-900 dark:text-slate-100 placeholder:text-slate-400 dark:placeholder:text-slate-500 focus:outline-none focus:ring-2 focus:ring-indigo-500/30 focus:border-indigo-500 transition"
+                className="flex-1 px-3.5 py-2.5 rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-950 text-xs font-bold text-slate-900 dark:text-slate-100 placeholder:text-slate-400 dark:placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-indigo-500/30 focus:border-indigo-500 transition"
               />
               <button
                 type="submit"
                 disabled={!newName.trim() || newName.trim() === systemName}
-                className="px-4 py-2.5 rounded-xl bg-indigo-600 hover:bg-indigo-700 disabled:bg-slate-200 dark:disabled:bg-slate-800 disabled:text-slate-400 dark:disabled:text-slate-600 text-white text-xs font-extrabold flex items-center justify-center gap-1.5 cursor-pointer disabled:cursor-not-allowed shadow-xs transition shrink-0"
+                className="px-4 py-2.5 rounded-xl bg-indigo-600 hover:bg-indigo-700 disabled:bg-slate-200 dark:disabled:bg-slate-800 disabled:text-slate-400 dark:disabled:text-slate-500 text-white text-xs font-extrabold flex items-center justify-center gap-1.5 cursor-pointer disabled:cursor-not-allowed shadow-xs transition shrink-0"
               >
                 <Save className="w-4 h-4" />
                 <span>שמור שם חדש</span>
               </button>
             </div>
 
-            <p className="text-[11px] text-slate-500 dark:text-slate-400 leading-relaxed flex items-center gap-1.5">
+            <p className="text-[11px] text-slate-500 dark:text-slate-300 leading-relaxed flex items-center gap-1.5">
               <Info className="w-3.5 h-3.5 text-indigo-500 dark:text-indigo-400 shrink-0" />
               <span>שינוי השם יעדכן מיידית את כל תסריטי הבדיקה ויסתנכרן בזמן אמת מול כל הצוות.</span>
             </p>
@@ -174,7 +174,7 @@ export const AdminSystemManageModal: React.FC<AdminSystemManageModalProps> = ({
                       <div className="text-xs font-extrabold text-slate-900 dark:text-slate-100">
                         העבר מערכת זו לארכיון (מומלץ)
                       </div>
-                      <div className="text-[11px] text-slate-600 dark:text-slate-400 mt-0.5 leading-relaxed">
+                      <div className="text-[11px] text-slate-600 dark:text-slate-300 mt-0.5 leading-relaxed">
                         המערכת והתסריטים שלה יוסתרו מהסרגל, וניתן יהיה לשחזר אותם בכל שלב.
                       </div>
                     </div>

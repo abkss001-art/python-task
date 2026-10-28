@@ -252,10 +252,10 @@ export const IssueFormModal: React.FC<IssueFormModalProps> = ({
               <select
                 value={system}
                 onChange={(e) => handleSystemChange(e.target.value)}
-                className="w-full px-3.5 py-2.5 rounded-xl border border-slate-300 dark:border-slate-700 bg-slate-50/70 dark:bg-slate-800 focus:bg-white dark:focus:bg-slate-800 text-sm font-bold text-slate-900 dark:text-slate-100 focus:outline-none focus:ring-2 focus:ring-indigo-500/30 focus:border-indigo-500 transition cursor-pointer"
+                className="w-full px-3.5 py-2.5 rounded-xl border border-slate-300 dark:border-slate-700 bg-slate-50/70 dark:bg-slate-950/80 focus:bg-white dark:focus:bg-slate-950 text-sm font-bold text-slate-900 dark:text-slate-100 focus:outline-none focus:ring-2 focus:ring-indigo-500/30 focus:border-indigo-500 transition cursor-pointer"
               >
                 {availableSystems.map((sys) => (
-                  <option key={sys} value={sys} className="dark:bg-slate-800 dark:text-slate-100">
+                  <option key={sys} value={sys} className="dark:bg-slate-900 dark:text-slate-100">
                     {sys}
                   </option>
                 ))}
@@ -265,12 +265,12 @@ export const IssueFormModal: React.FC<IssueFormModalProps> = ({
             <div>
               <label className="block text-xs font-bold text-slate-700 dark:text-slate-200 mb-1.5 flex items-center justify-between">
                 <span>מזהה תסריט בדיקה</span>
-                <span className="text-[11px] font-semibold text-slate-400 dark:text-slate-500 flex items-center gap-1">
-                  <Lock className="w-3 h-3 text-slate-400 dark:text-slate-500" />
+                <span className="text-[11px] font-semibold text-slate-400 dark:text-slate-400 flex items-center gap-1">
+                  <Lock className="w-3 h-3 text-slate-400 dark:text-slate-400" />
                   <span>מספור אוטומטי</span>
                 </span>
               </label>
-              <div className="flex items-center justify-between px-3.5 py-2.5 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-100/90 dark:bg-slate-800/90 text-sm font-mono select-none shadow-2xs">
+              <div className="flex items-center justify-between px-3.5 py-2.5 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-100/90 dark:bg-slate-950/80 text-sm font-mono select-none shadow-2xs">
                 <div className="flex items-center gap-1.5">
                   <span className="text-slate-400 dark:text-slate-400 font-bold text-xs">תסריט #</span>
                   <span className="text-base font-black text-indigo-700 dark:text-indigo-400">{testCaseId}</span>
@@ -383,7 +383,7 @@ export const IssueFormModal: React.FC<IssueFormModalProps> = ({
               value={subject}
               onChange={(e) => setSubject(e.target.value)}
               placeholder="תיאור קצר וממוקד של התקלה..."
-              className="w-full px-3.5 py-2.5 rounded-xl border border-slate-300 dark:border-slate-700 bg-slate-50/70 dark:bg-slate-800 focus:bg-white dark:focus:bg-slate-800 text-sm text-slate-900 dark:text-slate-100 placeholder:text-slate-400 dark:placeholder:text-slate-500 focus:outline-none focus:ring-2 focus:ring-indigo-500/30 focus:border-indigo-500 transition rtl-safe"
+              className="w-full px-3.5 py-2.5 rounded-xl border border-slate-300 dark:border-slate-700 bg-slate-50/70 dark:bg-slate-950/80 focus:bg-white dark:focus:bg-slate-950 text-sm text-slate-900 dark:text-slate-100 placeholder:text-slate-400 dark:placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-indigo-500/30 focus:border-indigo-500 transition rtl-safe"
             />
           </div>
 
@@ -398,7 +398,7 @@ export const IssueFormModal: React.FC<IssueFormModalProps> = ({
               value={description}
               onChange={(e) => setDescription(e.target.value)}
               placeholder="פרט את שלבי השחזור, התוצאה שהתקבלה בפועל והתוצאה המצופה..."
-              className="w-full px-3.5 py-2.5 rounded-xl border border-slate-300 dark:border-slate-700 bg-slate-50/70 dark:bg-slate-800 focus:bg-white dark:focus:bg-slate-800 text-sm text-slate-900 dark:text-slate-100 placeholder:text-slate-400 dark:placeholder:text-slate-500 focus:outline-none focus:ring-2 focus:ring-indigo-500/30 focus:border-indigo-500 transition rtl-safe"
+              className="w-full px-3.5 py-2.5 rounded-xl border border-slate-300 dark:border-slate-700 bg-slate-50/70 dark:bg-slate-950/80 focus:bg-white dark:focus:bg-slate-950 text-sm text-slate-900 dark:text-slate-100 placeholder:text-slate-400 dark:placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-indigo-500/30 focus:border-indigo-500 transition rtl-safe"
             />
           </div>
 
@@ -530,7 +530,7 @@ export const IssueFormModal: React.FC<IssueFormModalProps> = ({
                 value={initialComment}
                 onChange={(e) => setInitialComment(e.target.value)}
                 placeholder="הערה נוספת לצוות..."
-                className="w-full px-3.5 py-2 rounded-xl border border-slate-300 dark:border-slate-700 bg-slate-50/70 dark:bg-slate-800 focus:bg-white dark:focus:bg-slate-800 text-sm text-slate-900 dark:text-slate-100 placeholder:text-slate-400 dark:placeholder:text-slate-500 focus:outline-none focus:ring-2 focus:ring-indigo-500/30 focus:border-indigo-500 transition rtl-safe"
+                className="w-full px-3.5 py-2 rounded-xl border border-slate-300 dark:border-slate-700 bg-slate-50/70 dark:bg-slate-950/80 focus:bg-white dark:focus:bg-slate-950 text-sm text-slate-900 dark:text-slate-100 placeholder:text-slate-400 dark:placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-indigo-500/30 focus:border-indigo-500 transition rtl-safe"
               />
             </div>
           )}

@@ -6,6 +6,9 @@
   html {
     direction: rtl;
     font-family: 'Rubik', 'Heebo', system-ui, -apple-system, sans-serif;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+    text-rendering: optimizeLegibility;
   }
 
   html.dark {
@@ -16,6 +19,18 @@
     direction: rtl;
     text-align: right;
     overflow-x: hidden;
+  }
+
+  html.dark body {
+    background-color: #090d16;
+    color: #f1f5f9;
+  }
+
+  /* Clear readability for all inputs & textareas in dark mode */
+  html.dark input::placeholder,
+  html.dark textarea::placeholder {
+    color: #94a3b8;
+    opacity: 0.9;
   }
 }
 

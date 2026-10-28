@@ -207,7 +207,7 @@ export const IssueCard: React.FC<IssueCardProps> = ({
           <h3 className="text-base sm:text-lg font-bold text-slate-900 dark:text-slate-100 leading-snug rtl-safe">
             {issue.subject}
           </h3>
-          <p className="text-sm text-slate-600 dark:text-slate-300 leading-relaxed whitespace-pre-wrap rtl-safe bg-slate-50/70 dark:bg-slate-800/60 p-3.5 rounded-xl border border-slate-100 dark:border-slate-800">
+          <p className="text-sm text-slate-700 dark:text-slate-100 leading-relaxed whitespace-pre-wrap rtl-safe bg-slate-50/70 dark:bg-slate-800/80 p-3.5 rounded-xl border border-slate-100 dark:border-slate-700/80">
             {issue.description}
           </p>
         </div>
@@ -215,12 +215,12 @@ export const IssueCard: React.FC<IssueCardProps> = ({
         {/* Uncropped Screenshots Preview Gallery */}
         {issue.screenshots && issue.screenshots.length > 0 && (
           <div className="space-y-2">
-            <div className="flex items-center justify-between text-xs text-slate-500">
+            <div className="flex items-center justify-between text-xs text-slate-500 dark:text-slate-300">
               <span className="font-semibold flex items-center gap-1.5">
-                <ImagePlus className="w-3.5 h-3.5 text-indigo-500" />
+                <ImagePlus className="w-3.5 h-3.5 text-indigo-500 dark:text-indigo-400" />
                 <span>צילומי מסך מצורפים ({issue.screenshots.length})</span>
               </span>
-              <span className="text-[11px] text-indigo-600 font-medium">
+              <span className="text-[11px] text-indigo-600 dark:text-indigo-400 font-medium">
                 לחץ על תמונה לפתיחה במסך מלא וזום
               </span>
             </div>
@@ -240,7 +240,7 @@ export const IssueCard: React.FC<IssueCardProps> = ({
                       `תסריט #${issue.testCaseId} - ${issue.subject}`
                     )
                   }
-                  className="group/img relative rounded-xl overflow-hidden bg-slate-900/95 border border-slate-200 flex items-center justify-center h-48 sm:h-56 cursor-zoom-in p-1.5 transition hover:border-indigo-400"
+                  className="group/img relative rounded-xl overflow-hidden bg-slate-900/95 border border-slate-200 dark:border-slate-700 flex items-center justify-center h-48 sm:h-56 cursor-zoom-in p-1.5 transition hover:border-indigo-400"
                 >
                   {/* object-contain ensures screenshots are NEVER squished or cropped */}
                   <img
@@ -263,22 +263,22 @@ export const IssueCard: React.FC<IssueCardProps> = ({
         )}
 
         {/* Meta Info Row: Reporter & Timestamp */}
-        <div className="flex items-center justify-between text-[11px] text-slate-400 pt-1">
+        <div className="flex items-center justify-between text-[11px] text-slate-500 dark:text-slate-300 font-medium pt-1">
           <span className="flex items-center gap-1 rtl-safe">
-            <User className="w-3 h-3" />
+            <User className="w-3.5 h-3.5 text-slate-400 dark:text-slate-300" />
             <span>דווח ע"י: {issue.createdBy}</span>
           </span>
           <span className="flex items-center gap-1">
-            <Clock className="w-3 h-3" />
+            <Clock className="w-3.5 h-3.5 text-slate-400 dark:text-slate-300" />
             <span>עודכן: {formatHebrewDateTime(issue.updatedAt)}</span>
           </span>
         </div>
       </div>
 
       {/* Bottom Section: Developer-Tester Comments Thread */}
-      <div className="bg-slate-50/90 dark:bg-slate-950/60 border-t border-slate-200/80 dark:border-slate-800 p-4 space-y-3">
+      <div className="bg-slate-50/90 dark:bg-slate-950/80 border-t border-slate-200/80 dark:border-slate-800 p-4 space-y-3">
         <div className="flex items-center justify-between">
-          <div className="flex items-center gap-1.5 text-xs font-bold text-slate-700 dark:text-slate-300">
+          <div className="flex items-center gap-1.5 text-xs font-bold text-slate-700 dark:text-slate-200">
             <MessageSquare className="w-3.5 h-3.5 text-indigo-600 dark:text-indigo-400" />
             <span>שרשור הערות בודקים / פיתוח ({commentsList.length})</span>
           </div>
@@ -306,8 +306,8 @@ export const IssueCard: React.FC<IssueCardProps> = ({
                   key={c.id}
                   className={`p-3 rounded-xl border text-xs space-y-1.5 ${
                     isDev
-                      ? 'bg-purple-50/60 dark:bg-purple-950/30 border-purple-200/70 dark:border-purple-800/50'
-                      : 'bg-white dark:bg-slate-900 border-slate-200/80 dark:border-slate-800'
+                      ? 'bg-purple-50/60 dark:bg-purple-950/40 border-purple-200/70 dark:border-purple-800/60'
+                      : 'bg-white dark:bg-slate-900 border-slate-200/80 dark:border-slate-750'
                   }`}
                 >
                   <div className="flex items-center justify-between gap-2">
@@ -316,19 +316,19 @@ export const IssueCard: React.FC<IssueCardProps> = ({
                       <span
                         className={`px-1.5 py-0.2 rounded text-[10px] font-bold ${
                           isDev
-                            ? 'bg-purple-100 dark:bg-purple-900/60 text-purple-700 dark:text-purple-300'
-                            : 'bg-sky-100 dark:bg-sky-900/60 text-sky-700 dark:text-sky-300'
+                            ? 'bg-purple-100 dark:bg-purple-900/70 text-purple-700 dark:text-purple-200'
+                            : 'bg-sky-100 dark:bg-sky-900/70 text-sky-700 dark:text-sky-200'
                         }`}
                       >
                         {isDev ? 'פיתוח' : 'QA'}
                       </span>
                     </div>
-                    <span className="text-[11px] text-slate-400 font-mono">
+                    <span className="text-[11px] text-slate-400 dark:text-slate-400 font-mono">
                       {formatHebrewDateTime(c.createdAt)}
                     </span>
                   </div>
                   {c.text && (
-                    <p className="text-slate-700 dark:text-slate-300 leading-relaxed whitespace-pre-wrap rtl-safe">
+                    <p className="text-slate-700 dark:text-slate-200 leading-relaxed whitespace-pre-wrap rtl-safe font-normal">
                       {c.text}
                     </p>
                   )}
@@ -357,7 +357,7 @@ export const IssueCard: React.FC<IssueCardProps> = ({
             })}
           </div>
         ) : (
-          <p className="text-xs text-slate-400 dark:text-slate-500 italic">
+          <p className="text-xs text-slate-400 dark:text-slate-400 italic">
             אין עדיין הערות לתקלה זו. כתוב הערה או הדבק צילום מסך (Ctrl+V)...
           </p>
         )}
@@ -389,7 +389,7 @@ export const IssueCard: React.FC<IssueCardProps> = ({
             onChange={(e) => setCommentText(e.target.value)}
             onPaste={handleCommentPaste}
             placeholder={`הוסף הערה כ-${currentUserName}...`}
-            className="flex-1 px-3 py-2 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-xs text-slate-900 dark:text-slate-100 placeholder:text-slate-400 dark:placeholder:text-slate-500 focus:outline-none focus:ring-2 focus:ring-indigo-500/30 focus:border-indigo-500 transition rtl-safe"
+            className="flex-1 px-3 py-2 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-950 text-xs text-slate-900 dark:text-slate-100 placeholder:text-slate-400 dark:placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-indigo-500/30 focus:border-indigo-500 transition rtl-safe"
           />
           <button
             type="submit"

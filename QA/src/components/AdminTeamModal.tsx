@@ -273,7 +273,7 @@ export const AdminTeamModal: React.FC<AdminTeamModalProps> = ({
                 value={newFullName}
                 onChange={(e) => setNewFullName(e.target.value)}
                 placeholder="הכנס שם מלא (פרטי ומשפחה)..."
-                className="flex-1 px-3.5 py-2.5 rounded-xl bg-white dark:bg-slate-900 border border-slate-300 dark:border-slate-700 text-xs text-slate-900 dark:text-slate-100 placeholder:text-slate-400 dark:placeholder:text-slate-500 focus:outline-none focus:border-indigo-500 font-semibold shadow-2xs"
+                className="flex-1 px-3.5 py-2.5 rounded-xl bg-white dark:bg-slate-950 border border-slate-300 dark:border-slate-700 text-xs text-slate-900 dark:text-slate-100 placeholder:text-slate-400 dark:placeholder:text-slate-400 focus:outline-none focus:border-indigo-500 font-semibold shadow-2xs"
               />
               <button
                 type="submit"
@@ -625,9 +625,9 @@ export const AdminTeamModal: React.FC<AdminTeamModalProps> = ({
                             value={editingFullName}
                             onChange={(e) => setEditingFullName(e.target.value)}
                             placeholder="שם מלא..."
-                            className="w-full px-3 py-2 rounded-xl bg-white dark:bg-slate-900 border border-slate-300 dark:border-slate-700 text-xs text-slate-900 dark:text-slate-100 font-semibold focus:outline-none focus:border-indigo-500 shadow-2xs"
+                            className="w-full px-3 py-2 rounded-xl bg-white dark:bg-slate-950 border border-slate-300 dark:border-slate-700 text-xs text-slate-900 dark:text-slate-100 font-semibold focus:outline-none focus:border-indigo-500 shadow-2xs"
                           />
-                          <p className="text-[10px] text-slate-500 dark:text-slate-400 mt-1">
+                          <p className="text-[10px] text-slate-500 dark:text-slate-300 mt-1">
                             💡 שינוי השם יסנכרן באופן אוטומטי את כל הדיווחים, ההערות ויומן הפעולות של איש הצוות.
                           </p>
                         </div>
@@ -780,7 +780,7 @@ export const AdminTeamModal: React.FC<AdminTeamModalProps> = ({
                             </div>
                           ) : (
                             <div className="flex items-center gap-1 mt-0.5 flex-wrap">
-                              <span className="text-[10px] text-slate-500 dark:text-slate-400 font-semibold">
+                              <span className="text-[10px] text-slate-500 dark:text-slate-300 font-semibold">
                                 מערכות מורשות:
                               </span>
                               {(() => {
@@ -805,7 +805,7 @@ export const AdminTeamModal: React.FC<AdminTeamModalProps> = ({
                                   });
                                 }
                                 return (
-                                  <span className="text-[10px] text-slate-400 font-medium">
+                                  <span className="text-[10px] text-slate-500 dark:text-slate-300 font-medium">
                                     כל המערכות
                                   </span>
                                 );

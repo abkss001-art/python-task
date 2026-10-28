@@ -288,7 +288,7 @@ export const SmartTableView: React.FC<SmartTableViewProps> = ({
                     {/* Subject & Description */}
                     <td className="py-3.5 px-4 align-top max-w-md">
                       <div className="font-bold text-slate-900 dark:text-slate-100 rtl-safe">{issue.subject}</div>
-                      <div className="text-xs text-slate-600 dark:text-slate-400 mt-1 line-clamp-2 rtl-safe">
+                      <div className="text-xs text-slate-600 dark:text-slate-300 mt-1 line-clamp-2 rtl-safe">
                         {issue.description}
                       </div>
                     </td>
@@ -308,7 +308,7 @@ export const SmartTableView: React.FC<SmartTableViewProps> = ({
                                   `תסריט #${issue.testCaseId} - ${issue.subject}`
                                 )
                               }
-                              className="relative group/thumb w-14 h-11 rounded-lg bg-slate-900 border border-slate-200 overflow-hidden flex items-center justify-center cursor-zoom-in p-0.5 hover:border-indigo-500 transition"
+                              className="relative group/thumb w-14 h-11 rounded-lg bg-slate-900 border border-slate-200 dark:border-slate-700 overflow-hidden flex items-center justify-center cursor-zoom-in p-0.5 hover:border-indigo-500 transition"
                               title="לחץ להגדלה במסך מלא + זום"
                             >
                               <img
@@ -333,14 +333,14 @@ export const SmartTableView: React.FC<SmartTableViewProps> = ({
                                   `תסריט #${issue.testCaseId} - ${issue.subject}`
                                 )
                               }
-                              className="px-2 py-1 rounded-lg bg-slate-100 hover:bg-slate-200 text-xs font-bold text-slate-600 cursor-pointer"
+                              className="px-2 py-1 rounded-lg bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-xs font-bold text-slate-700 dark:text-slate-200 border border-slate-200 dark:border-slate-700 cursor-pointer"
                             >
                               +{issue.screenshots.length - 2}
                             </button>
                           )}
                         </div>
                       ) : (
-                        <span className="inline-flex items-center gap-1 text-xs text-slate-400">
+                        <span className="inline-flex items-center gap-1 text-xs text-slate-400 dark:text-slate-400">
                           <ImageIcon className="w-3.5 h-3.5" />
                           <span>ללא תמונה</span>
                         </span>
@@ -356,7 +356,7 @@ export const SmartTableView: React.FC<SmartTableViewProps> = ({
                           className={`appearance-none pr-6 pl-3 py-1 rounded-full border text-xs font-bold transition cursor-pointer focus:outline-none ${statusStyle.bgBadge} ${statusStyle.textBadge} ${statusStyle.borderBadge}`}
                         >
                           {STATUSES.map((st) => (
-                            <option key={st} value={st} className="bg-white text-slate-900">
+                            <option key={st} value={st} className="bg-white dark:bg-slate-900 text-slate-900 dark:text-slate-100 font-semibold">
                               {st}
                             </option>
                           ))}
@@ -382,10 +382,10 @@ export const SmartTableView: React.FC<SmartTableViewProps> = ({
                         }}
                         className={`relative flex items-center gap-1.5 px-2.5 py-1 rounded-xl border text-xs font-semibold transition cursor-pointer ${
                           hasUnreadComments
-                            ? 'bg-rose-50 hover:bg-rose-100 text-rose-700 border-rose-300 ring-2 ring-rose-500/20'
+                            ? 'bg-rose-50 hover:bg-rose-100 dark:bg-rose-950/70 text-rose-700 dark:text-rose-300 border-rose-300 dark:border-rose-800 ring-2 ring-rose-500/20'
                             : issue.comments.length > 0
-                            ? 'bg-indigo-50/80 hover:bg-indigo-100 text-indigo-700 border-indigo-200'
-                            : 'bg-slate-50 hover:bg-slate-100 text-slate-600 border-slate-200'
+                            ? 'bg-indigo-50/80 hover:bg-indigo-100 dark:bg-indigo-950/70 text-indigo-700 dark:text-indigo-300 border-indigo-200 dark:border-indigo-800'
+                            : 'bg-slate-50 hover:bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 border-slate-200 dark:border-slate-700'
                         }`}
                       >
                         <MessageSquare className="w-3.5 h-3.5" />
@@ -402,17 +402,17 @@ export const SmartTableView: React.FC<SmartTableViewProps> = ({
                         )}
                       </button>
                       {lastComment && !isExpanded && (
-                        <div className="text-[11px] text-slate-500 mt-1 max-w-[180px] truncate rtl-safe">
-                          <span className="font-semibold">{lastComment.author}:</span>{' '}
+                        <div className="text-[11px] text-slate-500 dark:text-slate-300 mt-1 max-w-[180px] truncate rtl-safe font-medium">
+                          <span className="font-semibold text-slate-700 dark:text-slate-200">{lastComment.author}:</span>{' '}
                           {lastComment.text}
                         </div>
                       )}
                     </td>
 
                     {/* Updated At */}
-                    <td className="py-3.5 px-3.5 align-top whitespace-nowrap text-xs text-slate-500">
+                    <td className="py-3.5 px-3.5 align-top whitespace-nowrap text-xs text-slate-500 dark:text-slate-300">
                       <div className="font-mono">{formatHebrewDateTime(issue.updatedAt)}</div>
-                      <div className="text-[11px] text-slate-400 rtl-safe">{issue.createdBy}</div>
+                      <div className="text-[11px] text-slate-400 dark:text-slate-400 rtl-safe">{issue.createdBy}</div>
                     </td>
 
                     {/* Actions (QA/Admin Edit, Admin Delete) */}
@@ -423,7 +423,7 @@ export const SmartTableView: React.FC<SmartTableViewProps> = ({
                             <button
                               type="button"
                               onClick={() => onEditIssue(issue)}
-                              className="p-1.5 rounded-lg text-slate-500 hover:text-indigo-600 hover:bg-indigo-50 transition cursor-pointer"
+                              className="p-1.5 rounded-lg text-slate-400 hover:text-indigo-600 dark:hover:text-indigo-400 hover:bg-indigo-50 dark:hover:bg-slate-800 transition cursor-pointer"
                               title="ערוך תקלה"
                             >
                               <Edit3 className="w-4 h-4" />
@@ -433,7 +433,7 @@ export const SmartTableView: React.FC<SmartTableViewProps> = ({
                             <button
                               type="button"
                               onClick={() => onDeleteIssue(issue.id)}
-                              className="p-1.5 rounded-lg text-slate-500 hover:text-red-600 hover:bg-red-50 transition cursor-pointer"
+                              className="p-1.5 rounded-lg text-slate-400 hover:text-red-600 dark:hover:text-rose-400 hover:bg-red-50 dark:hover:bg-rose-950/40 transition cursor-pointer"
                               title="מחק תקלה (מנהל בלבד)"
                             >
                               <Trash2 className="w-4 h-4" />

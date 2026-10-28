@@ -591,7 +591,7 @@ export const AdminBackupModal: React.FC<AdminBackupModalProps> = ({
                       {isConnectedDrive ? 'מחובר ופעיל לכל הצוות' : 'ממתין לחיבור חד-פעמי'}
                     </span>
                   </div>
-                  <p className="text-xs text-slate-600 dark:text-slate-400 mt-0.5">
+                  <p className="text-xs text-slate-600 dark:text-slate-300 mt-0.5">
                     שומר אוטומטית כל צילום מסך בתיקייה מסודרת לפי מערכת אצלך בדרייב ומשאיר את המערכת מהירה גם עם 10 מערכות ומאות תמונות!
                   </p>
                 </div>
@@ -608,11 +608,11 @@ export const AdminBackupModal: React.FC<AdminBackupModalProps> = ({
 
             {/* Stats Pill */}
             <div className="flex flex-wrap items-center gap-2 text-[11px] font-bold">
-              <span className="px-2.5 py-1 rounded-lg bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-300">
-                תמונות השמורות ב-Google Drive: <strong className="text-emerald-700 dark:text-emerald-400">{driveImagesCount}</strong>
+              <span className="px-2.5 py-1 rounded-lg bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-200">
+                תמונות השמורות ב-Google Drive: <strong className="text-emerald-700 dark:text-emerald-300">{driveImagesCount}</strong>
               </span>
-              <span className="px-2.5 py-1 rounded-lg bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-300">
-                תמונות מקומיות שממתינות להעברה לדרייב: <strong className="text-indigo-700 dark:text-indigo-400">{base64ImagesCount}</strong>
+              <span className="px-2.5 py-1 rounded-lg bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-200">
+                תמונות מקומיות שממתינות להעברה לדרייב: <strong className="text-indigo-700 dark:text-indigo-300">{base64ImagesCount}</strong>
               </span>
             </div>
 
@@ -681,7 +681,7 @@ export const AdminBackupModal: React.FC<AdminBackupModalProps> = ({
                   value={driveUrlInput}
                   onChange={(e) => setDriveUrlInput(e.target.value)}
                   placeholder="https://script.google.com/macros/s/.../exec"
-                  className="flex-1 px-3.5 py-2 rounded-xl bg-white dark:bg-slate-800 border border-slate-300 dark:border-slate-700 focus:border-indigo-500 focus:outline-none text-xs font-mono text-slate-800 dark:text-slate-100 placeholder:text-slate-400 dark:placeholder:text-slate-500"
+                  className="flex-1 px-3.5 py-2 rounded-xl bg-white dark:bg-slate-950 border border-slate-300 dark:border-slate-700 focus:border-indigo-500 focus:outline-none text-xs font-mono text-slate-800 dark:text-slate-100 placeholder:text-slate-400 dark:placeholder:text-slate-400"
                 />
                 <button
                   type="button"

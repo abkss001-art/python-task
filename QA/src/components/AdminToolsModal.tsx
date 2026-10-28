@@ -130,7 +130,7 @@ export const AdminToolsModal: React.FC<AdminToolsModalProps> = ({
                   onClose();
                   tool.action();
                 }}
-                className="w-full flex items-center justify-between p-3 sm:p-3.5 rounded-2xl border border-slate-200/90 dark:border-slate-800 hover:border-indigo-400 dark:hover:border-indigo-500 bg-white dark:bg-slate-800/80 hover:bg-indigo-50/50 dark:hover:bg-slate-800 transition cursor-pointer text-right group shadow-xs hover:shadow-sm"
+                className="w-full flex items-center justify-between p-3 sm:p-3.5 rounded-2xl border border-slate-200/90 dark:border-slate-800 hover:border-indigo-400 dark:hover:border-indigo-500 bg-white dark:bg-slate-800/90 hover:bg-indigo-50/50 dark:hover:bg-slate-800 transition cursor-pointer text-right group shadow-xs hover:shadow-sm"
               >
                 <div className="flex items-center gap-3 min-w-0">
                   <div
@@ -149,13 +149,13 @@ export const AdminToolsModal: React.FC<AdminToolsModalProps> = ({
                         </span>
                       )}
                     </div>
-                    <p className="text-[11px] text-slate-500 dark:text-slate-400 mt-0.5 leading-relaxed truncate">
+                    <p className="text-[11px] text-slate-500 dark:text-slate-300 mt-0.5 leading-relaxed truncate">
                       {tool.subtitle}
                     </p>
                   </div>
                 </div>
 
-                <ArrowLeft className="w-4 h-4 text-slate-400 group-hover:text-indigo-600 dark:group-hover:text-indigo-400 group-hover:-translate-x-1 transition-transform shrink-0 mr-2" />
+                <ArrowLeft className="w-4 h-4 text-slate-400 dark:text-slate-400 group-hover:text-indigo-600 dark:group-hover:text-indigo-400 group-hover:-translate-x-1 transition-transform shrink-0 mr-2" />
               </button>
             );
           })}
