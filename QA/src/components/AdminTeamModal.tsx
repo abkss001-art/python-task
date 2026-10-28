@@ -506,59 +506,59 @@ export const AdminTeamModal: React.FC<AdminTeamModalProps> = ({
                 חברי צוות ({filteredMembers.length} מתוך {members.length}):
               </span>
 
-              <div className="flex items-center gap-1 p-1 bg-slate-100 dark:bg-slate-800 rounded-xl text-xs font-bold border border-slate-200/80 dark:border-slate-700">
+              <div className="grid grid-cols-4 gap-1 p-1 bg-slate-100 dark:bg-slate-800 rounded-xl text-xs font-bold border border-slate-200/80 dark:border-slate-700 w-full sm:w-auto">
                 <button
                   type="button"
                   onClick={() => setRoleFilter('ALL')}
-                  className={`px-2.5 py-1 rounded-lg transition cursor-pointer flex items-center gap-1 ${
+                  className={`w-full px-1.5 sm:px-2.5 py-1.5 rounded-lg transition cursor-pointer flex items-center justify-center gap-1 ${
                     roleFilter === 'ALL'
                       ? 'bg-white dark:bg-slate-700 text-indigo-700 dark:text-indigo-300 shadow-xs'
                       : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'
                   }`}
                 >
-                  <span>הכל</span>
-                  <span className="text-[10px] opacity-75">
+                  <span className="truncate">הכל</span>
+                  <span className="text-[10px] opacity-75 shrink-0">
                     ({systemFilteredMembers.length})
                   </span>
                 </button>
                 <button
                   type="button"
                   onClick={() => setRoleFilter('dev')}
-                  className={`px-2.5 py-1 rounded-lg transition cursor-pointer flex items-center gap-1 ${
+                  className={`w-full px-1.5 sm:px-2.5 py-1.5 rounded-lg transition cursor-pointer flex items-center justify-center gap-1 ${
                     roleFilter === 'dev'
                       ? 'bg-purple-600 text-white shadow-xs'
                       : 'text-purple-700 dark:text-purple-400 hover:bg-purple-50 dark:hover:bg-slate-700'
                   }`}
                 >
-                  <Code className="w-3 h-3" />
-                  <span>מפתחים</span>
-                  <span className="text-[10px] opacity-75">({devCount})</span>
+                  <Code className="w-3 h-3 shrink-0 hidden sm:inline" />
+                  <span className="truncate">מפתחים</span>
+                  <span className="text-[10px] opacity-75 shrink-0">({devCount})</span>
                 </button>
                 <button
                   type="button"
                   onClick={() => setRoleFilter('qa')}
-                  className={`px-2.5 py-1 rounded-lg transition cursor-pointer flex items-center gap-1 ${
+                  className={`w-full px-1.5 sm:px-2.5 py-1.5 rounded-lg transition cursor-pointer flex items-center justify-center gap-1 ${
                     roleFilter === 'qa'
                       ? 'bg-sky-600 text-white shadow-xs'
                       : 'text-sky-700 dark:text-sky-400 hover:bg-sky-50 dark:hover:bg-slate-700'
                   }`}
                 >
-                  <ShieldCheck className="w-3 h-3" />
-                  <span>בודקים</span>
-                  <span className="text-[10px] opacity-75">({qaCount})</span>
+                  <ShieldCheck className="w-3 h-3 shrink-0 hidden sm:inline" />
+                  <span className="truncate">בודקים</span>
+                  <span className="text-[10px] opacity-75 shrink-0">({qaCount})</span>
                 </button>
                 <button
                   type="button"
                   onClick={() => setRoleFilter('admin')}
-                  className={`px-2.5 py-1 rounded-lg transition cursor-pointer flex items-center gap-1 ${
+                  className={`w-full px-1.5 sm:px-2.5 py-1.5 rounded-lg transition cursor-pointer flex items-center justify-center gap-1 ${
                     roleFilter === 'admin'
                       ? 'bg-amber-600 text-white shadow-xs'
                       : 'text-amber-700 dark:text-amber-400 hover:bg-amber-50 dark:hover:bg-slate-700'
                   }`}
                 >
-                  <UserCheck className="w-3 h-3" />
-                  <span>מנהלים</span>
-                  <span className="text-[10px] opacity-75">({adminCount})</span>
+                  <UserCheck className="w-3 h-3 shrink-0 hidden sm:inline" />
+                  <span className="truncate">מנהלים</span>
+                  <span className="text-[10px] opacity-75 shrink-0">({adminCount})</span>
                 </button>
               </div>
             </div>

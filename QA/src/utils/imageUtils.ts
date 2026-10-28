@@ -94,45 +94,96 @@ export function getRawImageFilesFromClipboardEvent(
 }
 
 /**
- * חילוץ תמונות מאירוע הדבקה (Ctrl + V) מהלוח (Clipboard)
+ * חילוץ תמונות מאירוע הדבקה (Ctrl + V או תפריט הדבק בנייד) מהלוח (Clipboard)
  */
 export async function extractImagesFromClipboardEvent(
   e: ClipboardEvent | React.ClipboardEvent
 ): Promise<string[]> {
   const imageFiles = getRawImageFilesFromClipboardEvent(e);
-  if (imageFiles.length === 0) return [];
+  if (imageFiles.length > 0) {
+    e.preventDefault();
+    e.stopPropagation();
 
-  // Prevent default synchronously BEFORE awaiting FileReader/Canvas!
-  e.preventDefault();
-  e.stopPropagation();
-
-  const results: string[] = [];
-  for (const file of imageFiles) {
-    const processed = await processScreenshotFile(file);
-    results.push(processed);
-  }
-  return results;
-}
-
-/**
- * קריאה יזומה של תמונה מהלוח בלחיצת כפתור (ללא צורך בפתיחת סייר הקבצים)
- */
-export async function readImagesFromSystemClipboard(): Promise<string[]> {
-  if (!navigator.clipboard || !navigator.clipboard.read) {
-    throw new Error('הדפדפן דורש לחיצה על Ctrl + V במקלדת להדבקה');
-  }
-
-  const clipboardItems = await navigator.clipboard.read();
-  const results: string[] = [];
-
-  for (const item of clipboardItems) {
-    const imageType = item.types.find((t) => t.startsWith('image/'));
-    if (imageType) {
-      const blob = await item.getType(imageType);
-      const processed = await processScreenshotFile(blob);
+    const results: string[] = [];
+    for (const file of imageFiles) {
+      const processed = await processScreenshotFile(file);
       results.push(processed);
+    }
+    return results;
+  }
+
+  // Fallback: check for HTML data with embedded base64 or text containing data URL
+  const dt = 'clipboardData' in e ? e.clipboardData : null;
+  if (dt) {
+    const html = dt.getData('text/html');
+    if (html) {
+      const match = html.match(/src=["'](data:image\/[a-zA-Z0-9+.-]+;base64,[^"']+)["']/i);
+      if (match && match[1]) {
+        e.preventDefault();
+        e.stopPropagation();
+        return [match[1]];
+      }
+    }
+
+    const text = dt.getData('text/plain');
+    if (text && text.trim().startsWith('data:image/')) {
+      e.preventDefault();
+      e.stopPropagation();
+      return [text.trim()];
     }
   }
 
-  return results;
+  return [];
+}
+
+/**
+ * קריאה יזומה של תמונה מהלוח בלחיצת כפתור (תמיכה מלאה במחשב ובמכשירים ניידים)
+ */
+export async function readImagesFromSystemClipboard(): Promise<string[]> {
+  const results: string[] = [];
+
+  if (typeof navigator !== 'undefined' && navigator.clipboard && navigator.clipboard.read) {
+    try {
+      const clipboardItems = await navigator.clipboard.read();
+      for (const item of clipboardItems) {
+        const imageType = item.types.find((t) => t.startsWith('image/'));
+        if (imageType) {
+          const blob = await item.getType(imageType);
+          const processed = await processScreenshotFile(blob);
+          results.push(processed);
+        } else if (item.types.includes('text/html')) {
+          try {
+            const htmlBlob = await item.getType('text/html');
+            const htmlText = await htmlBlob.text();
+            const match = htmlText.match(/src=["'](data:image\/[a-zA-Z0-9+.-]+;base64,[^"']+)["']/i);
+            if (match && match[1]) {
+              results.push(match[1]);
+            }
+          } catch {
+            // ignore html read error
+          }
+        }
+      }
+    } catch {
+      // Permission restricted or gesture required
+    }
+  }
+
+  // Fallback: check clipboard text if it contains a data URL
+  if (results.length === 0 && typeof navigator !== 'undefined' && navigator.clipboard && navigator.clipboard.readText) {
+    try {
+      const text = await navigator.clipboard.readText();
+      if (text && text.trim().startsWith('data:image/')) {
+        results.push(text.trim());
+      }
+    } catch {
+      // ignore text read error
+    }
+  }
+
+  if (results.length > 0) {
+    return results;
+  }
+
+  throw new Error('לא זוהתה תמונה ישירה בלוח');
 }

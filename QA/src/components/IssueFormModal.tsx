@@ -116,6 +116,7 @@ export const IssueFormModal: React.FC<IssueFormModalProps> = ({
   const [clipboardHint, setClipboardHint] = useState<string | null>(null);
 
   const fileInputRef = useRef<HTMLInputElement | null>(null);
+  const touchPasteInputRef = useRef<HTMLInputElement | null>(null);
 
   // Sync screenshots if editingIssue was opened via global board Ctrl+V
   useEffect(() => {
@@ -148,11 +149,22 @@ export const IssueFormModal: React.FC<IssueFormModalProps> = ({
         setScreenshots((prev) => [...prev, ...images]);
         setPasteNotice(true);
         setTimeout(() => setPasteNotice(false), 2500);
-      } else {
-        setClipboardHint('לא נמצאה תמונה בלוח ההעתקה כרגע. צלם מסך או העתק תמונה ונסה שוב.');
+        return;
       }
+      setClipboardHint(
+        window.innerWidth < 640
+          ? 'לא זוהתה תמונה בלוח. נסה לחיצה ארוכה על תיבת ההדבקה למטה ובחר "הדבק", או בחר קובץ מהגלריה.'
+          : 'לא נמצאה תמונה בלוח ההעתקה כרגע. צלם מסך או העתק תמונה ונסה שוב.'
+      );
     } catch {
-      setClipboardHint('לחץ כעת Ctrl + V במקלדת כדי להדביק את התמונה מהלוח.');
+      if (touchPasteInputRef.current) {
+        touchPasteInputRef.current.focus();
+      }
+      setClipboardHint(
+        window.innerWidth < 640
+          ? 'בטלפון: לחץ לחיצה ארוכה בתיבת ההדבקה למטה ובחר "הדבק", או לחץ על "בחר קובץ מהנייד".'
+          : 'לחץ כעת Ctrl + V במקלדת כדי להדביק את התמונה מהלוח.'
+      );
     }
   };
 
@@ -463,6 +475,26 @@ export const IssueFormModal: React.FC<IssueFormModalProps> = ({
                     <UploadCloud className="w-4 h-4 text-indigo-600 dark:text-indigo-400" />
                     <span>בחר קובץ מהמחשב / מהנייד</span>
                   </button>
+                </div>
+
+                {/* Mobile Touch Paste Box - Allows Native Long-Press Paste on Mobile Devices */}
+                <div className="w-full max-w-sm sm:hidden mt-1">
+                  <input
+                    ref={touchPasteInputRef}
+                    type="text"
+                    readOnly
+                    onPaste={async (e) => {
+                      const images = await extractImagesFromClipboardEvent(e);
+                      if (images.length > 0) {
+                        setClipboardHint(null);
+                        setScreenshots((prev) => [...prev, ...images]);
+                        setPasteNotice(true);
+                        setTimeout(() => setPasteNotice(false), 2500);
+                      }
+                    }}
+                    placeholder="📋 בטלפון: לחץ כאן לחיצה ארוכה ובחר 'הדבק'..."
+                    className="w-full text-center py-2 px-3 rounded-xl border-2 border-dashed border-indigo-400 dark:border-indigo-600 bg-indigo-50/70 dark:bg-indigo-950/40 text-xs font-bold text-indigo-900 dark:text-indigo-200 placeholder:text-indigo-600/80 dark:placeholder:text-indigo-400/80 focus:outline-none focus:ring-2 focus:ring-indigo-500 cursor-pointer"
+                  />
                 </div>
 
                 {clipboardHint && (
