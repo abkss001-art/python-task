@@ -407,8 +407,9 @@ export const Navbar: React.FC<NavbarProps> = ({
           </div>
         </div>
 
-        {/* Bottom Row: Fast System Switcher Bar (CARGO, נשקי ערד, etc.) */}
-        <div className="flex items-center justify-between gap-2 py-2 overflow-x-auto no-scrollbar">
+        {/* Bottom Row: Fast System Switcher Bar (CARGO, נשקי ערד, etc.) - Only on Home Page */}
+        {(activeSystem === 'HOME' || !activeSystem) && (
+          <div className="flex items-center justify-between gap-2 py-2 overflow-x-auto no-scrollbar">
           <div className="flex items-center gap-1.5 sm:gap-2">
             {/* 1. Home Button */}
             <button
@@ -545,7 +546,8 @@ export const Navbar: React.FC<NavbarProps> = ({
               </>
             )}
           </div>
-        </div>
+          </div>
+        )}
       </div>
     </header>
   );

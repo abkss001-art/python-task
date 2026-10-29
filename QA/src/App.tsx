@@ -65,7 +65,11 @@ import {
   ShieldAlert,
   FolderPlus,
   Home,
-  ArrowLeft
+  ArrowLeft,
+  Layers,
+  ChevronDown,
+  Check,
+  Flame
 } from 'lucide-react';
 import {
   computeUserAuthSignature,
@@ -203,6 +207,24 @@ export function App() {
   // Live Notification Toast & Highlight
   const [liveToast, setLiveToast] = useState<string | null>(null);
   const [highlightedIssueId, setHighlightedIssueId] = useState<string | null>(null);
+  const [isSystemSwitcherOpen, setIsSystemSwitcherOpen] = useState(false);
+  const systemSwitcherRef = useRef<HTMLDivElement>(null);
+
+  // Close system switcher on outside click
+  useEffect(() => {
+    const handleClickOutside = (e: MouseEvent) => {
+      if (
+        systemSwitcherRef.current &&
+        !systemSwitcherRef.current.contains(e.target as Node)
+      ) {
+        setIsSystemSwitcherOpen(false);
+      }
+    };
+    if (isSystemSwitcherOpen) {
+      document.addEventListener('mousedown', handleClickOutside);
+    }
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, [isSystemSwitcherOpen]);
   const prevIssuesRef = useRef<StdIssue[]>([]);
   const hasLoadedInitialStateRef = useRef<boolean>(false);
 
@@ -1575,8 +1597,8 @@ export function App() {
           />
         ) : (
           <>
-            {/* System Breadcrumb Navigation */}
-            <div className="flex items-center justify-between gap-3 mb-2 px-1">
+            {/* System Breadcrumb & Switcher Bar */}
+            <div className="flex items-center justify-between gap-3 mb-3 px-1">
               <div className="flex items-center gap-2 text-xs text-slate-500 dark:text-slate-400">
                 <button
                   type="button"
@@ -1593,15 +1615,114 @@ export function App() {
                 </span>
               </div>
 
-              <button
-                type="button"
-                onClick={() => handleSelectSystem('HOME')}
-                className="text-xs font-bold text-slate-600 hover:text-indigo-600 dark:text-slate-400 dark:hover:text-indigo-400 transition flex items-center gap-1.5 cursor-pointer bg-white dark:bg-slate-900 hover:bg-slate-100 dark:hover:bg-slate-800 px-3 py-1.5 rounded-xl border border-slate-200 dark:border-slate-800 shadow-2xs"
-                title="חזור לבחירת מערכת"
-              >
-                <span>החלף מערכת</span>
-                <ArrowLeft className="w-3.5 h-3.5" />
-              </button>
+              {/* System Switcher Button & Dropdown */}
+              <div className="relative" ref={systemSwitcherRef}>
+                <button
+                  type="button"
+                  onClick={() => setIsSystemSwitcherOpen((prev) => !prev)}
+                  className={`text-xs font-bold transition flex items-center gap-1.5 cursor-pointer px-3.5 py-1.5 rounded-xl border shadow-2xs ${
+                    isSystemSwitcherOpen
+                      ? 'bg-indigo-600 text-white border-indigo-600 shadow-sm'
+                      : 'bg-white dark:bg-slate-900 text-slate-700 dark:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800 border-slate-200 dark:border-slate-800'
+                  }`}
+                  title="החלף למערכת אחרת"
+                >
+                  <Layers className="w-3.5 h-3.5 text-indigo-500" />
+                  <span>החלף מערכת</span>
+                  <ChevronDown
+                    className={`w-3.5 h-3.5 transition-transform duration-200 ${
+                      isSystemSwitcherOpen ? 'rotate-180' : ''
+                    }`}
+                  />
+                </button>
+
+                {/* Dropdown Menu of all Systems */}
+                {isSystemSwitcherOpen && (
+                  <div
+                    className="absolute left-0 mt-2 w-64 sm:w-72 bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-2xl p-2 z-50 animate-in fade-in zoom-in-95 duration-150"
+                    dir="rtl"
+                  >
+                    <div className="flex items-center justify-between px-3 py-2 border-b border-slate-100 dark:border-slate-800 mb-1">
+                      <span className="text-xs font-bold text-slate-700 dark:text-slate-300 flex items-center gap-1.5">
+                        <Layers className="w-3.5 h-3.5 text-indigo-500" />
+                        <span>בחר מערכת לעבודה:</span>
+                      </span>
+                      <span className="text-[11px] text-slate-400 font-mono">
+                        {visibleSystems.length} מערכות
+                      </span>
+                    </div>
+
+                    <div className="max-h-60 overflow-y-auto space-y-1 py-1">
+                      {visibleSystems.map((sys) => {
+                        const isCurrent = activeSystem === sys;
+                        const count = issues.filter((i) => i.system === sys).length;
+                        const criticalCount = issues.filter(
+                          (i) => i.system === sys && i.severity === 'קריטית' && i.status !== 'נבדק תקין'
+                        ).length;
+
+                        return (
+                          <button
+                            key={sys}
+                            type="button"
+                            onClick={() => {
+                              handleSelectSystem(sys);
+                              setIsSystemSwitcherOpen(false);
+                            }}
+                            className={`w-full flex items-center justify-between px-3 py-2 rounded-xl text-xs font-bold transition cursor-pointer text-right ${
+                              isCurrent
+                                ? 'bg-indigo-50 dark:bg-indigo-950/60 text-indigo-700 dark:text-indigo-300 border border-indigo-200 dark:border-indigo-800'
+                                : 'hover:bg-slate-50 dark:hover:bg-slate-800 text-slate-800 dark:text-slate-200'
+                            }`}
+                          >
+                            <div className="flex items-center gap-2 truncate">
+                              <span
+                                className={`w-2 h-2 rounded-full shrink-0 ${
+                                  isCurrent ? 'bg-indigo-600' : 'bg-slate-300 dark:bg-slate-600'
+                                }`}
+                              />
+                              <span className="truncate bidi-isolate">{sys}</span>
+                            </div>
+
+                            <div className="flex items-center gap-1.5 shrink-0">
+                              {criticalCount > 0 && (
+                                <span className="flex items-center text-[10px] text-rose-600 dark:text-rose-400 font-mono">
+                                  <Flame className="w-3 h-3 fill-rose-500 text-rose-500" />
+                                  <span>{criticalCount}</span>
+                                </span>
+                              )}
+                              <span
+                                className={`px-1.5 py-0.2 rounded-md text-[10px] font-mono ${
+                                  isCurrent
+                                    ? 'bg-indigo-200/60 dark:bg-indigo-900 text-indigo-900 dark:text-indigo-200'
+                                    : 'bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400'
+                                }`}
+                              >
+                                {count}
+                              </span>
+                              {isCurrent && <Check className="w-3.5 h-3.5 text-indigo-600 dark:text-indigo-400 ml-1" />}
+                            </div>
+                          </button>
+                        );
+                      })}
+                    </div>
+
+                    {/* Bottom option to return to Home Page */}
+                    <div className="pt-1 mt-1 border-t border-slate-100 dark:border-slate-800">
+                      <button
+                        type="button"
+                        onClick={() => {
+                          handleSelectSystem('HOME');
+                          setIsSystemSwitcherOpen(false);
+                        }}
+                        className="w-full flex items-center gap-2 px-3 py-2 rounded-xl text-xs font-bold text-slate-600 hover:text-indigo-600 dark:text-slate-400 dark:hover:text-indigo-400 hover:bg-slate-50 dark:hover:bg-slate-800 transition cursor-pointer"
+                      >
+                        <Home className="w-3.5 h-3.5" />
+                        <span>חזור לדף הבית הראשי</span>
+                      </button>
+                    </div>
+                  </div>
+                )}
+              </div>
             </div>
 
             {/* Search, Filter & View Switcher Bar */}
@@ -1789,10 +1910,12 @@ export function App() {
       {isIssueModalOpen && canCreateOrEdit && (
         <IssueFormModal
           systems={visibleSystems}
-          defaultSystem={activeSystem}
-          suggestedTestCaseId={getNextTestCaseIdForSystem(
-            activeSystem === 'ALL' ? (visibleSystems[0] || 'כללי') : activeSystem
-          )}
+          defaultSystem={activeSystem === 'HOME' ? '' : activeSystem}
+          suggestedTestCaseId={
+            activeSystem && activeSystem !== 'HOME' && activeSystem !== 'ALL'
+              ? getNextTestCaseIdForSystem(activeSystem)
+              : ''
+          }
           editingIssue={editingIssue}
           existingIssues={issues}
           onSave={handleSaveIssue}

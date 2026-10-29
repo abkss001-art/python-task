@@ -62,12 +62,17 @@ export const IssueFormModal: React.FC<IssueFormModalProps> = ({
   const isEditing = Boolean(editingIssue && editingIssue.id !== '__NEW_FROM_PASTE__');
 
   const availableSystems = systems.length > 0 ? systems : ['כללי'];
-  const [system, setSystem] = useState(
-    editingIssue?.system || (defaultSystem === 'ALL' ? availableSystems[0] : defaultSystem) || availableSystems[0]
-  );
+  const [system, setSystem] = useState(() => {
+    if (editingIssue?.system) return editingIssue.system;
+    if (defaultSystem && defaultSystem !== 'HOME' && defaultSystem !== 'ALL') {
+      return defaultSystem;
+    }
+    return '';
+  });
 
   // Compute next sequential ID for target system starting from 1 (natural numeric extraction)
   const getNextIdForSystem = (targetSys: string) => {
+    if (!targetSys) return '';
     const sysNums = existingIssues
       .filter((i) => i.system === targetSys)
       .map((i) => {
@@ -86,8 +91,9 @@ export const IssueFormModal: React.FC<IssueFormModalProps> = ({
     }
     const initialSys =
       editingIssue?.system ||
-      (defaultSystem === 'ALL' ? availableSystems[0] : defaultSystem) ||
-      availableSystems[0];
+      (defaultSystem && defaultSystem !== 'HOME' && defaultSystem !== 'ALL'
+        ? defaultSystem
+        : '');
     return getNextIdForSystem(initialSys);
   });
 
@@ -205,7 +211,7 @@ export const IssueFormModal: React.FC<IssueFormModalProps> = ({
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    if (!testCaseId.trim() || !subject.trim() || !description.trim()) return;
+    if (!system.trim() || !testCaseId.trim() || !subject.trim() || !description.trim()) return;
 
     onSave({
       system,
@@ -255,16 +261,30 @@ export const IssueFormModal: React.FC<IssueFormModalProps> = ({
           {/* Top Row: System & Test Case ID */}
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             <div>
-              <label className="block text-xs font-bold text-slate-700 dark:text-slate-200 mb-1.5">
-                מערכת <span className="text-red-500">*</span>
+              <label className="block text-xs font-bold text-slate-700 dark:text-slate-200 mb-1.5 flex items-center justify-between">
+                <span>
+                  מערכת <span className="text-red-500">*</span>
+                </span>
+                {!system && (
+                  <span className="text-[11px] font-bold text-amber-600 dark:text-amber-400">
+                    חובה לבחור מערכת
+                  </span>
+                )}
               </label>
               <select
                 value={system}
                 onChange={(e) => handleSystemChange(e.target.value)}
-                className="w-full px-3.5 py-2.5 rounded-xl border border-slate-300 dark:border-slate-700 bg-slate-50/70 dark:bg-slate-950/80 focus:bg-white dark:focus:bg-slate-950 text-sm font-bold text-slate-900 dark:text-slate-100 focus:outline-none focus:ring-2 focus:ring-indigo-500/30 focus:border-indigo-500 transition cursor-pointer"
+                className={`w-full px-3.5 py-2.5 rounded-xl border text-sm font-bold transition cursor-pointer ${
+                  !system
+                    ? 'border-amber-400 bg-amber-50/70 dark:bg-amber-950/40 text-amber-900 dark:text-amber-200 ring-2 ring-amber-400/30'
+                    : 'border-slate-300 dark:border-slate-700 bg-slate-50/70 dark:bg-slate-950/80 text-slate-900 dark:text-slate-100 focus:ring-indigo-500/30 focus:border-indigo-500'
+                }`}
               >
+                <option value="" disabled className="text-slate-400 dark:bg-slate-900">
+                  -- בחר מערכת לתקלה --
+                </option>
                 {availableSystems.map((sys) => (
-                  <option key={sys} value={sys} className="dark:bg-slate-900 dark:text-slate-100">
+                  <option key={sys} value={sys} className="dark:bg-slate-900 dark:text-slate-100 font-bold">
                     {sys}
                   </option>
                 ))}
@@ -282,7 +302,9 @@ export const IssueFormModal: React.FC<IssueFormModalProps> = ({
               <div className="flex items-center justify-between px-3.5 py-2.5 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-100/90 dark:bg-slate-950/80 text-sm font-mono select-none shadow-2xs">
                 <div className="flex items-center gap-1.5">
                   <span className="text-slate-400 dark:text-slate-400 font-bold text-xs">תסריט #</span>
-                  <span className="text-base font-black text-indigo-700 dark:text-indigo-400">{testCaseId}</span>
+                  <span className="text-base font-black text-indigo-700 dark:text-indigo-400">
+                    {testCaseId ? testCaseId : 'יש לבחור מערכת'}
+                  </span>
                 </div>
               </div>
             </div>
@@ -555,9 +577,9 @@ export const IssueFormModal: React.FC<IssueFormModalProps> = ({
             </button>
             <button
               type="submit"
-              disabled={!testCaseId.trim() || !subject.trim() || !description.trim()}
+              disabled={!system.trim() || !testCaseId.trim() || !subject.trim() || !description.trim()}
               className={`flex items-center gap-2 px-6 py-2.5 rounded-xl text-white text-sm font-bold shadow-md transition ${
-                !testCaseId.trim() || !subject.trim() || !description.trim()
+                !system.trim() || !testCaseId.trim() || !subject.trim() || !description.trim()
                   ? 'bg-slate-400 dark:bg-slate-700 cursor-not-allowed opacity-60 shadow-none'
                   : 'bg-indigo-600 hover:bg-indigo-700 shadow-indigo-600/20 cursor-pointer'
               }`}
