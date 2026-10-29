@@ -81,6 +81,7 @@ import {
 
 const AUTH_STORAGE_KEY = 'std_qa_auth_user_v1';
 const LAST_ACTIVE_SYSTEM_KEY = 'std_qa_last_active_system_v1';
+const SHORTCUT_BANNER_STORAGE_KEY = 'std_qa_dismissed_shortcut_banner_v1';
 
 export function App() {
   const [systems, setSystems] = useState<string[]>(DEFAULT_SYSTEMS);
@@ -135,9 +136,24 @@ export function App() {
     return null;
   });
 
-  // Dismissible banners state (shown on entry, each has its own X button)
-  const [showShortcutBanner, setShowShortcutBanner] = useState<boolean>(true);
+  // Dismissible banners state (remembers dismissal per user session until logout)
+  const [showShortcutBanner, setShowShortcutBanner] = useState<boolean>(() => {
+    try {
+      const isDismissed = localStorage.getItem(SHORTCUT_BANNER_STORAGE_KEY);
+      if (isDismissed === 'true') {
+        return false;
+      }
+    } catch {}
+    return true;
+  });
   const [dismissedLastEventText, setDismissedLastEventText] = useState<string | null>(null);
+
+  const handleDismissShortcutBanner = () => {
+    setShowShortcutBanner(false);
+    try {
+      localStorage.setItem(SHORTCUT_BANNER_STORAGE_KEY, 'true');
+    } catch {}
+  };
 
   // PWA Install Prompt & Notification Preferences State
   const [deferredInstallPrompt, setDeferredInstallPrompt] = useState<any>(null);
@@ -427,6 +443,10 @@ export function App() {
   const handleLoginSuccess = (user: AuthenticatedUser) => {
     setAuthUser(user);
     localStorage.setItem(AUTH_STORAGE_KEY, JSON.stringify(user));
+    setShowShortcutBanner(true);
+    try {
+      localStorage.removeItem(SHORTCUT_BANNER_STORAGE_KEY);
+    } catch {}
   };
 
   const handleSaveTeamMembers = (
@@ -530,7 +550,11 @@ export function App() {
 
   const handleLogoutUser = () => {
     setAuthUser(null);
-    localStorage.removeItem(AUTH_STORAGE_KEY);
+    setShowShortcutBanner(true);
+    try {
+      localStorage.removeItem(AUTH_STORAGE_KEY);
+      localStorage.removeItem(SHORTCUT_BANNER_STORAGE_KEY);
+    } catch {}
   };
 
   const handleSecurityUpdated = (newSuperAdminName: string) => {
@@ -1546,7 +1570,7 @@ export function App() {
                 </div>
                 <button
                   type="button"
-                  onClick={() => setShowShortcutBanner(false)}
+                  onClick={handleDismissShortcutBanner}
                   className="p-1 rounded-lg text-slate-400 hover:text-slate-700 dark:hover:text-slate-200 hover:bg-slate-200/60 dark:hover:bg-slate-800 transition cursor-pointer shrink-0"
                   title="סגור חלונית קיצור דרך"
                 >
