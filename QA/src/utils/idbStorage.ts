@@ -1,6 +1,7 @@
 const DB_NAME = 'tzavman_qa_idb_v1';
 const STORE_NAME = 'workspace_store';
 const STATE_KEY = 'current_workspace_state';
+const CHATS_KEY = 'system_chat_messages_v1';
 
 function openDatabase(): Promise<IDBDatabase> {
   return new Promise((resolve, reject) => {
@@ -20,13 +21,13 @@ function openDatabase(): Promise<IDBDatabase> {
   });
 }
 
-export async function saveWorkspaceToIndexedDB(state: unknown): Promise<void> {
+async function putKeyInIndexedDB(key: string, value: unknown): Promise<void> {
   try {
     const db = await openDatabase();
     await new Promise<void>((resolve, reject) => {
       const tx = db.transaction(STORE_NAME, 'readwrite');
       const store = tx.objectStore(STORE_NAME);
-      store.put(state, STATE_KEY);
+      store.put(value, key);
       tx.oncomplete = () => {
         db.close();
         resolve();
@@ -41,13 +42,13 @@ export async function saveWorkspaceToIndexedDB(state: unknown): Promise<void> {
   }
 }
 
-export async function loadWorkspaceFromIndexedDB<T>(): Promise<T | null> {
+async function getKeyFromIndexedDB<T>(key: string): Promise<T | null> {
   try {
     const db = await openDatabase();
     return await new Promise<T | null>((resolve, reject) => {
       const tx = db.transaction(STORE_NAME, 'readonly');
       const store = tx.objectStore(STORE_NAME);
-      const req = store.get(STATE_KEY);
+      const req = store.get(key);
       req.onsuccess = () => {
         db.close();
         resolve((req.result as T) ?? null);
@@ -60,4 +61,20 @@ export async function loadWorkspaceFromIndexedDB<T>(): Promise<T | null> {
   } catch {
     return null;
   }
+}
+
+export async function saveWorkspaceToIndexedDB(state: unknown): Promise<void> {
+  return putKeyInIndexedDB(STATE_KEY, state);
+}
+
+export async function loadWorkspaceFromIndexedDB<T>(): Promise<T | null> {
+  return getKeyFromIndexedDB<T>(STATE_KEY);
+}
+
+export async function saveChatsToIndexedDB(chats: unknown): Promise<void> {
+  return putKeyInIndexedDB(CHATS_KEY, chats);
+}
+
+export async function loadChatsFromIndexedDB<T>(): Promise<T | null> {
+  return getKeyFromIndexedDB<T>(CHATS_KEY);
 }

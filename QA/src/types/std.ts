@@ -22,6 +22,29 @@ export interface StdAuditEntry {
   timestamp: number;
 }
 
+export interface SystemChatMessage {
+  id: string;
+  system: string;
+  author: string;
+  authorRole: TeamRole;
+  text: string;
+  screenshots?: string[];
+  reactions?: Record<string, string[]>;
+  mentions?: string[];
+  editedAt?: number;
+  deletedByAdmin?: string;
+  deletedAt?: number;
+  createdAt: number;
+  updatedAt: number;
+}
+
+export interface ChatTypingUser {
+  system: string;
+  author: string;
+  clientId: string;
+  updatedAt: number;
+}
+
 export interface StdIssue {
   id: string;
   system: string; // e.g., 'CARGO' | 'נשקי ערד'

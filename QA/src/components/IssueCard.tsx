@@ -112,6 +112,7 @@ export const IssueCard: React.FC<IssueCardProps> = ({
 
   return (
     <article
+      id={`issue-item-${issue.id}`}
       dir="rtl"
       className={`group bg-white dark:bg-slate-900 rounded-2xl border border-slate-200/90 dark:border-slate-800 shadow-xs hover:shadow-md transition-all duration-200 flex flex-col justify-between overflow-hidden ${
         statusStyle.cardAccent

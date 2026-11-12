@@ -16,11 +16,13 @@ import {
 } from 'firebase/firestore';
 import mqtt, { MqttClient } from 'mqtt';
 import {
+  ChatTypingUser,
   DEFAULT_SYSTEMS,
   FirebaseConfigData,
   StdIssue,
   StdSeverity,
-  SyncStatusInfo
+  SyncStatusInfo,
+  SystemChatMessage
 } from '../types/std';
 import {
   isValidFirebaseConfig,
@@ -28,9 +30,17 @@ import {
   saveFirebaseConfigLocally
 } from '../firebaseConfig';
 import {
+  loadChatsFromIndexedDB,
   loadWorkspaceFromIndexedDB,
+  saveChatsToIndexedDB,
   saveWorkspaceToIndexedDB
 } from '../utils/idbStorage';
+import {
+  encodeFirebaseSystemKey,
+  mergeAllChats,
+  mergeSystemChatArrays,
+  pruneChatMessages
+} from '../utils/chatUtils';
 import {
   getSavedGoogleDriveUrl,
   isDataUrlImage,
@@ -73,11 +83,46 @@ export interface SyncStatePayload {
 
 type StateListener = (state: SyncStatePayload, isRemoteUpdate: boolean) => void;
 type StatusListener = (status: SyncStatusInfo) => void;
+type ChatListener = (
+  chatsBySystem: Record<string, SystemChatMessage[]>,
+  incomingNewMessage?: SystemChatMessage
+) => void;
+type TypingListener = (typingBySystem: Record<string, ChatTypingUser[]>) => void;
 
 const CLOUD_TOPIC_STATE = 'std_qa_cloud_abkss001_v2/workspace_state';
 const CLOUD_TOPIC_STATE_V3 = 'std_qa_cloud_tzavman_v3/workspace_state';
 const CLOUD_TOPIC_PRESENCE_V4 = 'std_qa_cloud_tzavman_v4/presence/';
 const CLOUD_TOPIC_PING_V4 = 'std_qa_cloud_tzavman_v4/presence_ping';
+const CLOUD_TOPIC_CHAT_EVENT = 'std_qa_cloud_tzavman_v4/chat_event';
+const CLOUD_TOPIC_CHAT_SNAPSHOT = 'std_qa_cloud_tzavman_v4/chat_snapshot';
+const CLOUD_TOPIC_CHAT_TYPING = 'std_qa_cloud_tzavman_v4/chat_typing';
+const CLOUD_TOPIC_CHAT_PING = 'std_qa_cloud_tzavman_v4/chat_ping';
+const CHATS_LOCAL_STORAGE_KEY = 'std_qa_chats_fallback_v1';
+
+function stripUndefinedChatFields(msg: SystemChatMessage): Record<string, any> {
+  const clean: Record<string, any> = {
+    id: msg.id,
+    system: msg.system,
+    author: msg.author,
+    authorRole: msg.authorRole,
+    text: msg.text,
+    createdAt: msg.createdAt,
+    updatedAt: msg.updatedAt
+  };
+  if (Array.isArray(msg.screenshots) && msg.screenshots.length > 0) {
+    clean.screenshots = msg.screenshots;
+  }
+  if (msg.reactions && Object.keys(msg.reactions).length > 0) {
+    clean.reactions = msg.reactions;
+  }
+  if (Array.isArray(msg.mentions) && msg.mentions.length > 0) {
+    clean.mentions = msg.mentions;
+  }
+  if (msg.editedAt !== undefined) clean.editedAt = msg.editedAt;
+  if (msg.deletedByAdmin !== undefined) clean.deletedByAdmin = msg.deletedByAdmin;
+  if (msg.deletedAt !== undefined) clean.deletedAt = msg.deletedAt;
+  return clean;
+}
 
 const MAX_SAFE_MQTT_BYTES = 210_000; // Safe limit under broker.emqx.io 256KB max packet size
 const BYTEBIN_POST_URL = 'https://bytebin.lucko.me/post';
@@ -291,7 +336,22 @@ class RealtimeSyncService {
   private broadcastChannel: BroadcastChannel | null = null;
   private activeFirebaseConfig: FirebaseConfigData | null = null;
 
+  // Dedicated Per-System Group Chat State & Sync
+  private chatsBySystem: Record<string, SystemChatMessage[]> = {};
+  private chatListeners = new Set<ChatListener>();
+  private typingListeners = new Set<TypingListener>();
+  private typingUsers = new Map<string, ChatTypingUser>();
+  private typingCleanupTimer: ReturnType<typeof setInterval> | null = null;
+  private unsubscribeChatFirebase: (() => void) | null = null;
+  private unsubscribeTypingFirebase: (() => void) | null = null;
+  private hasLoadedInitialChatsFirebase = false;
+  private isOffloadingChatImages = false;
+  private uploadedChatDriveUrlCache = new Map<string, string>();
+  private lastChatBytebinFetched = '';
+
   public init() {
+    this.loadChatsLocally();
+
     if (typeof BroadcastChannel !== 'undefined') {
       this.broadcastChannel = new BroadcastChannel('std_qa_live_channel');
       this.broadcastChannel.onmessage = (event) => {
@@ -305,9 +365,28 @@ class RealtimeSyncService {
           );
           this.currentState = normalized;
           this.notifyState(isRemote);
+        } else if (data && data.type === 'CHAT_UPDATE' && data.chats) {
+          const isRemote = data.clientId !== this.clientId;
+          this.chatsBySystem = mergeAllChats(this.chatsBySystem, data.chats);
+          this.persistChatsLocally(this.chatsBySystem);
+          this.notifyChats(isRemote ? data.incomingNewMessage : undefined);
         }
       };
     }
+
+    this.typingCleanupTimer = setInterval(() => {
+      const now = Date.now();
+      let removed = false;
+      for (const [key, item] of this.typingUsers.entries()) {
+        if (now - item.updatedAt > 4200) {
+          this.typingUsers.delete(key);
+          removed = true;
+        }
+      }
+      if (removed) {
+        this.notifyTyping();
+      }
+    }, 1500);
 
     if (typeof window !== 'undefined') {
       const announceOffline = () => {
@@ -379,6 +458,674 @@ class RealtimeSyncService {
     };
   }
 
+  public subscribeChat(listener: ChatListener): () => void {
+    this.chatListeners.add(listener);
+    listener(this.chatsBySystem);
+    return () => {
+      this.chatListeners.delete(listener);
+    };
+  }
+
+  public subscribeTyping(listener: TypingListener): () => void {
+    this.typingListeners.add(listener);
+    listener(this.getTypingBySystem());
+    return () => {
+      this.typingListeners.delete(listener);
+    };
+  }
+
+  public getAllChats(): Record<string, SystemChatMessage[]> {
+    return this.chatsBySystem;
+  }
+
+  public getChatMessages(system: string): SystemChatMessage[] {
+    return this.chatsBySystem[system] || [];
+  }
+
+  private getTypingBySystem(): Record<string, ChatTypingUser[]> {
+    const grouped: Record<string, ChatTypingUser[]> = {};
+    const now = Date.now();
+    for (const user of this.typingUsers.values()) {
+      if (now - user.updatedAt <= 4200 && user.clientId !== this.clientId) {
+        if (!grouped[user.system]) grouped[user.system] = [];
+        grouped[user.system].push(user);
+      }
+    }
+    return grouped;
+  }
+
+  private notifyChats(incomingNewMessage?: SystemChatMessage) {
+    const snapshot = { ...this.chatsBySystem };
+    for (const listener of this.chatListeners) {
+      listener(snapshot, incomingNewMessage);
+    }
+  }
+
+  private notifyTyping() {
+    const grouped = this.getTypingBySystem();
+    for (const listener of this.typingListeners) {
+      listener(grouped);
+    }
+  }
+
+  private loadChatsLocally() {
+    try {
+      const raw = localStorage.getItem(CHATS_LOCAL_STORAGE_KEY);
+      if (raw) {
+        const parsed = JSON.parse(raw);
+        if (parsed && typeof parsed === 'object') {
+          this.chatsBySystem = mergeAllChats(this.chatsBySystem, parsed);
+          this.notifyChats();
+        }
+      }
+    } catch {
+      // ignore
+    }
+
+    loadChatsFromIndexedDB<Record<string, SystemChatMessage[]>>().then((idbChats) => {
+      if (idbChats && typeof idbChats === 'object') {
+        this.chatsBySystem = mergeAllChats(this.chatsBySystem, idbChats);
+        this.notifyChats();
+      }
+    });
+  }
+
+  private persistChatsLocally(chats: Record<string, SystemChatMessage[]>) {
+    saveChatsToIndexedDB(chats);
+    try {
+      localStorage.setItem(CHATS_LOCAL_STORAGE_KEY, JSON.stringify(chats));
+    } catch {
+      // Strip inline base64 images if localStorage quota exceeded (IndexedDB still holds full images)
+      try {
+        const lightChats: Record<string, SystemChatMessage[]> = {};
+        for (const [sys, list] of Object.entries(chats)) {
+          lightChats[sys] = list.map((m) => ({
+            ...m,
+            screenshots: (m.screenshots || []).filter((s) => !isDataUrlImage(s))
+          }));
+        }
+        localStorage.setItem(CHATS_LOCAL_STORAGE_KEY, JSON.stringify(lightChats));
+      } catch {
+        // IndexedDB handles full dataset
+      }
+    }
+  }
+
+  private getChatTotals(chats: Record<string, SystemChatMessage[]>): {
+    totalMessages: number;
+    latestUpdatedAt: number;
+  } {
+    let totalMessages = 0;
+    let latestUpdatedAt = 0;
+    for (const arr of Object.values(chats)) {
+      totalMessages += arr.length;
+      for (const m of arr) {
+        const ts = m.updatedAt || m.createdAt || 0;
+        if (ts > latestUpdatedAt) latestUpdatedAt = ts;
+      }
+    }
+    return { totalMessages, latestUpdatedAt };
+  }
+
+  private broadcastChatToTabs(incomingNewMessage?: SystemChatMessage) {
+    if (this.broadcastChannel) {
+      try {
+        this.broadcastChannel.postMessage({
+          type: 'CHAT_UPDATE',
+          chats: this.chatsBySystem,
+          incomingNewMessage,
+          clientId: this.clientId
+        });
+      } catch {
+        // ignore
+      }
+    }
+  }
+
+  private async publishSingleChatMessageToCloud(
+    msg: SystemChatMessage,
+    isNew: boolean
+  ): Promise<void> {
+    if (
+      this.activeFirebaseConfig &&
+      this.activeFirebaseConfig.mode === 'firestore' &&
+      this.firestore
+    ) {
+      try {
+        const chatsDocRef = doc(this.firestore, 'std_workspaces', 'system_chats');
+        const sanitized: Record<string, Record<string, any>[]> = {};
+        for (const [sys, arr] of Object.entries(this.chatsBySystem)) {
+          sanitized[sys] = pruneChatMessages(arr).map(stripUndefinedChatFields);
+        }
+        await setDoc(chatsDocRef, { chats: sanitized, updatedAt: Date.now(), clientId: this.clientId });
+      } catch {
+        // ignore firestore error
+      }
+      return;
+    }
+
+    if (this.activeFirebaseConfig && this.rtdb) {
+      try {
+        const msgRef = ref(
+          this.rtdb,
+          `std_chats/${encodeFirebaseSystemKey(msg.system)}/${msg.id}`
+        );
+        await set(msgRef, stripUndefinedChatFields(msg));
+      } catch {
+        // ignore rtdb error
+      }
+      return;
+    }
+
+    await this.publishChatEventToMqtt(msg, isNew);
+    await this.publishChatSnapshotToMqtt(this.chatsBySystem);
+  }
+
+  private async publishChatEventToMqtt(msg: SystemChatMessage, isNew: boolean) {
+    if (!this.mqttClient || !this.mqttClient.connected) return;
+    try {
+      const eventObj: Record<string, any> = {
+        message: stripUndefinedChatFields(msg),
+        clientId: this.clientId,
+        isNew,
+        timestamp: Date.now()
+      };
+      let jsonStr = JSON.stringify(eventObj);
+
+      if (jsonStr.length > MAX_SAFE_MQTT_BYTES) {
+        try {
+          const encryptedFull = await encryptSyncPayload(jsonStr);
+          const bRes = await fetch(BYTEBIN_POST_URL, {
+            method: 'POST',
+            headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+            body: encryptedFull
+          });
+          if (bRes.ok) {
+            const bJson = await bRes.json();
+            if (bJson && bJson.key) {
+              eventObj.bytebinKey = String(bJson.key);
+              eventObj.message = {
+                ...eventObj.message,
+                screenshots: (msg.screenshots || []).filter((s) => !isDataUrlImage(s))
+              };
+              jsonStr = JSON.stringify(eventObj);
+            }
+          }
+        } catch {
+          // ignore bytebin error
+        }
+      }
+
+      const encrypted = await encryptSyncPayload(jsonStr);
+      this.mqttClient.publish(CLOUD_TOPIC_CHAT_EVENT, encrypted, {
+        qos: 1,
+        retain: false
+      });
+    } catch {
+      // ignore
+    }
+  }
+
+  private async publishChatSnapshotToMqtt(chats: Record<string, SystemChatMessage[]>) {
+    if (!this.mqttClient || !this.mqttClient.connected) return;
+    try {
+      const payloadObj: Record<string, any> = {
+        chats,
+        updatedAt: Date.now(),
+        clientId: this.clientId
+      };
+      let jsonStr = JSON.stringify(payloadObj);
+      let bytebinKey = '';
+
+      if (jsonStr.length > MAX_SAFE_MQTT_BYTES) {
+        try {
+          const encryptedFull = await encryptSyncPayload(jsonStr);
+          const bRes = await fetch(BYTEBIN_POST_URL, {
+            method: 'POST',
+            headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+            body: encryptedFull
+          });
+          if (bRes.ok) {
+            const bJson = await bRes.json();
+            if (bJson && bJson.key) {
+              bytebinKey = String(bJson.key);
+              this.lastChatBytebinFetched = bytebinKey;
+            }
+          }
+        } catch {
+          // ignore
+        }
+
+        const lightChats: Record<string, SystemChatMessage[]> = {};
+        for (const [sys, list] of Object.entries(chats)) {
+          lightChats[sys] = list.map((m) => ({
+            ...m,
+            screenshots: (m.screenshots || []).filter((s) => !isDataUrlImage(s))
+          }));
+        }
+        jsonStr = JSON.stringify({
+          chats: lightChats,
+          bytebinKey: bytebinKey || undefined,
+          updatedAt: payloadObj.updatedAt,
+          clientId: this.clientId
+        });
+      }
+
+      const encrypted = await encryptSyncPayload(jsonStr);
+      this.mqttClient.publish(CLOUD_TOPIC_CHAT_SNAPSHOT, encrypted, {
+        qos: 1,
+        retain: true
+      });
+    } catch {
+      // ignore
+    }
+  }
+
+  private async offloadChatImagesToGoogleDriveInBackground() {
+    const driveUrl = getSavedGoogleDriveUrl();
+    if (!driveUrl || this.isOffloadingChatImages) return;
+
+    this.isOffloadingChatImages = true;
+    try {
+      const updatedMessages: SystemChatMessage[] = [];
+      for (const list of Object.values(this.chatsBySystem)) {
+        for (const msg of list) {
+          if (!Array.isArray(msg.screenshots) || msg.screenshots.length === 0) continue;
+          let msgChanged = false;
+          const nextScreenshots: string[] = [];
+          for (let i = 0; i < msg.screenshots.length; i++) {
+            const sc = msg.screenshots[i];
+            if (isDataUrlImage(sc)) {
+              const cached = this.uploadedChatDriveUrlCache.get(sc);
+              if (cached) {
+                nextScreenshots.push(cached);
+                msgChanged = true;
+              } else {
+                const uploadedUrl = await uploadImageToGoogleDrive(sc, {
+                  system: msg.system,
+                  testCaseId: 'צאט'
+                });
+                if (uploadedUrl && uploadedUrl !== sc) {
+                  this.uploadedChatDriveUrlCache.set(sc, uploadedUrl);
+                  nextScreenshots.push(uploadedUrl);
+                  msgChanged = true;
+                } else {
+                  nextScreenshots.push(sc);
+                }
+              }
+            } else {
+              nextScreenshots.push(sc);
+            }
+          }
+          if (msgChanged) {
+            updatedMessages.push({
+              ...msg,
+              screenshots: nextScreenshots,
+              updatedAt: Date.now()
+            });
+          }
+        }
+      }
+
+      if (updatedMessages.length > 0) {
+        const patch: Record<string, SystemChatMessage[]> = {};
+        for (const m of updatedMessages) {
+          if (!patch[m.system]) patch[m.system] = [];
+          patch[m.system].push(m);
+        }
+        this.chatsBySystem = mergeAllChats(this.chatsBySystem, patch);
+        this.persistChatsLocally(this.chatsBySystem);
+        this.notifyChats();
+        this.broadcastChatToTabs();
+        for (const m of updatedMessages) {
+          await this.publishSingleChatMessageToCloud(m, false);
+        }
+      }
+    } catch {
+      // ignore Drive chat offload error
+    } finally {
+      this.isOffloadingChatImages = false;
+    }
+  }
+
+  public async sendChatMessage(input: {
+    system: string;
+    author: string;
+    authorRole: SystemChatMessage['authorRole'];
+    text: string;
+    screenshots?: string[];
+    mentions?: string[];
+  }): Promise<SystemChatMessage> {
+    const now = Date.now();
+    const msg: SystemChatMessage = {
+      id: `chat-${now}-${Math.random().toString(36).substring(2, 7)}`,
+      system: input.system,
+      author: input.author,
+      authorRole: input.authorRole,
+      text: input.text,
+      screenshots: Array.isArray(input.screenshots) ? input.screenshots : [],
+      reactions: {},
+      mentions: input.mentions && input.mentions.length > 0 ? input.mentions : undefined,
+      createdAt: now,
+      updatedAt: now
+    };
+
+    const existing = this.chatsBySystem[msg.system] || [];
+    this.chatsBySystem = {
+      ...this.chatsBySystem,
+      [msg.system]: pruneChatMessages([...existing, msg])
+    };
+    this.persistChatsLocally(this.chatsBySystem);
+    this.notifyChats();
+    this.broadcastChatToTabs();
+    this.sendTypingStatus(msg.system, msg.author, false);
+
+    await this.publishSingleChatMessageToCloud(msg, true);
+    if (msg.screenshots && msg.screenshots.some((s) => isDataUrlImage(s)) && getSavedGoogleDriveUrl()) {
+      this.offloadChatImagesToGoogleDriveInBackground();
+    }
+    return msg;
+  }
+
+  public async editChatMessage(
+    system: string,
+    messageId: string,
+    newText: string,
+    actorName: string,
+    mentions?: string[]
+  ): Promise<void> {
+    const list = this.chatsBySystem[system] || [];
+    const target = list.find((m) => m.id === messageId);
+    if (!target || target.deletedAt) return;
+    if (target.author.trim().toLowerCase() !== actorName.trim().toLowerCase()) return;
+
+    const now = Date.now();
+    const updatedMsg: SystemChatMessage = {
+      ...target,
+      text: newText,
+      mentions: mentions && mentions.length > 0 ? mentions : undefined,
+      editedAt: now,
+      updatedAt: now
+    };
+    this.chatsBySystem = {
+      ...this.chatsBySystem,
+      [system]: list.map((m) => (m.id === messageId ? updatedMsg : m))
+    };
+    this.persistChatsLocally(this.chatsBySystem);
+    this.notifyChats();
+    this.broadcastChatToTabs();
+    await this.publishSingleChatMessageToCloud(updatedMsg, false);
+  }
+
+  public async deleteChatMessageByAdmin(
+    system: string,
+    messageId: string,
+    adminName: string
+  ): Promise<void> {
+    const list = this.chatsBySystem[system] || [];
+    const target = list.find((m) => m.id === messageId);
+    if (!target) return;
+
+    const now = Date.now();
+    const deletedMsg: SystemChatMessage = {
+      ...target,
+      text: 'הודעה נמחקה על ידי מנהל',
+      screenshots: [],
+      reactions: {},
+      mentions: undefined,
+      deletedByAdmin: adminName,
+      deletedAt: now,
+      updatedAt: now
+    };
+    this.chatsBySystem = {
+      ...this.chatsBySystem,
+      [system]: list.map((m) => (m.id === messageId ? deletedMsg : m))
+    };
+    this.persistChatsLocally(this.chatsBySystem);
+    this.notifyChats();
+    this.broadcastChatToTabs();
+    await this.publishSingleChatMessageToCloud(deletedMsg, false);
+  }
+
+  public async toggleChatReaction(
+    system: string,
+    messageId: string,
+    emoji: string,
+    userName: string
+  ): Promise<void> {
+    const list = this.chatsBySystem[system] || [];
+    const target = list.find((m) => m.id === messageId);
+    if (!target || target.deletedAt) return;
+
+    const currentReactions = { ...(target.reactions || {}) };
+    const existingUsers = Array.isArray(currentReactions[emoji]) ? [...currentReactions[emoji]] : [];
+    const normalizedUser = userName.trim();
+    const idx = existingUsers.findIndex((u) => u.trim().toLowerCase() === normalizedUser.toLowerCase());
+    if (idx !== -1) {
+      existingUsers.splice(idx, 1);
+    } else {
+      existingUsers.push(normalizedUser);
+    }
+    if (existingUsers.length === 0) {
+      delete currentReactions[emoji];
+    } else {
+      currentReactions[emoji] = existingUsers;
+    }
+
+    const updatedMsg: SystemChatMessage = {
+      ...target,
+      reactions: currentReactions,
+      updatedAt: Date.now()
+    };
+    this.chatsBySystem = {
+      ...this.chatsBySystem,
+      [system]: list.map((m) => (m.id === messageId ? updatedMsg : m))
+    };
+    this.persistChatsLocally(this.chatsBySystem);
+    this.notifyChats();
+    this.broadcastChatToTabs();
+    await this.publishSingleChatMessageToCloud(updatedMsg, false);
+  }
+
+  public sendTypingStatus(system: string, author: string, isTyping: boolean) {
+    const now = Date.now();
+    const payload = {
+      system,
+      author,
+      clientId: this.clientId,
+      isTyping,
+      timestamp: now
+    };
+
+    if (this.activeFirebaseConfig && this.rtdb) {
+      try {
+        const typingRef = ref(this.rtdb, `std_chat_typing/${this.clientId}`);
+        if (isTyping) {
+          set(typingRef, payload).catch(() => {});
+          onDisconnect(typingRef).remove().catch(() => {});
+        } else {
+          set(typingRef, null).catch(() => {});
+        }
+      } catch {
+        // ignore
+      }
+      return;
+    }
+
+    if (this.mqttClient && this.mqttClient.connected) {
+      try {
+        this.mqttClient.publish(CLOUD_TOPIC_CHAT_TYPING, JSON.stringify(payload), {
+          qos: 0,
+          retain: false
+        });
+      } catch {
+        // ignore
+      }
+    }
+  }
+
+  public renameSystemChats(oldSystem: string, newSystem: string) {
+    const existing = this.chatsBySystem[oldSystem];
+    if (!existing || existing.length === 0) return;
+    const moved = existing.map((m) => ({ ...m, system: newSystem, updatedAt: Date.now() }));
+    const next = { ...this.chatsBySystem };
+    delete next[oldSystem];
+    next[newSystem] = mergeSystemChatArrays(next[newSystem], moved);
+    this.chatsBySystem = next;
+    this.persistChatsLocally(next);
+    this.notifyChats();
+    this.publishChatSnapshotToMqtt(next);
+  }
+
+  private applyIncomingRemoteChats(
+    incomingChats: Record<string, SystemChatMessage[]>,
+    isRemote: boolean,
+    notifyRecentOnly = true
+  ) {
+    const prevIds = new Set<string>();
+    for (const list of Object.values(this.chatsBySystem)) {
+      for (const m of list) prevIds.add(m.id);
+    }
+
+    const merged = mergeAllChats(this.chatsBySystem, incomingChats);
+    this.chatsBySystem = merged;
+    this.persistChatsLocally(merged);
+
+    let newestRemoteMsg: SystemChatMessage | undefined;
+    if (isRemote && this.hasLoadedInitialChatsFirebase) {
+      const now = Date.now();
+      for (const list of Object.values(incomingChats)) {
+        for (const m of list) {
+          if (
+            !prevIds.has(m.id) &&
+            !m.deletedAt &&
+            (!notifyRecentOnly || now - m.createdAt < 60000)
+          ) {
+            if (!newestRemoteMsg || m.createdAt > newestRemoteMsg.createdAt) {
+              newestRemoteMsg = m;
+            }
+          }
+        }
+      }
+    }
+    this.hasLoadedInitialChatsFirebase = true;
+    this.notifyChats(newestRemoteMsg);
+
+    if (getSavedGoogleDriveUrl()) {
+      this.offloadChatImagesToGoogleDriveInBackground();
+    }
+  }
+
+  private async handleIncomingChatEvent(rawStr: string) {
+    try {
+      const decrypted = await decryptSyncPayload(rawStr);
+      const parsed = JSON.parse(decrypted);
+      if (!parsed || !parsed.message) return;
+
+      let incomingMsg: SystemChatMessage = parsed.message;
+      const isRemote = Boolean(parsed.clientId && parsed.clientId !== this.clientId);
+
+      if (parsed.bytebinKey && isRemote) {
+        try {
+          const res = await fetch(`${BYTEBIN_GET_BASE}${parsed.bytebinKey}`);
+          if (res.ok) {
+            const body = await res.text();
+            const fullDecrypted = await decryptSyncPayload(body);
+            const fullParsed = JSON.parse(fullDecrypted);
+            if (fullParsed?.message) incomingMsg = fullParsed.message;
+          }
+        } catch {
+          // fallback to light payload
+        }
+      }
+
+      if (!incomingMsg.id || !incomingMsg.system) return;
+      const existingList = this.chatsBySystem[incomingMsg.system] || [];
+      const existedBefore = existingList.some((m) => m.id === incomingMsg.id);
+      const mergedList = mergeSystemChatArrays(existingList, [incomingMsg]);
+
+      this.chatsBySystem = {
+        ...this.chatsBySystem,
+        [incomingMsg.system]: mergedList
+      };
+      this.persistChatsLocally(this.chatsBySystem);
+
+      // Clear sender's typing indicator cleanly upon message delivery
+      if (parsed.clientId) {
+        const typingKey = `${incomingMsg.system}::${parsed.clientId}`;
+        if (this.typingUsers.delete(typingKey)) {
+          this.notifyTyping();
+        }
+      }
+
+      const shouldNotifyNew = isRemote && Boolean(parsed.isNew) && !existedBefore && !incomingMsg.deletedAt;
+      this.notifyChats(shouldNotifyNew ? incomingMsg : undefined);
+    } catch {
+      // ignore malformed chat event
+    }
+  }
+
+  private async handleIncomingChatSnapshot(rawStr: string) {
+    try {
+      const decrypted = await decryptSyncPayload(rawStr);
+      const parsed = JSON.parse(decrypted);
+      if (!parsed || !parsed.chats || typeof parsed.chats !== 'object') return;
+
+      const isRemote = Boolean(parsed.clientId && parsed.clientId !== this.clientId);
+      const prevIds = new Set<string>();
+      for (const list of Object.values(this.chatsBySystem)) {
+        for (const m of list) prevIds.add(m.id);
+      }
+
+      let incomingChats: Record<string, SystemChatMessage[]> = parsed.chats;
+      if (parsed.bytebinKey && parsed.bytebinKey !== this.lastChatBytebinFetched) {
+        this.lastChatBytebinFetched = parsed.bytebinKey;
+        try {
+          const res = await fetch(`${BYTEBIN_GET_BASE}${parsed.bytebinKey}`);
+          if (res.ok) {
+            const body = await res.text();
+            const fullDecrypted = await decryptSyncPayload(body);
+            const fullParsed = JSON.parse(fullDecrypted);
+            if (fullParsed?.chats && typeof fullParsed.chats === 'object') {
+              incomingChats = fullParsed.chats;
+            }
+          }
+        } catch {
+          // ignore
+        }
+      }
+
+      const merged = mergeAllChats(this.chatsBySystem, incomingChats);
+      this.chatsBySystem = merged;
+      this.persistChatsLocally(merged);
+
+      // If peer was missing our local chat messages, re-share snapshot cleanly
+      const ourTotals = this.getChatTotals(this.chatsBySystem);
+      const peerTotals = this.getChatTotals(incomingChats);
+      if (isRemote && ourTotals.totalMessages > peerTotals.totalMessages) {
+        this.publishChatSnapshotToMqtt(merged);
+      }
+
+      // Notify only if a brand-new message arrived within the last 30s (prevents history catchup notification spam)
+      let recentNewMsg: SystemChatMessage | undefined;
+      if (isRemote) {
+        const now = Date.now();
+        for (const list of Object.values(incomingChats)) {
+          for (const m of list) {
+            if (!prevIds.has(m.id) && !m.deletedAt && now - m.createdAt < 30000) {
+              if (!recentNewMsg || m.createdAt > recentNewMsg.createdAt) {
+                recentNewMsg = m;
+              }
+            }
+          }
+        }
+      }
+      this.notifyChats(recentNewMsg);
+    } catch {
+      // ignore malformed chat snapshot
+    }
+  }
+
   private notifyState(isRemoteUpdate: boolean) {
     for (const listener of this.stateListeners) {
       listener(this.currentState, isRemoteUpdate);
@@ -446,6 +1193,15 @@ class RealtimeSyncService {
       this.unsubscribePresence();
       this.unsubscribePresence = null;
     }
+    if (this.unsubscribeChatFirebase) {
+      this.unsubscribeChatFirebase();
+      this.unsubscribeChatFirebase = null;
+    }
+    if (this.unsubscribeTypingFirebase) {
+      this.unsubscribeTypingFirebase();
+      this.unsubscribeTypingFirebase = null;
+    }
+    this.hasLoadedInitialChatsFirebase = false;
     if (this.eventSource) {
       this.eventSource.close();
       this.eventSource = null;
@@ -546,6 +1302,27 @@ class RealtimeSyncService {
             });
           }
         );
+
+        // Listen to dedicated Firestore per-system chat document
+        const chatsDocRef = doc(this.firestore, 'std_workspaces', 'system_chats');
+        this.unsubscribeChatFirebase = onSnapshot(
+          chatsDocRef,
+          (snap) => {
+            if (snap.exists()) {
+              const data = snap.data() as {
+                chats?: Record<string, SystemChatMessage[]>;
+                clientId?: string;
+              };
+              if (data?.chats && typeof data.chats === 'object') {
+                const isRemote = Boolean(data.clientId && data.clientId !== this.clientId);
+                this.applyIncomingRemoteChats(data.chats, isRemote);
+              }
+            }
+          },
+          () => {
+            // ignore optional chat listener error
+          }
+        );
       } else {
         this.rtdb = getDatabase(this.firebaseApp);
         const stateRef = ref(this.rtdb, 'std_workspace');
@@ -605,6 +1382,72 @@ class RealtimeSyncService {
             });
           }
         );
+
+        // Listen to dedicated RTDB per-system chats node
+        try {
+          const chatsRef = ref(this.rtdb, 'std_chats');
+          this.unsubscribeChatFirebase = onValue(
+            chatsRef,
+            (snap) => {
+              const rawVal = snap.val() as Record<string, Record<string, SystemChatMessage> | SystemChatMessage[]> | null;
+              if (!rawVal) {
+                this.hasLoadedInitialChatsFirebase = true;
+                return;
+              }
+              const parsedChats: Record<string, SystemChatMessage[]> = {};
+              for (const bucket of Object.values(rawVal)) {
+                if (!bucket) continue;
+                const list = Array.isArray(bucket) ? bucket : Object.values(bucket);
+                for (const msg of list) {
+                  if (msg && msg.id && msg.system) {
+                    if (!parsedChats[msg.system]) parsedChats[msg.system] = [];
+                    parsedChats[msg.system].push(msg);
+                  }
+                }
+              }
+              this.applyIncomingRemoteChats(parsedChats, true);
+            },
+            () => {
+              // ignore chat listener error
+            }
+          );
+
+          const typingRef = ref(this.rtdb, 'std_chat_typing');
+          this.unsubscribeTypingFirebase = onValue(
+            typingRef,
+            (snap) => {
+              const rawVal = snap.val() as Record<string, any> | null;
+              const now = Date.now();
+              this.typingUsers.clear();
+              if (rawVal) {
+                for (const item of Object.values(rawVal)) {
+                  if (
+                    item &&
+                    item.isTyping &&
+                    item.system &&
+                    item.author &&
+                    item.clientId &&
+                    item.clientId !== this.clientId &&
+                    now - (item.timestamp || 0) < 6000
+                  ) {
+                    this.typingUsers.set(`${item.system}::${item.clientId}`, {
+                      system: item.system,
+                      author: item.author,
+                      clientId: item.clientId,
+                      updatedAt: item.timestamp || now
+                    });
+                  }
+                }
+              }
+              this.notifyTyping();
+            },
+            () => {
+              // ignore typing listener error
+            }
+          );
+        } catch {
+          // ignore
+        }
       }
 
       return { ok: true };
@@ -1088,6 +1931,10 @@ class RealtimeSyncService {
         client.subscribe(CLOUD_TOPIC_STATE, { qos: 1 });
         client.subscribe(`${CLOUD_TOPIC_PRESENCE_V4}+`, { qos: 0 });
         client.subscribe(CLOUD_TOPIC_PING_V4, { qos: 0 });
+        client.subscribe(CLOUD_TOPIC_CHAT_EVENT, { qos: 1 });
+        client.subscribe(CLOUD_TOPIC_CHAT_SNAPSHOT, { qos: 1 });
+        client.subscribe(CLOUD_TOPIC_CHAT_TYPING, { qos: 0 });
+        client.subscribe(CLOUD_TOPIC_CHAT_PING, { qos: 0 });
 
         publishPresenceOnline();
 
@@ -1098,6 +1945,19 @@ class RealtimeSyncService {
             clientId: this.clientId,
             revision: this.currentState.revision || 0,
             issueCount: this.currentState.issues.length,
+            timestamp: Date.now()
+          }),
+          { qos: 0, retain: false }
+        );
+
+        const chatTotals = this.getChatTotals(this.chatsBySystem);
+        client.publish(
+          CLOUD_TOPIC_CHAT_PING,
+          JSON.stringify({
+            type: 'CHAT_SYNC_CHECK',
+            clientId: this.clientId,
+            totalMessages: chatTotals.totalMessages,
+            latestUpdatedAt: chatTotals.latestUpdatedAt,
             timestamp: Date.now()
           }),
           { qos: 0, retain: false }
@@ -1187,6 +2047,53 @@ class RealtimeSyncService {
             this.updateStatus({
               onlineCount: Math.max(1, this.activePeers.size)
             });
+          } else if (topic === CLOUD_TOPIC_CHAT_EVENT) {
+            await this.handleIncomingChatEvent(rawStr);
+          } else if (topic === CLOUD_TOPIC_CHAT_SNAPSHOT) {
+            await this.handleIncomingChatSnapshot(rawStr);
+          } else if (topic === CLOUD_TOPIC_CHAT_PING) {
+            const data = JSON.parse(rawStr);
+            if (data && data.clientId && data.clientId !== this.clientId) {
+              const now = Date.now();
+              if (data.timestamp && Math.abs(now - data.timestamp) > 25000) {
+                return;
+              }
+              const peerTotal = Number(data.totalMessages || 0);
+              const peerLatest = Number(data.latestUpdatedAt || 0);
+              const myTotals = this.getChatTotals(this.chatsBySystem);
+              if (
+                myTotals.totalMessages > peerTotal ||
+                (myTotals.totalMessages > 0 && myTotals.latestUpdatedAt > peerLatest)
+              ) {
+                this.publishChatSnapshotToMqtt(this.chatsBySystem);
+              }
+            }
+          } else if (topic === CLOUD_TOPIC_CHAT_TYPING) {
+            const data = JSON.parse(rawStr);
+            if (
+              data &&
+              data.clientId &&
+              data.clientId !== this.clientId &&
+              data.system &&
+              data.author
+            ) {
+              const now = Date.now();
+              if (data.timestamp && Math.abs(now - data.timestamp) > 15000) {
+                return;
+              }
+              const key = `${data.system}::${data.clientId}`;
+              if (data.isTyping) {
+                this.typingUsers.set(key, {
+                  system: data.system,
+                  author: data.author,
+                  clientId: data.clientId,
+                  updatedAt: now
+                });
+              } else {
+                this.typingUsers.delete(key);
+              }
+              this.notifyTyping();
+            }
           }
         } catch {
           // ignore malformed payload

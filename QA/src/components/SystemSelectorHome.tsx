@@ -11,7 +11,8 @@ import {
   Archive,
   Boxes,
   Plus,
-  Sparkles
+  Sparkles,
+  MessageCircle
 } from 'lucide-react';
 import { StdIssue } from '../types/std';
 
@@ -19,11 +20,13 @@ interface SystemSelectorHomeProps {
   systems: string[];
   archivedSystems: string[];
   issues: StdIssue[];
+  chatUnreadBySystem?: Record<string, number>;
   currentUserName: string;
   userTeamTitle: string;
   isAdmin: boolean;
   canCreateOrEdit: boolean;
   onSelectSystem: (sys: string) => void;
+  onOpenSystemChat?: (sys: string) => void;
   onAddSystem: (name: string) => void;
   onManageSystem?: (name: string) => void;
   onOpenArchiveModal?: () => void;
@@ -34,11 +37,13 @@ export const SystemSelectorHome: React.FC<SystemSelectorHomeProps> = ({
   systems,
   archivedSystems,
   issues,
+  chatUnreadBySystem = {},
   currentUserName,
   userTeamTitle,
   isAdmin,
   canCreateOrEdit,
   onSelectSystem,
+  onOpenSystemChat,
   onAddSystem,
   onManageSystem,
   onOpenArchiveModal,
@@ -145,6 +150,7 @@ export const SystemSelectorHome: React.FC<SystemSelectorHomeProps> = ({
             (i) => i.severity === 'קריטית' && i.status !== 'נבדק תקין'
           ).length;
           const resolvedCount = sysIssues.filter((i) => i.status === 'נבדק תקין').length;
+          const unreadChatCount = chatUnreadBySystem[sys] || 0;
 
           // Percentage resolved
           const resolvedPercent =
@@ -236,9 +242,34 @@ export const SystemSelectorHome: React.FC<SystemSelectorHomeProps> = ({
                 )}
               </div>
 
-              {/* Enter Button CTA */}
-              <div className="pt-3 mt-1 flex items-center justify-between text-xs font-bold text-indigo-600 dark:text-indigo-400 group-hover:text-indigo-700 dark:group-hover:text-indigo-300 transition-colors">
-                <span>כניסה למערכת</span>
+              {/* Enter Button CTA + Team Chat Pill */}
+              <div className="pt-3 mt-1 flex items-center justify-between gap-2 text-xs font-bold text-indigo-600 dark:text-indigo-400 group-hover:text-indigo-700 dark:group-hover:text-indigo-300 transition-colors">
+                <div className="flex items-center gap-2">
+                  <span>כניסה למערכת</span>
+                  {onOpenSystemChat && (
+                    <button
+                      type="button"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        onOpenSystemChat(sys);
+                      }}
+                      className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[11px] font-bold border transition cursor-pointer ${
+                        unreadChatCount > 0
+                          ? 'bg-rose-50 dark:bg-rose-950/60 text-rose-700 dark:text-rose-300 border-rose-200 dark:border-rose-800 animate-pulse'
+                          : 'bg-slate-50 dark:bg-slate-800 text-slate-600 dark:text-slate-300 border-slate-200 dark:border-slate-700 hover:bg-indigo-50 hover:text-indigo-700 dark:hover:bg-indigo-950/50 dark:hover:text-indigo-300'
+                      }`}
+                      title={`פתח צ׳אט צוות של מערכת ${sys}`}
+                    >
+                      <MessageCircle className="w-3 h-3" />
+                      <span>צ׳אט</span>
+                      {unreadChatCount > 0 && (
+                        <span className="px-1.5 py-0.2 rounded-full bg-rose-600 text-white text-[10px] font-mono">
+                          {unreadChatCount > 99 ? '99+' : unreadChatCount}
+                        </span>
+                      )}
+                    </button>
+                  )}
+                </div>
                 <span className="flex items-center justify-center w-8 h-8 rounded-full bg-indigo-50 dark:bg-indigo-950/60 group-hover:bg-indigo-600 group-hover:text-white transition-all transform group-hover:-translate-x-1">
                   <ArrowLeft className="w-4 h-4" />
                 </span>

@@ -357,8 +357,11 @@ export const SmartTableView: React.FC<SmartTableViewProps> = ({
               return (
                 <React.Fragment key={issue.id}>
                   <tr
+                    id={`issue-item-${issue.id}`}
                     className={`hover:bg-slate-50/90 dark:hover:bg-slate-800/60 transition ${
-                      isHighlighted ? 'bg-indigo-50/70 dark:bg-indigo-950/40' : ''
+                      isHighlighted
+                        ? 'bg-indigo-50/80 dark:bg-indigo-950/50 ring-2 ring-inset ring-indigo-500'
+                        : ''
                     }`}
                   >
                     {showSystemColumn && (

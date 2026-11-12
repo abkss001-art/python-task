@@ -1,5 +1,6 @@
 import React, { useEffect, useMemo, useState, useRef, useCallback } from 'react';
 import {
+  ChatTypingUser,
   DEFAULT_SYSTEMS,
   StdAuditEntry,
   StdComment,
@@ -7,8 +8,16 @@ import {
   StdPlatform,
   StdSeverity,
   StdStatus,
-  SyncStatusInfo
+  SyncStatusInfo,
+  SystemChatMessage
 } from './types/std';
+import { SystemChatDrawer } from './components/SystemChatDrawer';
+import {
+  doesMessageMentionUser,
+  getLastChatReadMap,
+  getUnreadCountForSystem,
+  saveLastChatReadTime
+} from './utils/chatUtils';
 import { syncService, isSystemAdminAction } from './services/syncService';
 import { Navbar } from './components/Navbar';
 import { FilterBar } from './components/FilterBar';
@@ -69,7 +78,8 @@ import {
   Layers,
   ChevronDown,
   Check,
-  Flame
+  Flame,
+  MessageCircle
 } from 'lucide-react';
 import {
   computeUserAuthSignature,
@@ -244,6 +254,17 @@ export function App() {
   const prevIssuesRef = useRef<StdIssue[]>([]);
   const hasLoadedInitialStateRef = useRef<boolean>(false);
 
+  // Per-System Group Chat State & Live Refs
+  const [chatsBySystem, setChatsBySystem] = useState<Record<string, SystemChatMessage[]>>(() =>
+    syncService.getAllChats()
+  );
+  const [typingBySystem, setTypingBySystem] = useState<Record<string, ChatTypingUser[]>>({});
+  const [isChatDrawerOpen, setIsChatDrawerOpen] = useState<boolean>(false);
+  const [chatReadTimestamps, setChatReadTimestamps] = useState<Record<string, number>>(() =>
+    getLastChatReadMap()
+  );
+  const [chatInitialLastReadAt, setChatInitialLastReadAt] = useState<number>(0);
+
   const isAdmin = Boolean(authUser?.isAdmin);
   const currentUserName = authUser?.fullName || 'חבר צוות';
   const currentUserRole = authUser?.role || 'qa';
@@ -251,6 +272,25 @@ export function App() {
   const formattedUserDisplay = `${currentUserName} ${userTeamTitle}`;
   // QA testers and Admins can create/edit issues; Developers (1111) only update status and add comments
   const canCreateOrEdit = Boolean(authUser && (authUser.isAdmin || authUser.role === 'qa'));
+
+  const activeSystemRef = useRef<string>(activeSystem);
+  const isChatDrawerOpenRef = useRef<boolean>(isChatDrawerOpen);
+  const currentUserNameRef = useRef<string>(currentUserName);
+  const allowedSystemsRef = useRef<string[] | null>(null);
+  const isAuthenticatedRef = useRef<boolean>(Boolean(authUser));
+
+  useEffect(() => {
+    activeSystemRef.current = activeSystem;
+  }, [activeSystem]);
+  useEffect(() => {
+    isChatDrawerOpenRef.current = isChatDrawerOpen;
+  }, [isChatDrawerOpen]);
+  useEffect(() => {
+    currentUserNameRef.current = currentUserName;
+  }, [currentUserName]);
+  useEffect(() => {
+    isAuthenticatedRef.current = Boolean(authUser);
+  }, [authUser]);
 
   // Register Service Worker and capture PWA install prompt
   useEffect(() => {
@@ -353,9 +393,65 @@ export function App() {
       setSyncStatus(status);
     });
 
+    const unsubChat = syncService.subscribeChat((nextChats, incomingNewMsg) => {
+      setChatsBySystem(nextChats);
+
+      if (!incomingNewMsg || !isAuthenticatedRef.current) return;
+
+      const allowed = allowedSystemsRef.current;
+      if (allowed && !allowed.includes(incomingNewMsg.system)) {
+        return;
+      }
+
+      const selfName = currentUserNameRef.current.trim().toLowerCase();
+      if (incomingNewMsg.author.trim().toLowerCase() === selfName) {
+        return;
+      }
+
+      const viewingThisChat =
+        isChatDrawerOpenRef.current && activeSystemRef.current === incomingNewMsg.system;
+      if (viewingThisChat) {
+        setChatReadTimestamps(saveLastChatReadTime(incomingNewMsg.system, incomingNewMsg.createdAt));
+        return;
+      }
+
+      const activePrefs = loadNotificationPreferences();
+      const isMention = doesMessageMentionUser(incomingNewMsg, currentUserNameRef.current);
+      const isMutedSystem = (activePrefs.mutedChatSystems || []).includes(incomingNewMsg.system);
+      const shouldSendNotif =
+        activePrefs.enabled &&
+        (isMention || (activePrefs.notifyOnChatMessages && !isMutedSystem));
+
+      if (shouldSendNotif) {
+        const title = isMention
+          ? `📣 תויגת בצ׳אט צוות (${incomingNewMsg.system})`
+          : `💬 הודעה חדשה בצ׳אט (${incomingNewMsg.system})`;
+        const preview = incomingNewMsg.text
+          ? `${incomingNewMsg.author}: ${incomingNewMsg.text}`
+          : `${incomingNewMsg.author}: 📷 שלח צילום מסך`;
+        sendSystemNotification(title, preview, activePrefs.soundEnabled);
+      }
+
+      if (isMention || !isMutedSystem) {
+        const toastPreview = incomingNewMsg.text
+          ? incomingNewMsg.text.slice(0, 60)
+          : '📷 צילום מסך חדש';
+        setLiveToast(
+          `${isMention ? '📣' : '💬'} [${incomingNewMsg.system}] ${incomingNewMsg.author}: ${toastPreview}`
+        );
+        setTimeout(() => setLiveToast(null), 4000);
+      }
+    });
+
+    const unsubTyping = syncService.subscribeTyping((nextTyping) => {
+      setTypingBySystem(nextTyping);
+    });
+
     return () => {
       unsubState();
       unsubStatus();
+      unsubChat();
+      unsubTyping();
     };
   }, []);
 
@@ -376,6 +472,7 @@ export function App() {
         isTeamModalOpen ||
         isAdminSecurityOpen ||
         isAdminToolsOpen ||
+        isChatDrawerOpen ||
         systemToManage
       ) {
         return;
@@ -433,6 +530,7 @@ export function App() {
     isTeamModalOpen,
     isAdminSecurityOpen,
     isAdminToolsOpen,
+    isChatDrawerOpen,
     systemToManage,
     activeSystem,
     systems,
@@ -607,6 +705,9 @@ export function App() {
 
   const handleSelectSystem = useCallback((sys: string) => {
     setActiveSystem(sys);
+    if (sys === 'HOME' || sys === 'ALL') {
+      setIsChatDrawerOpen(false);
+    }
     setSearchQuery('');
     setPlatformFilter('ALL');
     setStatusFilter('ALL');
@@ -700,6 +801,7 @@ export function App() {
     });
     setTeamMembers(updatedTeamMembers);
     saveStoredTeamMembers(updatedTeamMembers);
+    syncService.renameSystemChats(oldName, cleanNewName);
 
     syncService.pushStateToCloud(
       {
@@ -833,6 +935,77 @@ export function App() {
     if (!userAllowedSystems) return systems;
     return systems.filter((s) => userAllowedSystems.includes(s));
   }, [systems, userAllowedSystems]);
+
+  useEffect(() => {
+    allowedSystemsRef.current = userAllowedSystems;
+  }, [userAllowedSystems]);
+
+  // Compute unread chat count per visible system
+  const unreadChatBySystem = useMemo(() => {
+    const map: Record<string, number> = {};
+    for (const sys of visibleSystems) {
+      map[sys] = getUnreadCountForSystem(
+        chatsBySystem[sys] || [],
+        chatReadTimestamps[sys] || 0,
+        currentUserName
+      );
+    }
+    return map;
+  }, [visibleSystems, chatsBySystem, chatReadTimestamps, currentUserName]);
+
+  const handleOpenSystemChat = useCallback(
+    (targetSys?: string) => {
+      const sys = targetSys && targetSys !== 'HOME' && targetSys !== 'ALL' ? targetSys : activeSystem;
+      if (!sys || sys === 'HOME' || sys === 'ALL') return;
+      if (targetSys && targetSys !== activeSystem) {
+        handleSelectSystem(targetSys);
+      }
+      setChatInitialLastReadAt(chatReadTimestamps[sys] || 0);
+      setChatReadTimestamps(saveLastChatReadTime(sys, Date.now()));
+      setIsChatDrawerOpen(true);
+    },
+    [activeSystem, chatReadTimestamps, handleSelectSystem]
+  );
+
+  const handleToggleMuteChatSystem = useCallback(
+    (sys: string) => {
+      const currentMuted = notifPrefs.mutedChatSystems || [];
+      const exists = currentMuted.includes(sys);
+      const nextMuted = exists
+        ? currentMuted.filter((s) => s !== sys)
+        : [...currentMuted, sys];
+      updateNotifPref({ mutedChatSystems: nextMuted });
+    },
+    [notifPrefs.mutedChatSystems]
+  );
+
+  const handleJumpToIssueFromChat = useCallback(
+    (testCaseId: string) => {
+      const targetId = testCaseId.trim().toLowerCase();
+      const found = issues.find(
+        (i) => i.system === activeSystem && i.testCaseId.trim().toLowerCase() === targetId
+      );
+      if (!found) {
+        setLiveToast(`תסריט #${testCaseId} לא נמצא במערכת ${activeSystem}`);
+        setTimeout(() => setLiveToast(null), 3000);
+        return;
+      }
+      setSearchQuery('');
+      setPlatformFilter('ALL');
+      setStatusFilter('ALL');
+      setQuickPreset('ALL');
+      setHighlightedIssueId(found.id);
+      setTimeout(() => setHighlightedIssueId(null), 4500);
+      if (typeof window !== 'undefined' && window.innerWidth < 640) {
+        setIsChatDrawerOpen(false);
+      }
+      setTimeout(() => {
+        const el = document.getElementById(`issue-item-${found.id}`);
+        el?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      }, 120);
+    },
+    [issues, activeSystem]
+  );
 
   // Automatically adjust activeSystem when userAllowedSystems is restricted
   useEffect(() => {
@@ -1375,6 +1548,78 @@ export function App() {
               />
             </label>
 
+            {/* Global Chat Notifications Toggle */}
+            <label
+              className={`flex items-center justify-between gap-3 p-2.5 rounded-xl bg-white dark:bg-slate-900 border border-slate-200/80 dark:border-slate-700/80 cursor-pointer transition ${
+                !notifPrefs.enabled ? 'opacity-50 pointer-events-none' : 'hover:border-indigo-200 dark:hover:border-indigo-500/50'
+              }`}
+            >
+              <div>
+                <div className="text-xs font-bold text-slate-900 dark:text-slate-100 flex items-center gap-1.5">
+                  <MessageCircle className="w-3.5 h-3.5 text-indigo-500" />
+                  <span>התראות צ׳אט קבוצתי</span>
+                </div>
+                <div className="text-[11px] text-slate-500 dark:text-slate-400">
+                  קבל התראה כשחבר צוות שולח הודעה בצ׳אט של מערכת
+                </div>
+              </div>
+              <input
+                type="checkbox"
+                checked={notifPrefs.notifyOnChatMessages}
+                onChange={(e) => updateNotifPref({ notifyOnChatMessages: e.target.checked })}
+                className="w-4 h-4 accent-indigo-600 rounded cursor-pointer"
+              />
+            </label>
+
+            {/* Per-System Chat Mute Toggles */}
+            {visibleSystems.length > 0 && (
+              <div
+                className={`p-2.5 rounded-xl bg-white dark:bg-slate-900 border border-slate-200/80 dark:border-slate-700/80 space-y-2 transition ${
+                  !notifPrefs.enabled || !notifPrefs.notifyOnChatMessages
+                    ? 'opacity-55'
+                    : ''
+                }`}
+              >
+                <div>
+                  <div className="text-xs font-bold text-slate-900 dark:text-slate-100">
+                    השתקת הודעות צ׳אט לפי מערכת:
+                  </div>
+                  <div className="text-[10px] text-slate-500 dark:text-slate-400">
+                    תיוג ישיר שלך (<code className="font-bold">@{currentUserName}</code>) יתריע תמיד גם במערכת מושתקת
+                  </div>
+                </div>
+                <div className="flex flex-wrap gap-1.5">
+                  {visibleSystems.map((sys) => {
+                    const isMuted = (notifPrefs.mutedChatSystems || []).includes(sys);
+                    return (
+                      <button
+                        key={sys}
+                        type="button"
+                        onClick={() => handleToggleMuteChatSystem(sys)}
+                        className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-[11px] font-bold border transition cursor-pointer ${
+                          isMuted
+                            ? 'bg-amber-50 dark:bg-amber-950/60 text-amber-800 dark:text-amber-300 border-amber-300 dark:border-amber-700'
+                            : 'bg-slate-50 dark:bg-slate-800 text-slate-700 dark:text-slate-200 border-slate-200 dark:border-slate-700 hover:border-indigo-300'
+                        }`}
+                        title={
+                          isMuted
+                            ? `צ׳אט ${sys} מושתק — לחץ להפעלת התראות`
+                            : `התראות צ׳אט פעילות ב-${sys} — לחץ להשתקה`
+                        }
+                      >
+                        {isMuted ? (
+                          <BellOff className="w-3 h-3 text-amber-600 dark:text-amber-400" />
+                        ) : (
+                          <BellRing className="w-3 h-3 text-emerald-600 dark:text-emerald-400" />
+                        )}
+                        <span className="bidi-isolate">{sys}</span>
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+            )}
+
             {/* Sound Toggle */}
             <label
               className={`flex items-center justify-between gap-3 p-2.5 rounded-xl bg-white dark:bg-slate-900 border border-slate-200/80 dark:border-slate-700/80 cursor-pointer transition ${
@@ -1610,7 +1855,9 @@ export function App() {
             userTeamTitle={userTeamTitle}
             isAdmin={isAdmin}
             canCreateOrEdit={canCreateOrEdit}
+            chatUnreadBySystem={unreadChatBySystem}
             onSelectSystem={handleSelectSystem}
+            onOpenSystemChat={(sys) => handleOpenSystemChat(sys)}
             onAddSystem={handleAddSystem}
             onManageSystem={isAdmin ? (sys) => setSystemToManage(sys) : undefined}
             onOpenArchiveModal={isAdmin ? () => setIsArchiveModalOpen(true) : undefined}
@@ -1622,7 +1869,7 @@ export function App() {
         ) : (
           <>
             {/* System Breadcrumb & Switcher Bar */}
-            <div className="flex items-center justify-between gap-3 mb-3 px-1">
+            <div className="flex items-center justify-between gap-2 flex-wrap mb-3 px-1">
               <div className="flex items-center gap-2 text-xs text-slate-500 dark:text-slate-400">
                 <button
                   type="button"
@@ -1638,6 +1885,47 @@ export function App() {
                   מערכת {activeSystem}
                 </span>
               </div>
+
+              <div className="flex items-center gap-2">
+                {/* Team Group Chat Button */}
+                {(() => {
+                  const sysUnread = unreadChatBySystem[activeSystem] || 0;
+                  const sysTyping = (typingBySystem[activeSystem] || []).length > 0;
+                  return (
+                    <button
+                      type="button"
+                      onClick={() => handleOpenSystemChat(activeSystem)}
+                      className={`relative text-xs font-bold transition flex items-center gap-1.5 cursor-pointer px-3.5 py-1.5 rounded-xl border shadow-2xs ${
+                        isChatDrawerOpen
+                          ? 'bg-violet-600 text-white border-violet-600 shadow-sm'
+                          : sysUnread > 0
+                          ? 'bg-indigo-50 dark:bg-indigo-950/70 text-indigo-700 dark:text-indigo-200 border-indigo-300 dark:border-indigo-700 hover:bg-indigo-100 dark:hover:bg-indigo-900/70'
+                          : 'bg-white dark:bg-slate-900 text-slate-700 dark:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800 border-slate-200 dark:border-slate-800'
+                      }`}
+                      title={`פתח צ׳אט קבוצתי של מערכת ${activeSystem}`}
+                    >
+                      <MessageCircle
+                        className={`w-3.5 h-3.5 ${
+                          isChatDrawerOpen
+                            ? 'text-white'
+                            : 'text-indigo-600 dark:text-indigo-400'
+                        }`}
+                      />
+                      <span>צ׳אט צוות</span>
+                      {sysTyping && (
+                        <span
+                          className="w-2 h-2 rounded-full bg-emerald-500 animate-ping"
+                          title="מישהו כותב עכשיו..."
+                        />
+                      )}
+                      {sysUnread > 0 && (
+                        <span className="px-1.5 py-0.2 rounded-full bg-rose-600 text-white text-[10px] font-mono leading-tight">
+                          {sysUnread > 99 ? '99+' : sysUnread}
+                        </span>
+                      )}
+                    </button>
+                  );
+                })()}
 
               {/* System Switcher Button & Dropdown */}
               <div className="relative" ref={systemSwitcherRef}>
@@ -1746,6 +2034,7 @@ export function App() {
                     </div>
                   </div>
                 )}
+              </div>
               </div>
             </div>
 
@@ -2249,6 +2538,62 @@ export function App() {
 
       {/* App Install & Notifications Modal */}
       {renderInstallModal()}
+
+      {/* Per-System Team Group Chat Drawer */}
+      {activeSystem && activeSystem !== 'HOME' && activeSystem !== 'ALL' && (
+        <SystemChatDrawer
+          isOpen={isChatDrawerOpen}
+          system={activeSystem}
+          messages={chatsBySystem[activeSystem] || []}
+          systemIssues={issues.filter((i) => i.system === activeSystem)}
+          teamMembers={teamMembers}
+          typingUsers={typingBySystem[activeSystem] || []}
+          currentUserName={currentUserName}
+          currentUserRole={currentUserRole}
+          isAdmin={isAdmin}
+          isSystemMuted={(notifPrefs.mutedChatSystems || []).includes(activeSystem)}
+          initialLastReadAt={chatInitialLastReadAt}
+          onClose={() => {
+            setIsChatDrawerOpen(false);
+            setChatReadTimestamps(saveLastChatReadTime(activeSystem, Date.now()));
+          }}
+          onSendMessage={async ({ text, screenshots, mentions }) => {
+            await syncService.sendChatMessage({
+              system: activeSystem,
+              author: currentUserName,
+              authorRole: currentUserRole,
+              text,
+              screenshots,
+              mentions
+            });
+            setChatReadTimestamps(saveLastChatReadTime(activeSystem, Date.now()));
+          }}
+          onEditMessage={async (messageId, newText, mentions) => {
+            await syncService.editChatMessage(
+              activeSystem,
+              messageId,
+              newText,
+              currentUserName,
+              mentions
+            );
+          }}
+          onDeleteMessage={async (messageId) => {
+            if (!isAdmin) return;
+            await syncService.deleteChatMessageByAdmin(activeSystem, messageId, currentUserName);
+          }}
+          onToggleReaction={async (messageId, emoji) => {
+            await syncService.toggleChatReaction(activeSystem, messageId, emoji, currentUserName);
+          }}
+          onTypingChange={(isTyping) => {
+            syncService.sendTypingStatus(activeSystem, currentUserName, isTyping);
+          }}
+          onToggleMuteSystem={() => handleToggleMuteChatSystem(activeSystem)}
+          onJumpToIssue={handleJumpToIssueFromChat}
+          onOpenLightbox={(images, index, title) =>
+            setLightboxData({ images, index, title })
+          }
+        />
+      )}
     </div>
   );
 }

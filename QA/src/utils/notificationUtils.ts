@@ -7,6 +7,8 @@ export interface NotificationPreferences {
   notifyOnNewIssue: boolean;
   notifyOnStatusChange: boolean;
   notifyOnNewComment: boolean;
+  notifyOnChatMessages: boolean;
+  mutedChatSystems: string[];
   soundEnabled: boolean;
 }
 
@@ -27,6 +29,10 @@ export function loadNotificationPreferences(): NotificationPreferences {
         notifyOnNewIssue: parsed.notifyOnNewIssue ?? true,
         notifyOnStatusChange: parsed.notifyOnStatusChange ?? true,
         notifyOnNewComment: parsed.notifyOnNewComment ?? true,
+        notifyOnChatMessages: parsed.notifyOnChatMessages ?? true,
+        mutedChatSystems: Array.isArray(parsed.mutedChatSystems)
+          ? parsed.mutedChatSystems.filter((s: unknown): s is string => typeof s === 'string')
+          : [],
         soundEnabled: parsed.soundEnabled ?? true
       };
     }
@@ -39,6 +45,8 @@ export function loadNotificationPreferences(): NotificationPreferences {
     notifyOnNewIssue: true,
     notifyOnStatusChange: true,
     notifyOnNewComment: true,
+    notifyOnChatMessages: true,
+    mutedChatSystems: [],
     soundEnabled: true
   };
 }
