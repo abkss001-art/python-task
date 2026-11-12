@@ -387,6 +387,8 @@ class RealtimeSyncService {
   private partitionIssues = new Map<string, StdIssue[]>();
   private partitionUnsubscribes = new Map<string, () => void>();
   private chatPartitionUnsubscribes = new Map<string, () => void>();
+  private loadedPartitionKeys = new Set<string>();
+  private expectedPartitionKeys = new Set<string>();
   private lastPushedPartitionHashes = new Map<string, string>();
   private isMigratingPartitions = false;
   private currentMetaState: {
@@ -1608,6 +1610,8 @@ class RealtimeSyncService {
       }
     }
     this.chatPartitionUnsubscribes.clear();
+    this.loadedPartitionKeys.clear();
+    this.expectedPartitionKeys.clear();
   }
 
   private getPermittedSystemsForCurrentProfile(allCandidateSystems: string[]): string[] {
@@ -1899,6 +1903,7 @@ class RealtimeSyncService {
         } catch {}
         this.partitionUnsubscribes.delete(sysKey);
         this.partitionIssues.delete(sysKey);
+        this.loadedPartitionKeys.delete(sysKey);
       }
     }
     for (const [sysKey, unsub] of this.chatPartitionUnsubscribes.entries()) {
@@ -1910,6 +1915,14 @@ class RealtimeSyncService {
       }
     }
 
+    this.expectedPartitionKeys = new Set(permittedKeyMap.keys());
+    const allPartitionsLoaded = () => {
+      for (const k of this.expectedPartitionKeys) {
+        if (!this.loadedPartitionKeys.has(k)) return false;
+      }
+      return true;
+    };
+
     const useFirestore = config.mode === 'firestore';
     for (const [sysKey, sysName] of permittedKeyMap.entries()) {
       if (!this.partitionUnsubscribes.has(sysKey)) {
@@ -1918,9 +1931,17 @@ class RealtimeSyncService {
           const unsub = onSnapshot(
             sysDocRef,
             (snap) => {
-              const raw = snap.exists() ? (snap.data() as { issues?: StdIssue[] }) : null;
+              const raw = snap.exists()
+                ? (snap.data() as { issues?: StdIssue[]; clientId?: string })
+                : null;
+              const wasLoaded = this.loadedPartitionKeys.has(sysKey);
+              this.loadedPartitionKeys.add(sysKey);
               this.partitionIssues.set(sysKey, Array.isArray(raw?.issues) ? raw.issues : []);
-              this.rebuildStateFromPartitions(true);
+              if (allPartitionsLoaded()) {
+                const isRemote =
+                  wasLoaded && Boolean(raw?.clientId && raw.clientId !== this.clientId);
+                this.rebuildStateFromPartitions(isRemote);
+              }
             },
             () => {}
           );
@@ -1930,14 +1951,23 @@ class RealtimeSyncService {
           const unsub = onValue(
             sysRef,
             (snap) => {
-              const raw = snap.val() as { issues?: StdIssue[] | Record<string, StdIssue> } | null;
+              const raw = snap.val() as {
+                issues?: StdIssue[] | Record<string, StdIssue>;
+                clientId?: string;
+              } | null;
+              const wasLoaded = this.loadedPartitionKeys.has(sysKey);
+              this.loadedPartitionKeys.add(sysKey);
               const list = Array.isArray(raw?.issues)
                 ? raw.issues
                 : raw?.issues && typeof raw.issues === 'object'
                 ? Object.values(raw.issues)
                 : [];
               this.partitionIssues.set(sysKey, list);
-              this.rebuildStateFromPartitions(true);
+              if (allPartitionsLoaded()) {
+                const isRemote =
+                  wasLoaded && Boolean(raw?.clientId && raw.clientId !== this.clientId);
+                this.rebuildStateFromPartitions(isRemote);
+              }
             },
             () => {}
           );
@@ -2050,7 +2080,12 @@ class RealtimeSyncService {
             ];
             const isRemote = Boolean(m.clientId && m.clientId !== this.clientId);
             this.syncPerSystemListeners(config, allSystems);
-            this.rebuildStateFromPartitions(isRemote);
+            if (
+              this.expectedPartitionKeys.size === 0 ||
+              Array.from(this.expectedPartitionKeys).every((k) => this.loadedPartitionKeys.has(k))
+            ) {
+              this.rebuildStateFromPartitions(isRemote);
+            }
             this.updateStatus({
               mode: 'firebase-firestore',
               connected: true,
@@ -2228,7 +2263,12 @@ class RealtimeSyncService {
             ];
             const isRemote = Boolean(m.clientId && m.clientId !== this.clientId);
             this.syncPerSystemListeners(config, allSystems);
-            this.rebuildStateFromPartitions(isRemote);
+            if (
+              this.expectedPartitionKeys.size === 0 ||
+              Array.from(this.expectedPartitionKeys).every((k) => this.loadedPartitionKeys.has(k))
+            ) {
+              this.rebuildStateFromPartitions(isRemote);
+            }
             this.updateStatus({
               mode: 'firebase-rtdb',
               connected: true,
@@ -2784,6 +2824,12 @@ class RealtimeSyncService {
    * משיכה שקטה מהענן (פועלת אוטומטית כל 5 שניות, בעת פתיחת מסך הטלפון, ובלחיצה על "סנכרון חי")
    */
   private async pullLatestFromCloud(forceMqttResubscribe = false) {
+    // When Firebase is active (especially in Auth-enforced mode), Firebase real-time listeners handle sync exclusively.
+    // Never fall back to public MQTT / Registry / Bytebin endpoints.
+    if (this.activeFirebaseConfig) {
+      return;
+    }
+
     if (this.mqttClient && this.mqttClient.connected) {
       try {
         if (forceMqttResubscribe || !this.hasReceivedInitialCloud) {
@@ -3664,7 +3710,8 @@ class RealtimeSyncService {
             issues: sysIssues,
             updatedAt: payload.updatedAt,
             revision: payload.revision,
-            lastUpdatedBy: payload.lastUpdatedBy
+            lastUpdatedBy: payload.lastUpdatedBy,
+            clientId: this.clientId
           });
           const partHash = hashString(JSON.stringify(sysIssues));
           if (nextState.replaceAll || this.lastPushedPartitionHashes.get(sysKey) !== partHash) {
@@ -3735,7 +3782,8 @@ class RealtimeSyncService {
             issues: sysIssues,
             updatedAt: payload.updatedAt,
             revision: payload.revision,
-            lastUpdatedBy: payload.lastUpdatedBy
+            lastUpdatedBy: payload.lastUpdatedBy,
+            clientId: this.clientId
           });
           const partHash = hashString(JSON.stringify(sysIssues));
           if (nextState.replaceAll || this.lastPushedPartitionHashes.get(sysKey) !== partHash) {
