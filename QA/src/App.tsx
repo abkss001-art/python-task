@@ -1007,17 +1007,11 @@ export function App() {
     [issues, activeSystem]
   );
 
-  // Automatically adjust activeSystem when userAllowedSystems is restricted
+  // Automatically adjust activeSystem when userAllowedSystems is restricted (always allowing HOME)
   useEffect(() => {
     if (userAllowedSystems && userAllowedSystems.length > 0) {
-      if (userAllowedSystems.length === 1) {
-        if (activeSystem !== userAllowedSystems[0]) {
-          handleSelectSystem(userAllowedSystems[0]);
-        }
-      } else {
-        if (activeSystem !== 'HOME' && !userAllowedSystems.includes(activeSystem)) {
-          handleSelectSystem('HOME');
-        }
+      if (activeSystem !== 'HOME' && !userAllowedSystems.includes(activeSystem)) {
+        handleSelectSystem('HOME');
       }
     }
   }, [userAllowedSystems, activeSystem, handleSelectSystem]);
@@ -1850,7 +1844,7 @@ export function App() {
           <SystemSelectorHome
             systems={visibleSystems}
             archivedSystems={archivedSystems}
-            issues={issues}
+            issues={systemIssues}
             currentUserName={currentUserName}
             userTeamTitle={userTeamTitle}
             isAdmin={isAdmin}

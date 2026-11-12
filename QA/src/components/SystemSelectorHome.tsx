@@ -49,12 +49,12 @@ export const SystemSelectorHome: React.FC<SystemSelectorHomeProps> = ({
   onOpenArchiveModal,
   onOpenNewIssue
 }) => {
-  // Global stats calculation
-  const totalIssues = issues.length;
-  const criticalOpenIssues = issues.filter(
+  // Global stats calculation (scoped strictly to the visible/authorized systems)
+  const visibleIssues = issues.filter((i) => systems.includes(i.system));
+  const criticalOpenIssues = visibleIssues.filter(
     (i) => i.severity === 'קריטית' && i.status !== 'נבדק תקין'
   ).length;
-  const inProgressIssues = issues.filter(
+  const inProgressIssues = visibleIssues.filter(
     (i) => i.status === 'פתוח' || i.status === 'בטיפול' || i.status === 'ניתן לבדוק שוב'
   ).length;
 
