@@ -696,7 +696,13 @@ export const SystemChatDrawer: React.FC<SystemChatDrawerProps> = ({
 
                           {/* Attached Screenshots */}
                           {msg.screenshots && msg.screenshots.length > 0 && (
-                            <div className="mt-2 grid grid-cols-2 gap-1.5">
+                            <div
+                              className={`mt-2 grid gap-1.5 ${
+                                msg.screenshots.length === 1
+                                  ? 'grid-cols-1 max-w-[260px]'
+                                  : 'grid-cols-2'
+                              }`}
+                            >
                               {msg.screenshots.map((imgUrl, imgIdx) => (
                                 <button
                                   key={imgIdx}

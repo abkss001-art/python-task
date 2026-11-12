@@ -2506,16 +2506,6 @@ export function App() {
         />
       )}
 
-      {/* Fullscreen Lightbox with Zoom & Pan for Mobile Details */}
-      {lightboxData && (
-        <LightboxModal
-          images={lightboxData.images}
-          initialIndex={lightboxData.index}
-          title={lightboxData.title}
-          onClose={() => setLightboxData(null)}
-        />
-      )}
-
       {/* Firebase Cloud Setup Wizard Modal (Admin Only) */}
       {isFirebaseModalOpen && isAdmin && (
         <FirebaseSetupModal
@@ -2586,6 +2576,16 @@ export function App() {
           onOpenLightbox={(images, index, title) =>
             setLightboxData({ images, index, title })
           }
+        />
+      )}
+
+      {/* Fullscreen Lightbox with Zoom & Pan (Always renders above drawers & modals) */}
+      {lightboxData && (
+        <LightboxModal
+          images={lightboxData.images}
+          initialIndex={lightboxData.index}
+          title={lightboxData.title}
+          onClose={() => setLightboxData(null)}
         />
       )}
     </div>

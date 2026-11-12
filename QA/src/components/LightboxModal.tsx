@@ -129,7 +129,7 @@ export const LightboxModal: React.FC<LightboxModalProps> = ({
 
   return (
     <div
-      className="fixed inset-0 z-50 flex flex-col bg-slate-950/95 backdrop-blur-md select-none"
+      className="fixed inset-0 z-[80] flex flex-col bg-slate-950/95 backdrop-blur-md select-none"
       dir="rtl"
     >
       {/* Top Toolbar */}
