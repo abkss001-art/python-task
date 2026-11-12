@@ -33,6 +33,7 @@ import {
   extractImagesFromClipboardEvent,
   processScreenshotFile
 } from '../utils/imageUtils';
+import { sanitizeImageUrl } from '../utils/securityUtils';
 
 interface SmartTableViewProps {
   issues: StdIssue[];
@@ -413,7 +414,10 @@ export const SmartTableView: React.FC<SmartTableViewProps> = ({
                     <td className="py-3.5 px-3.5 align-top whitespace-nowrap">
                       {issue.screenshots && issue.screenshots.length > 0 ? (
                         <div className="flex items-center gap-1.5">
-                          {issue.screenshots.slice(0, 2).map((src, idx) => (
+                          {issue.screenshots.slice(0, 2).map((rawSrc, idx) => {
+                            const src = sanitizeImageUrl(rawSrc);
+                            if (!src) return null;
+                            return (
                             <button
                               key={idx}
                               type="button"
@@ -438,7 +442,8 @@ export const SmartTableView: React.FC<SmartTableViewProps> = ({
                                 <Maximize2 className="w-3.5 h-3.5 text-white" />
                               </span>
                             </button>
-                          ))}
+                            );
+                          })}
                           {issue.screenshots.length > 2 && (
                             <button
                               type="button"
@@ -592,7 +597,7 @@ export const SmartTableView: React.FC<SmartTableViewProps> = ({
                                         {formatHebrewDateTime(c.createdAt)}
                                       </span>
                                     </div>
-                                    {c.screenshot && (
+                                    {c.screenshot && sanitizeImageUrl(c.screenshot) && (
                                       <button
                                         type="button"
                                         onClick={() =>
@@ -605,7 +610,7 @@ export const SmartTableView: React.FC<SmartTableViewProps> = ({
                                         className="self-start mt-1 rounded-lg overflow-hidden border border-slate-200 dark:border-slate-700 bg-slate-900 max-w-[160px] max-h-24 p-0.5 cursor-zoom-in"
                                       >
                                         <img
-                                          src={c.screenshot}
+                                          src={sanitizeImageUrl(c.screenshot)!}
                                           alt="צילום בהערה"
                                           loading="lazy"
                                           decoding="async"

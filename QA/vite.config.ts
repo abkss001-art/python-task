@@ -230,9 +230,34 @@ function realtimeSyncServerPlugin(): Plugin {
   };
 }
 
+function productionCspPlugin(): Plugin {
+  const cspValue = [
+    "default-src 'self'",
+    "script-src 'self'",
+    "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com",
+    "font-src 'self' https://fonts.gstatic.com data:",
+    "img-src 'self' data: blob: https://drive.google.com https://*.googleusercontent.com https://firebasestorage.googleapis.com",
+    "connect-src 'self' wss://broker.emqx.io:8084 wss://broker.emqx.io:* https://bytebin.lucko.me https://api.restful-api.dev https://script.google.com https://script.googleusercontent.com https://*.firebaseio.com wss://*.firebaseio.com https://*.firebasedatabase.app wss://*.firebasedatabase.app https://firestore.googleapis.com https://*.googleapis.com",
+    "object-src 'none'",
+    "base-uri 'self'",
+    "form-action 'self'"
+  ].join('; ');
+
+  return {
+    name: 'production-csp-meta',
+    apply: 'build',
+    transformIndexHtml(html) {
+      return html.replace(
+        '<meta charset="UTF-8" />',
+        `<meta charset="UTF-8" />\n    <meta http-equiv="Content-Security-Policy" content="${cspValue}" />`
+      );
+    }
+  };
+}
+
 export default defineConfig({
   base: './',
-  plugins: [react(), tailwindcss(), realtimeSyncServerPlugin()],
+  plugins: [react(), tailwindcss(), realtimeSyncServerPlugin(), productionCspPlugin()],
   build: {
     chunkSizeWarningLimit: 700,
     rollupOptions: {

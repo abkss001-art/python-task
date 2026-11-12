@@ -1,4 +1,4 @@
-import { TeamRole } from '../types/std';
+import type { TeamRole } from '../types/std';
 
 const ROLE_HASH_QA = 'a179515a8eadd996';
 const ROLE_HASH_DEV = 'c01d202455927044';
@@ -287,21 +287,42 @@ export function verifyUserAuthSignature(user: {
 }
 
 /**
- * סינון ואימות קישורי תמונות לחסימת הזרקת קוד (XSS / javascript: URIs)
+ * סינון ואימות קישורי תמונות לחסימת הזרקת קוד (XSS / javascript: URIs / דומיינים חיצוניים לא מורשים)
  */
+const ALLOWED_IMAGE_HOST_SUFFIXES = [
+  'drive.google.com',
+  'googleusercontent.com',
+  'firebasestorage.googleapis.com'
+];
+
+export function isAllowedImageHost(hostname: string): boolean {
+  const lower = hostname.toLowerCase();
+  if (typeof window !== 'undefined' && window.location.hostname.toLowerCase() === lower) {
+    return true;
+  }
+  return ALLOWED_IMAGE_HOST_SUFFIXES.some(
+    (suffix) => lower === suffix || lower.endsWith(`.${suffix}`)
+  );
+}
+
 export function sanitizeImageUrl(rawUrl: unknown): string | null {
   if (typeof rawUrl !== 'string') return null;
   const trimmed = rawUrl.trim();
   if (!trimmed) return null;
 
-  // Allow safe data:image/* base64 strings (exclude SVG script injection unless clean)
+  // Allow safe data:image/* base64 strings (exclude SVG script injection)
   if (/^data:image\/(png|jpe?g|webp|gif|bmp);base64,[A-Za-z0-9+/=\s]+$/i.test(trimmed)) {
     return trimmed;
   }
 
-  // Allow HTTPS image links (e.g. Google Drive thumbnails) or local dev server
-  if (/^https:\/\/[^\s"'<>]+$/i.test(trimmed)) {
-    return trimmed;
+  // Allow only HTTPS URLs hosted on trusted image domains (Drive / Firebase Storage / same-origin)
+  try {
+    const parsed = new URL(trimmed);
+    if (parsed.protocol === 'https:' && isAllowedImageHost(parsed.hostname)) {
+      return trimmed;
+    }
+  } catch {
+    // invalid URL
   }
 
   return null;
@@ -329,11 +350,14 @@ export function encodeProtectedUrl(plainUrl: string | undefined): string | undef
   }
 }
 
+const VALID_APPS_SCRIPT_RE =
+  /^https:\/\/script\.google\.com\/macros\/s\/[A-Za-z0-9_-]+\/exec(?:\?.*)?$/i;
+
 export function decodeProtectedUrl(raw: unknown): string | undefined {
   if (typeof raw !== 'string' || !raw.trim()) return undefined;
   const trimmed = raw.trim();
 
-  if (trimmed.startsWith('https://script.google.com/')) {
+  if (VALID_APPS_SCRIPT_RE.test(trimmed)) {
     return trimmed;
   }
 
@@ -347,7 +371,7 @@ export function decodeProtectedUrl(raw: unknown): string | undefined {
         chars.push(String.fromCharCode(orig));
       }
       const decoded = chars.join('');
-      if (decoded.startsWith('https://script.google.com/')) {
+      if (VALID_APPS_SCRIPT_RE.test(decoded)) {
         return decoded;
       }
     } catch {
@@ -450,13 +474,13 @@ export async function encryptSyncPayload(plainText: string): Promise<string> {
 }
 
 /**
- * פענוח חבילת סנכרון מוצפנת (עם תמיכה לאחור בחבילות ישנות שאינן מוצפנות)
+ * פענוח חבילת סנכרון מוצפנת (דוחה הודעות גלויות לא-מוצפנות לחסימת הזרקות בערוץ הציבורי)
  */
 export async function decryptSyncPayload(cipherText: string): Promise<string> {
-  if (!cipherText || typeof cipherText !== 'string') return cipherText;
+  if (!cipherText || typeof cipherText !== 'string') return '{}';
   if (!cipherText.startsWith(ENCRYPTED_PAYLOAD_PREFIX)) {
-    // Not encrypted (legacy plain JSON backwards compatibility)
-    return cipherText;
+    // Reject unencrypted payloads to prevent unauthenticated plaintext spoofing
+    return '{}';
   }
 
   const payload = cipherText.slice(ENCRYPTED_PAYLOAD_PREFIX.length);

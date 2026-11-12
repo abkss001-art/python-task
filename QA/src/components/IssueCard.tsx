@@ -25,6 +25,7 @@ import {
   TeamRole
 } from '../types/std';
 import { extractImagesFromClipboardEvent } from '../utils/imageUtils';
+import { sanitizeImageUrl } from '../utils/securityUtils';
 
 interface IssueCardProps {
   issue: StdIssue;
@@ -231,7 +232,10 @@ export const IssueCard: React.FC<IssueCardProps> = ({
                 issue.screenshots.length === 1 ? 'grid-cols-1' : 'grid-cols-2'
               }`}
             >
-              {issue.screenshots.map((src, idx) => (
+              {issue.screenshots.map((rawSrc, idx) => {
+                const src = sanitizeImageUrl(rawSrc);
+                if (!src) return null;
+                return (
                 <div
                   key={idx}
                   onClick={() =>
@@ -258,7 +262,8 @@ export const IssueCard: React.FC<IssueCardProps> = ({
                     </span>
                   </div>
                 </div>
-              ))}
+                );
+              })}
             </div>
           </div>
         )}
@@ -333,7 +338,7 @@ export const IssueCard: React.FC<IssueCardProps> = ({
                       {c.text}
                     </p>
                   )}
-                  {c.screenshot && (
+                  {c.screenshot && sanitizeImageUrl(c.screenshot) && (
                     <div
                       onClick={() =>
                         onOpenLightbox(
@@ -345,7 +350,7 @@ export const IssueCard: React.FC<IssueCardProps> = ({
                       className="mt-1.5 h-28 rounded-lg bg-slate-900 p-1 flex items-center justify-center cursor-zoom-in border border-slate-200 dark:border-slate-700"
                     >
                       <img
-                        src={c.screenshot}
+                        src={sanitizeImageUrl(c.screenshot)!}
                         alt="צילום מסך בהערה"
                         loading="lazy"
                         decoding="async"

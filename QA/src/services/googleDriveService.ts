@@ -1,3 +1,5 @@
+import { sanitizeImageUrl } from '../utils/securityUtils';
+
 const GDRIVE_URL_STORAGE_KEY = 'std_qa_gdrive_webapp_url';
 
 export interface GoogleDriveUploadResult {
@@ -119,9 +121,17 @@ function doPost(e) {
 }
 `;
 
+export function isValidGoogleAppsScriptUrl(url: string | undefined | null): boolean {
+  if (!url || typeof url !== 'string') return false;
+  return /^https:\/\/script\.google\.com\/macros\/s\/[A-Za-z0-9_-]+\/exec(?:\?.*)?$/i.test(
+    url.trim()
+  );
+}
+
 export function getSavedGoogleDriveUrl(): string {
   try {
-    return (localStorage.getItem(GDRIVE_URL_STORAGE_KEY) || '').trim();
+    const saved = (localStorage.getItem(GDRIVE_URL_STORAGE_KEY) || '').trim();
+    return isValidGoogleAppsScriptUrl(saved) ? saved : '';
   } catch {
     return '';
   }
@@ -130,9 +140,9 @@ export function getSavedGoogleDriveUrl(): string {
 export function setSavedGoogleDriveUrl(url: string) {
   try {
     const cleaned = url.trim();
-    if (cleaned) {
+    if (cleaned && isValidGoogleAppsScriptUrl(cleaned)) {
       localStorage.setItem(GDRIVE_URL_STORAGE_KEY, cleaned);
-    } else {
+    } else if (!cleaned) {
       localStorage.removeItem(GDRIVE_URL_STORAGE_KEY);
     }
   } catch {
@@ -151,10 +161,10 @@ export async function testGoogleDriveConnection(
   scriptUrl: string
 ): Promise<{ ok: boolean; folderName?: string; folderUrl?: string; error?: string }> {
   const cleaned = scriptUrl.trim();
-  if (!cleaned.startsWith('https://script.google.com/')) {
+  if (!isValidGoogleAppsScriptUrl(cleaned)) {
     return {
       ok: false,
-      error: 'הכתובת חייבת להתחיל ב-https://script.google.com/macros/s/...'
+      error: 'הכתובת חייבת להתחיל ב-https://script.google.com/macros/s/... ולהסתיים ב-/exec'
     };
   }
 
@@ -216,7 +226,8 @@ export async function uploadImageToGoogleDrive(
     if (!res.ok) return dataUrl;
     const json = (await res.json()) as GoogleDriveUploadResult;
     if (json && json.ok && json.imageUrl) {
-      return json.imageUrl;
+      const safeUrl = sanitizeImageUrl(json.imageUrl);
+      if (safeUrl) return safeUrl;
     }
     return dataUrl;
   } catch {

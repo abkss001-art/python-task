@@ -37,6 +37,7 @@ import {
   parseMessageTokens
 } from '../utils/chatUtils';
 import { getSavedGoogleDriveUrl } from '../services/googleDriveService';
+import { sanitizeImageUrl } from '../utils/securityUtils';
 
 interface SystemChatDrawerProps {
   isOpen: boolean;
@@ -703,29 +704,33 @@ export const SystemChatDrawer: React.FC<SystemChatDrawerProps> = ({
                                   : 'grid-cols-2'
                               }`}
                             >
-                              {msg.screenshots.map((imgUrl, imgIdx) => (
-                                <button
-                                  key={imgIdx}
-                                  type="button"
-                                  onClick={() =>
-                                    onOpenLightbox(
-                                      msg.screenshots || [],
-                                      imgIdx,
-                                      `${system} • צילום מצ׳אט (${msg.author})`
-                                    )
-                                  }
-                                  className="relative group/img rounded-xl overflow-hidden border border-black/10 dark:border-white/10 bg-slate-200 dark:bg-slate-800 aspect-video cursor-pointer"
-                                >
-                                  <img
-                                    src={imgUrl}
-                                    alt={`צילום מצורף ${imgIdx + 1}`}
-                                    className="w-full h-full object-cover"
-                                  />
-                                  <div className="absolute inset-0 bg-black/0 group-hover/img:bg-black/30 flex items-center justify-center opacity-0 group-hover/img:opacity-100 transition">
-                                    <Maximize2 className="w-4 h-4 text-white drop-shadow" />
-                                  </div>
-                                </button>
-                              ))}
+                              {msg.screenshots.map((rawImgUrl, imgIdx) => {
+                                const imgUrl = sanitizeImageUrl(rawImgUrl);
+                                if (!imgUrl) return null;
+                                return (
+                                  <button
+                                    key={imgIdx}
+                                    type="button"
+                                    onClick={() =>
+                                      onOpenLightbox(
+                                        msg.screenshots || [],
+                                        imgIdx,
+                                        `${system} • צילום מצ׳אט (${msg.author})`
+                                      )
+                                    }
+                                    className="relative group/img rounded-xl overflow-hidden border border-black/10 dark:border-white/10 bg-slate-200 dark:bg-slate-800 aspect-video cursor-pointer"
+                                  >
+                                    <img
+                                      src={imgUrl}
+                                      alt={`צילום מצורף ${imgIdx + 1}`}
+                                      className="w-full h-full object-cover"
+                                    />
+                                    <div className="absolute inset-0 bg-black/0 group-hover/img:bg-black/30 flex items-center justify-center opacity-0 group-hover/img:opacity-100 transition">
+                                      <Maximize2 className="w-4 h-4 text-white drop-shadow" />
+                                    </div>
+                                  </button>
+                                );
+                              })}
                             </div>
                           )}
                         </>

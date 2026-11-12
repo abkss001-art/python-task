@@ -16,8 +16,25 @@ export const HARDCODED_FIREBASE_CONFIG: Partial<FirebaseConfigData> = {
 
 const STORAGE_KEY = 'std_qa_firebase_config_v1';
 
-export function isValidFirebaseConfig(cfg: Partial<FirebaseConfigData> | null | undefined): cfg is FirebaseConfigData {
-  if (!cfg) return false;
+const SAFE_PROJECT_ID_RE = /^[a-zA-Z0-9-]{3,100}$/;
+const SAFE_FIREBASE_DB_URL_RE =
+  /^https:\/\/[a-zA-Z0-9.-]+\.(firebaseio\.com|firebasedatabase\.app)\/?$/i;
+const SAFE_FIREBASE_AUTH_DOMAIN_RE =
+  /^[a-zA-Z0-9.-]+\.(firebaseapp\.com|web\.app)$/i;
+
+export function isValidFirebaseConfig(
+  cfg: Partial<FirebaseConfigData> | null | undefined
+): cfg is FirebaseConfigData {
+  if (!cfg || typeof cfg !== 'object') return false;
+  if (cfg.projectId && !SAFE_PROJECT_ID_RE.test(String(cfg.projectId))) {
+    return false;
+  }
+  if (cfg.databaseURL && !SAFE_FIREBASE_DB_URL_RE.test(String(cfg.databaseURL).trim())) {
+    return false;
+  }
+  if (cfg.authDomain && !SAFE_FIREBASE_AUTH_DOMAIN_RE.test(String(cfg.authDomain).trim())) {
+    return false;
+  }
   return Boolean((cfg.apiKey && cfg.projectId) || cfg.databaseURL);
 }
 
@@ -76,40 +93,61 @@ export function parseFirebaseSnippet(rawInput: string): FirebaseConfigData | nul
 }
 
 export function loadActiveFirebaseConfig(): FirebaseConfigData | null {
-  // 1. Check URL parameter ?fb=... so shared links auto-configure immediately
-  try {
-    const params = new URLSearchParams(window.location.search);
-    const fbParam = params.get('fb');
-    if (fbParam) {
-      const decoded = JSON.parse(atob(fbParam));
-      if (isValidFirebaseConfig(decoded)) {
-        localStorage.setItem(STORAGE_KEY, JSON.stringify(decoded));
-        return decoded;
-      }
-    }
-  } catch {
-    // ignore malformed URL param
-  }
-
-  // 2. Check .env / hardcoded config
+  // 1. Check .env / hardcoded config
   if (isValidFirebaseConfig(HARDCODED_FIREBASE_CONFIG)) {
     return HARDCODED_FIREBASE_CONFIG;
   }
 
-  // 3. Check stored config from wizard
+  // 2. Check existing stored config first
+  let existingStored: FirebaseConfigData | null = null;
   try {
     const saved = localStorage.getItem(STORAGE_KEY);
     if (saved) {
       const parsed = JSON.parse(saved);
       if (isValidFirebaseConfig(parsed)) {
-        return parsed;
+        existingStored = parsed;
       }
     }
   } catch {
     // ignore
   }
 
-  return null;
+  // 3. Handle optional URL ?fb=... safely: validate strictly, scrub from URL bar, and require explicit user confirmation
+  try {
+    const url = new URL(window.location.href);
+    const fbParam = url.searchParams.get('fb');
+    if (fbParam) {
+      // Remove sensitive/untrusted parameter from address bar & browser history immediately
+      url.searchParams.delete('fb');
+      window.history.replaceState({}, document.title, url.toString());
+
+      const decoded = JSON.parse(atob(fbParam));
+      if (isValidFirebaseConfig(decoded)) {
+        const targetLabel = decoded.projectId || decoded.databaseURL || 'Firebase';
+        const isSameConfig =
+          existingStored &&
+          existingStored.projectId === decoded.projectId &&
+          existingStored.databaseURL === decoded.databaseURL;
+
+        if (isSameConfig) {
+          return existingStored;
+        }
+
+        const promptMsg = existingStored
+          ? `קישור זה מבקש להחליף את מסד הנתונים הפעיל במסד Firebase חדש ("${targetLabel}"). האם אתה סומך על שולח הקישור ומאשר להחליף חיבור?`
+          : `קישור זה מבקש לחבר את האפליקציה למסד Firebase ("${targetLabel}"). האם אתה מאשר להתחבר?`;
+
+        if (window.confirm(promptMsg)) {
+          localStorage.setItem(STORAGE_KEY, JSON.stringify(decoded));
+          return decoded;
+        }
+      }
+    }
+  } catch {
+    // ignore malformed URL param
+  }
+
+  return existingStored;
 }
 
 export function saveFirebaseConfigLocally(cfg: FirebaseConfigData | null) {
