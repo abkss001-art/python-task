@@ -121,6 +121,7 @@ export const AdminTeamModal: React.FC<AdminTeamModalProps> = ({
     }
 
     const cleanEmail = newAuthEmail.trim();
+    let provisionedUid: string | undefined;
     if (isFirebaseAuthActive && cleanEmail) {
       if (newAuthPassword.length < 6) {
         setStatusMsg('ליצירת חשבון Firebase Auth נדרשת סיסמה באורך 6 תווים לפחות.');
@@ -139,12 +140,14 @@ export const AdminTeamModal: React.FC<AdminTeamModalProps> = ({
         setStatusMsg(provRes.error || 'שגיאה ביצירת חשבון Firebase Auth');
         return;
       }
+      provisionedUid = provRes.uid;
     }
 
     const newMember: TeamMember = {
       id: `tm-${Date.now()}-${Math.random().toString(36).substring(2, 5)}`,
       fullName: cleanName,
       role: newRole,
+      ...(provisionedUid ? { uid: provisionedUid } : {}),
       allowedSystems:
         newRole !== 'admin' && newAllowedSystems.length > 0
           ? newAllowedSystems

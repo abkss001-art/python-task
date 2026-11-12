@@ -666,6 +666,8 @@ export function App() {
         ? `✏️ עודכן שם איש צוות מ-${renameInfo.oldName} ל-${renameInfo.newName} (סונכרנו ${renameStats.issues} דיווחים ו-${renameStats.comments} הערות)`
         : undefined;
 
+    syncService.syncTeamMemberAccessProfiles(updated).catch(() => {});
+
     syncService.pushStateToCloud(
       {
         systems,

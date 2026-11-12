@@ -13,12 +13,9 @@ export const FIREBASE_RTDB_RULES_JSON = `{
       ".read": "auth != null && root.child('std_users/' + auth.uid).exists()",
       ".write": "auth != null && root.child('std_users/' + auth.uid + '/role').val() === 'admin'"
     },
-    "std_workspace": {
+    "std_meta": {
       ".read": "auth != null && root.child('std_users/' + auth.uid).exists()",
       ".write": "auth != null && root.child('std_users/' + auth.uid + '/role').val() === 'admin'",
-      "issues": {
-        ".write": "auth != null && root.child('std_users/' + auth.uid).exists()"
-      },
       "revision": {
         ".write": "auth != null && root.child('std_users/' + auth.uid).exists()"
       },
@@ -35,11 +32,21 @@ export const FIREBASE_RTDB_RULES_JSON = `{
         ".write": "auth != null && root.child('std_users/' + auth.uid).exists()"
       }
     },
-    "std_chats": {
-      ".read": "auth != null && root.child('std_users/' + auth.uid).exists()",
+    "std_systems": {
       "$systemKey": {
+        ".read": "auth != null && root.child('std_users/' + auth.uid).exists() && (root.child('std_users/' + auth.uid + '/role').val() === 'admin' || root.child('std_users/' + auth.uid + '/allSystems').val() === true || root.child('std_users/' + auth.uid + '/allowedSystemKeys/' + $systemKey).val() === true)",
+        ".write": "auth != null && root.child('std_users/' + auth.uid).exists() && (root.child('std_users/' + auth.uid + '/role').val() === 'admin' || root.child('std_users/' + auth.uid + '/allSystems').val() === true || root.child('std_users/' + auth.uid + '/allowedSystemKeys/' + $systemKey).val() === true)"
+      }
+    },
+    "std_workspace": {
+      ".read": "auth != null && (root.child('std_users/' + auth.uid + '/role').val() === 'admin' || root.child('std_users/' + auth.uid + '/allSystems').val() === true)",
+      ".write": "auth != null && root.child('std_users/' + auth.uid + '/role').val() === 'admin'"
+    },
+    "std_chats": {
+      "$systemKey": {
+        ".read": "auth != null && root.child('std_users/' + auth.uid).exists() && (root.child('std_users/' + auth.uid + '/role').val() === 'admin' || root.child('std_users/' + auth.uid + '/allSystems').val() === true || root.child('std_users/' + auth.uid + '/allowedSystemKeys/' + $systemKey).val() === true)",
         "$msgId": {
-          ".write": "auth != null && root.child('std_users/' + auth.uid).exists() && ((!data.exists() && (!newData.hasChild('authorUid') || newData.child('authorUid').val() === auth.uid)) || data.child('authorUid').val() === auth.uid || root.child('std_users/' + auth.uid + '/role').val() === 'admin' || (!data.child('deletedAt').exists() && newData.child('reactions').exists() && newData.child('text').val() === data.child('text').val()))"
+          ".write": "auth != null && root.child('std_users/' + auth.uid).exists() && (root.child('std_users/' + auth.uid + '/role').val() === 'admin' || root.child('std_users/' + auth.uid + '/allSystems').val() === true || root.child('std_users/' + auth.uid + '/allowedSystemKeys/' + $systemKey).val() === true) && ((!data.exists() && (!newData.hasChild('authorUid') || newData.child('authorUid').val() === auth.uid)) || data.child('authorUid').val() === auth.uid || root.child('std_users/' + auth.uid + '/role').val() === 'admin' || (!data.child('deletedAt').exists() && newData.child('reactions').exists() && newData.child('text').val() === data.child('text').val()))"
         }
       }
     },
@@ -77,6 +84,22 @@ service cloud.firestore {
       return hasProfile() && userProfile().role == 'admin';
     }
 
+    function isAllSystems() {
+      return hasProfile() && (
+        userProfile().role == 'admin' ||
+        (('allSystems' in userProfile()) && userProfile().allSystems == true)
+      );
+    }
+
+    function hasSystemAccess(systemKey) {
+      return isAllSystems() || (
+        hasProfile() &&
+        ('allowedSystemKeys' in userProfile()) &&
+        (systemKey in userProfile().allowedSystemKeys) &&
+        userProfile().allowedSystemKeys[systemKey] == true
+      );
+    }
+
     match /{document=**} {
       allow read, write: if false;
     }
@@ -91,7 +114,7 @@ service cloud.firestore {
       allow write: if isAdmin();
     }
 
-    match /std_workspaces/main_workspace {
+    match /std_workspaces/meta {
       allow read: if hasProfile();
       allow create: if isAdmin();
       allow update: if isAdmin() || (
@@ -102,14 +125,29 @@ service cloud.firestore {
           'deletedIssueIds',
           'deletedSystemIds',
           'teamMembers',
-          'securityConfig'
+          'securityConfig',
+          'partitionVersion'
         ])
       );
       allow delete: if false;
     }
 
+    match /std_systems/{systemKey} {
+      allow read, write: if hasSystemAccess(systemKey);
+    }
+
+    match /std_chats/{systemKey} {
+      allow read, write: if hasSystemAccess(systemKey);
+    }
+
+    match /std_workspaces/main_workspace {
+      allow read: if isAllSystems();
+      allow write: if isAdmin();
+    }
+
     match /std_workspaces/system_chats {
-      allow read, write: if hasProfile();
+      allow read: if isAllSystems();
+      allow write: if isAdmin();
     }
   }
 }`;

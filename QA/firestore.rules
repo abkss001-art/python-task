@@ -17,12 +17,28 @@ service cloud.firestore {
       return hasProfile() && userProfile().role == 'admin';
     }
 
+    function isAllSystems() {
+      return hasProfile() && (
+        userProfile().role == 'admin' ||
+        (('allSystems' in userProfile()) && userProfile().allSystems == true)
+      );
+    }
+
+    function hasSystemAccess(systemKey) {
+      return isAllSystems() || (
+        hasProfile() &&
+        ('allowedSystemKeys' in userProfile()) &&
+        (systemKey in userProfile().allowedSystemKeys) &&
+        userProfile().allowedSystemKeys[systemKey] == true
+      );
+    }
+
     // Default deny
     match /{document=**} {
       allow read, write: if false;
     }
 
-    // User roles & permissions directory (server-enforced RBAC)
+    // User roles & per-system permissions directory (server-enforced RBAC)
     match /std_users/{uid} {
       allow read: if isSignedIn() && (request.auth.uid == uid || isAdmin());
       allow create, update, delete: if isAdmin();
@@ -34,8 +50,8 @@ service cloud.firestore {
       allow write: if isAdmin();
     }
 
-    // Main QA Workspace
-    match /std_workspaces/main_workspace {
+    // Partitioned workspace metadata (systems list, teamMembers, archives)
+    match /std_workspaces/meta {
       allow read: if hasProfile();
       allow create: if isAdmin();
       allow update: if isAdmin() || (
@@ -46,15 +62,32 @@ service cloud.firestore {
           'deletedIssueIds',
           'deletedSystemIds',
           'teamMembers',
-          'securityConfig'
+          'securityConfig',
+          'partitionVersion'
         ])
       );
       allow delete: if false;
     }
 
-    // Per-system group chat document
+    // Per-system issues partitions (server enforces per-system access!)
+    match /std_systems/{systemKey} {
+      allow read, write: if hasSystemAccess(systemKey);
+    }
+
+    // Per-system group chat partitions (server enforces per-system access!)
+    match /std_chats/{systemKey} {
+      allow read, write: if hasSystemAccess(systemKey);
+    }
+
+    // Legacy monolithic docs (restricted to admins / unrestricted users for migration)
+    match /std_workspaces/main_workspace {
+      allow read: if isAllSystems();
+      allow write: if isAdmin();
+    }
+
     match /std_workspaces/system_chats {
-      allow read, write: if hasProfile();
+      allow read: if isAllSystems();
+      allow write: if isAdmin();
     }
   }
 }

@@ -1,4 +1,5 @@
 import { initializeApp, getApps, deleteApp, FirebaseApp } from 'firebase/app';
+import { initializeAppCheck, ReCaptchaV3Provider } from 'firebase/app-check';
 import {
   getAuth,
   onAuthStateChanged,
@@ -19,6 +20,8 @@ import {
   Database
 } from 'firebase/database';
 import {
+  collection,
+  getDocs,
   getFirestore,
   doc,
   onSnapshot,
@@ -27,6 +30,11 @@ import {
   Firestore
 } from 'firebase/firestore';
 import mqtt, { MqttClient } from 'mqtt';
+import {
+  buildProfileAccessFields,
+  hashString,
+  stripUndefinedDeep
+} from '../utils/accessUtils';
 import {
   ChatTypingUser,
   DEFAULT_SYSTEMS,
@@ -39,6 +47,7 @@ import {
   TeamRole
 } from '../types/std';
 import {
+  isValidAppCheckSiteKey,
   isValidFirebaseConfig,
   loadActiveFirebaseConfig,
   saveFirebaseConfigLocally
@@ -374,6 +383,27 @@ class RealtimeSyncService {
   private uploadedChatDriveUrlCache = new Map<string, string>();
   private lastChatBytebinFetched = '';
 
+  // Per-System Partitioned State (Phase 3 #2: server-enforced per-system access)
+  private partitionIssues = new Map<string, StdIssue[]>();
+  private partitionUnsubscribes = new Map<string, () => void>();
+  private chatPartitionUnsubscribes = new Map<string, () => void>();
+  private lastPushedPartitionHashes = new Map<string, string>();
+  private isMigratingPartitions = false;
+  private currentMetaState: {
+    systems: string[];
+    archivedSystems: string[];
+    deletedIssueIds: string[];
+    deletedSystemIds: string[];
+    teamMembers?: TeamMember[];
+    securityConfig?: CustomSecurityConfig;
+    partitionVersion?: number;
+    revision?: number;
+    lastUpdatedBy?: string;
+    lastAction?: string;
+    updatedAt?: number;
+    clientId?: string;
+  } | null = null;
+
   public init() {
     this.loadChatsLocally();
 
@@ -617,12 +647,30 @@ class RealtimeSyncService {
       this.firestore
     ) {
       try {
-        const chatsDocRef = doc(this.firestore, 'std_workspaces', 'system_chats');
-        const sanitized: Record<string, Record<string, any>[]> = {};
-        for (const [sys, arr] of Object.entries(this.chatsBySystem)) {
-          sanitized[sys] = pruneChatMessages(arr).map(stripUndefinedChatFields);
+        if (this.isFirebaseAuthRequired()) {
+          const sysKey = encodeFirebaseSystemKey(msg.system);
+          const chatDocRef = doc(this.firestore, 'std_chats', sysKey);
+          const msgs = pruneChatMessages(this.chatsBySystem[msg.system] || []).map(
+            stripUndefinedChatFields
+          );
+          await setDoc(chatDocRef, {
+            system: msg.system,
+            messages: msgs,
+            updatedAt: Date.now(),
+            clientId: this.clientId
+          });
+        } else {
+          const chatsDocRef = doc(this.firestore, 'std_workspaces', 'system_chats');
+          const sanitized: Record<string, Record<string, any>[]> = {};
+          for (const [sys, arr] of Object.entries(this.chatsBySystem)) {
+            sanitized[sys] = pruneChatMessages(arr).map(stripUndefinedChatFields);
+          }
+          await setDoc(chatsDocRef, {
+            chats: sanitized,
+            updatedAt: Date.now(),
+            clientId: this.clientId
+          });
         }
-        await setDoc(chatsDocRef, { chats: sanitized, updatedAt: Date.now(), clientId: this.clientId });
       } catch {
         // ignore firestore error
       }
@@ -1227,6 +1275,10 @@ class RealtimeSyncService {
       this.unsubscribeTypingFirebase();
       this.unsubscribeTypingFirebase = null;
     }
+    this.clearPartitionListeners();
+    this.partitionIssues.clear();
+    this.lastPushedPartitionHashes.clear();
+    this.currentMetaState = null;
     if (this.unsubscribePrivateConfig) {
       this.unsubscribePrivateConfig();
       this.unsubscribePrivateConfig = null;
@@ -1301,35 +1353,51 @@ class RealtimeSyncService {
 
   public async fetchFirebaseUserProfile(uid: string): Promise<FirebaseUserProfile | null> {
     if (!uid || !this.activeFirebaseConfig) return null;
+    const normalizeAndUpgradeProfile = (
+      data: Partial<FirebaseUserProfile> | null | undefined
+    ): { profile: FirebaseUserProfile; needsUpgrade: boolean } | null => {
+      if (!data?.fullName || !data?.role) return null;
+      const access = buildProfileAccessFields(data.role, data.allowedSystems);
+      const needsUpgrade =
+        typeof data.allSystems !== 'boolean' ||
+        (!access.allSystems &&
+          JSON.stringify(data.allowedSystemKeys || {}) !==
+            JSON.stringify(access.allowedSystemKeys || {}));
+      const profile: FirebaseUserProfile = {
+        uid,
+        email: data.email,
+        fullName: String(data.fullName).trim(),
+        role: data.role,
+        ...access,
+        isSuperAdmin: Boolean(data.isSuperAdmin || data.role === 'admin'),
+        updatedAt: data.updatedAt
+      };
+      return { profile, needsUpgrade };
+    };
+
     try {
       if (this.activeFirebaseConfig.mode === 'firestore' && this.firestore) {
         const snap = await getDoc(doc(this.firestore, 'std_users', uid));
         if (!snap.exists()) return null;
-        const data = snap.data() as Partial<FirebaseUserProfile>;
-        if (!data?.fullName || !data?.role) return null;
-        return {
-          uid,
-          email: data.email,
-          fullName: String(data.fullName).trim(),
-          role: data.role,
-          allowedSystems: Array.isArray(data.allowedSystems) ? data.allowedSystems : undefined,
-          isSuperAdmin: Boolean(data.isSuperAdmin || data.role === 'admin'),
-          updatedAt: data.updatedAt
-        };
+        const res = normalizeAndUpgradeProfile(snap.data() as Partial<FirebaseUserProfile>);
+        if (!res) return null;
+        if (res.needsUpgrade && res.profile.role === 'admin') {
+          await setDoc(doc(this.firestore, 'std_users', uid), stripUndefinedDeep(res.profile)).catch(
+            () => {}
+          );
+        }
+        return res.profile;
       }
       if (this.rtdb) {
         const snap = await get(ref(this.rtdb, `std_users/${uid}`));
-        const data = snap.val() as Partial<FirebaseUserProfile> | null;
-        if (!data || !data.fullName || !data.role) return null;
-        return {
-          uid,
-          email: data.email,
-          fullName: String(data.fullName).trim(),
-          role: data.role,
-          allowedSystems: Array.isArray(data.allowedSystems) ? data.allowedSystems : undefined,
-          isSuperAdmin: Boolean(data.isSuperAdmin || data.role === 'admin'),
-          updatedAt: data.updatedAt
-        };
+        const res = normalizeAndUpgradeProfile(snap.val() as Partial<FirebaseUserProfile> | null);
+        if (!res) return null;
+        if (res.needsUpgrade && res.profile.role === 'admin') {
+          await set(ref(this.rtdb, `std_users/${uid}`), stripUndefinedDeep(res.profile)).catch(
+            () => {}
+          );
+        }
+        return res.profile;
       }
     } catch {
       // ignore
@@ -1397,6 +1465,7 @@ class RealtimeSyncService {
       email: this.firebaseUser.email || undefined,
       fullName: cleanName,
       role: 'admin',
+      allSystems: true,
       isSuperAdmin: true,
       updatedAt: Date.now()
     };
@@ -1449,22 +1518,21 @@ class RealtimeSyncService {
       const newUid = cred.user.uid;
       await signOut(secondaryAuth).catch(() => {});
 
+      const accessFields = buildProfileAccessFields(role, allowedSystems);
       const profile: FirebaseUserProfile = {
         uid: newUid,
         email: cleanEmail,
         fullName: cleanName,
         role,
-        ...(role !== 'admin' && Array.isArray(allowedSystems) && allowedSystems.length > 0
-          ? { allowedSystems }
-          : {}),
+        ...accessFields,
         ...(role === 'admin' ? { isSuperAdmin: false } : {}),
         updatedAt: Date.now()
       };
 
       if (this.activeFirebaseConfig.mode === 'firestore' && this.firestore) {
-        await setDoc(doc(this.firestore, 'std_users', newUid), profile);
+        await setDoc(doc(this.firestore, 'std_users', newUid), stripUndefinedDeep(profile));
       } else if (this.rtdb) {
-        await set(ref(this.rtdb, `std_users/${newUid}`), profile);
+        await set(ref(this.rtdb, `std_users/${newUid}`), stripUndefinedDeep(profile));
       }
 
       return { ok: true, uid: newUid };
@@ -1487,26 +1555,10 @@ class RealtimeSyncService {
   public async signOutFirebase(): Promise<void> {
     this.firebaseUserProfile = null;
     this.firebaseUser = null;
-    if (this.unsubscribeFirebase) {
-      this.unsubscribeFirebase();
-      this.unsubscribeFirebase = null;
-    }
-    if (this.unsubscribeChatFirebase) {
-      this.unsubscribeChatFirebase();
-      this.unsubscribeChatFirebase = null;
-    }
-    if (this.unsubscribeTypingFirebase) {
-      this.unsubscribeTypingFirebase();
-      this.unsubscribeTypingFirebase = null;
-    }
-    if (this.unsubscribePresence) {
-      this.unsubscribePresence();
-      this.unsubscribePresence = null;
-    }
-    if (this.unsubscribePrivateConfig) {
-      this.unsubscribePrivateConfig();
-      this.unsubscribePrivateConfig = null;
-    }
+    this.detachDataListenersOnly();
+    this.partitionIssues.clear();
+    this.lastPushedPartitionHashes.clear();
+    this.currentMetaState = null;
     if (this.firebaseAuth) {
       await signOut(this.firebaseAuth).catch(() => {});
     }
@@ -1538,7 +1590,404 @@ class RealtimeSyncService {
     }
   }
 
+  private clearPartitionListeners() {
+    for (const unsub of this.partitionUnsubscribes.values()) {
+      try {
+        unsub();
+      } catch {
+        // ignore
+      }
+    }
+    this.partitionUnsubscribes.clear();
+
+    for (const unsub of this.chatPartitionUnsubscribes.values()) {
+      try {
+        unsub();
+      } catch {
+        // ignore
+      }
+    }
+    this.chatPartitionUnsubscribes.clear();
+  }
+
+  private getPermittedSystemsForCurrentProfile(allCandidateSystems: string[]): string[] {
+    const profile = this.firebaseUserProfile;
+    if (!profile) return [];
+    if (profile.role === 'admin' || profile.allSystems) {
+      return Array.from(new Set(allCandidateSystems.filter(Boolean)));
+    }
+    const allowedSet = new Set(Object.keys(profile.allowedSystemKeys || {}).filter((k) => profile.allowedSystemKeys?.[k]));
+    if (allowedSet.size === 0 && Array.isArray(profile.allowedSystems)) {
+      for (const s of profile.allowedSystems) allowedSet.add(encodeFirebaseSystemKey(s));
+    }
+    return Array.from(new Set(allCandidateSystems.filter((sys) => allowedSet.has(encodeFirebaseSystemKey(sys)))));
+  }
+
+  private rebuildStateFromPartitions(isRemote: boolean) {
+    const meta = this.currentMetaState;
+    if (!meta) return;
+
+    const deletedSet = new Set(meta.deletedIssueIds || []);
+    const mergedIssues: StdIssue[] = [];
+    for (const list of this.partitionIssues.values()) {
+      for (const iss of list) {
+        if (iss && iss.id && !deletedSet.has(iss.id)) {
+          mergedIssues.push(iss);
+        }
+      }
+    }
+
+    const profile = this.firebaseUserProfile;
+    const isRestricted = Boolean(profile && profile.role !== 'admin' && !profile.allSystems);
+    const permittedSystems = isRestricted
+      ? new Set(this.getPermittedSystemsForCurrentProfile(meta.systems))
+      : null;
+
+    const scopedIssues = permittedSystems
+      ? mergedIssues.filter((iss) => permittedSystems.has(iss.system))
+      : mergedIssues;
+
+    if (permittedSystems) {
+      // Remove any stale unauthorized cached chats from previous sessions
+      const cleanedChats: Record<string, SystemChatMessage[]> = {};
+      for (const [sys, list] of Object.entries(this.chatsBySystem)) {
+        if (permittedSystems.has(sys)) cleanedChats[sys] = list;
+      }
+      this.chatsBySystem = cleanedChats;
+      this.persistChatsLocally(cleanedChats);
+      this.notifyChats();
+    }
+
+    const combined = this.normalizePayload({
+      systems: meta.systems,
+      archivedSystems: meta.archivedSystems,
+      deletedIssueIds: meta.deletedIssueIds,
+      deletedSystemIds: meta.deletedSystemIds,
+      teamMembers: meta.teamMembers,
+      securityConfig: meta.securityConfig,
+      issues: scopedIssues,
+      revision: meta.revision || this.highestSeenRevision,
+      lastUpdatedBy: meta.lastUpdatedBy,
+      lastAction: meta.lastAction,
+      updatedAt: meta.updatedAt || Date.now(),
+      clientId: meta.clientId
+    });
+
+    this.currentState = combined;
+    this.hasReceivedInitialCloud = true;
+    this.persistLocally(combined);
+    this.notifyState(isRemote);
+  }
+
+  public async syncTeamMemberAccessProfiles(members: TeamMember[]): Promise<void> {
+    if (!this.activeFirebaseConfig || !this.isFirebaseAuthRequired()) return;
+    if (this.firebaseUserProfile?.role !== 'admin') return;
+
+    try {
+      const byUid = new Map<string, FirebaseUserProfile>();
+      const byName = new Map<string, FirebaseUserProfile>();
+
+      if (this.activeFirebaseConfig.mode === 'firestore' && this.firestore) {
+        const snap = await getDocs(collection(this.firestore, 'std_users'));
+        snap.forEach((docSnap) => {
+          const data = docSnap.data() as Partial<FirebaseUserProfile>;
+          if (data && data.fullName && data.role) {
+            const p: FirebaseUserProfile = {
+              uid: docSnap.id,
+              email: data.email,
+              fullName: data.fullName.trim(),
+              role: data.role,
+              allowedSystems: data.allowedSystems,
+              allowedSystemKeys: data.allowedSystemKeys,
+              allSystems: data.allSystems,
+              isSuperAdmin: data.isSuperAdmin
+            };
+            byUid.set(p.uid, p);
+            byName.set(p.fullName.toLowerCase(), p);
+          }
+        });
+      } else if (this.rtdb) {
+        const snap = await get(ref(this.rtdb, 'std_users'));
+        const val = snap.val() as Record<string, Partial<FirebaseUserProfile>> | null;
+        if (val) {
+          for (const [uid, data] of Object.entries(val)) {
+            if (data && data.fullName && data.role) {
+              const p: FirebaseUserProfile = {
+                uid,
+                email: data.email,
+                fullName: data.fullName.trim(),
+                role: data.role,
+                allowedSystems: data.allowedSystems,
+                allowedSystemKeys: data.allowedSystemKeys,
+                allSystems: data.allSystems,
+                isSuperAdmin: data.isSuperAdmin
+              };
+              byUid.set(uid, p);
+              byName.set(p.fullName.toLowerCase(), p);
+            }
+          }
+        }
+      }
+
+      for (const m of members) {
+        const targetProfile =
+          (m.uid ? byUid.get(m.uid) : undefined) || byName.get(m.fullName.trim().toLowerCase());
+        if (!targetProfile) continue;
+
+        const access = buildProfileAccessFields(m.role, m.allowedSystems);
+        const updatedProfile: FirebaseUserProfile = {
+          uid: targetProfile.uid,
+          email: targetProfile.email,
+          fullName: m.fullName.trim(),
+          role: m.role,
+          ...access,
+          isSuperAdmin: Boolean(m.isSuperAdmin || (m.role === 'admin' && targetProfile.isSuperAdmin)),
+          updatedAt: Date.now()
+        };
+
+        if (this.activeFirebaseConfig.mode === 'firestore' && this.firestore) {
+          await setDoc(
+            doc(this.firestore, 'std_users', targetProfile.uid),
+            stripUndefinedDeep(updatedProfile)
+          );
+        } else if (this.rtdb) {
+          await set(
+            ref(this.rtdb, `std_users/${targetProfile.uid}`),
+            stripUndefinedDeep(updatedProfile)
+          );
+        }
+      }
+    } catch {
+      // ignore background profile sync error
+    }
+  }
+
+  private async migrateLegacyToPartitioned(config: FirebaseConfigData): Promise<void> {
+    if (this.isMigratingPartitions) return;
+    if (this.firebaseUserProfile?.role !== 'admin') return;
+    this.isMigratingPartitions = true;
+
+    try {
+      let baseState: SyncStatePayload = this.currentState;
+      let baseChats: Record<string, SystemChatMessage[]> = { ...this.chatsBySystem };
+
+      if (config.mode === 'firestore' && this.firestore) {
+        const legacyWsSnap = await getDoc(doc(this.firestore, 'std_workspaces', 'main_workspace')).catch(
+          () => null
+        );
+        if (legacyWsSnap && legacyWsSnap.exists()) {
+          baseState = this.normalizePayload(legacyWsSnap.data());
+        }
+        const legacyChatSnap = await getDoc(
+          doc(this.firestore, 'std_workspaces', 'system_chats')
+        ).catch(() => null);
+        if (legacyChatSnap && legacyChatSnap.exists()) {
+          const cData = legacyChatSnap.data() as { chats?: Record<string, SystemChatMessage[]> };
+          if (cData?.chats) baseChats = mergeAllChats(baseChats, cData.chats);
+        }
+
+        const systemsList = Array.from(
+          new Set([
+            ...(baseState.systems || DEFAULT_SYSTEMS),
+            ...(baseState.archivedSystems || []),
+            ...baseState.issues.map((i) => i.system)
+          ])
+        );
+        for (const sys of systemsList) {
+          const sysKey = encodeFirebaseSystemKey(sys);
+          const sysIssues = baseState.issues.filter((i) => i.system === sys);
+          await setDoc(
+            doc(this.firestore, 'std_systems', sysKey),
+            stripUndefinedDeep({
+              system: sys,
+              issues: sysIssues,
+              updatedAt: Date.now(),
+              revision: baseState.revision || 1,
+              lastUpdatedBy: baseState.lastUpdatedBy || 'Admin'
+            })
+          );
+          if (baseChats[sys] && baseChats[sys].length > 0) {
+            await setDoc(
+              doc(this.firestore, 'std_chats', sysKey),
+              stripUndefinedDeep({
+                system: sys,
+                messages: pruneChatMessages(baseChats[sys]).map(stripUndefinedChatFields),
+                updatedAt: Date.now(),
+                clientId: this.clientId
+              })
+            );
+          }
+        }
+
+        const metaDoc = stripUndefinedDeep({
+          systems: baseState.systems || DEFAULT_SYSTEMS,
+          archivedSystems: baseState.archivedSystems || [],
+          deletedIssueIds: baseState.deletedIssueIds || [],
+          deletedSystemIds: baseState.deletedSystemIds || [],
+          teamMembers: baseState.teamMembers || getStoredTeamMembers(),
+          securityConfig: baseState.securityConfig || getStoredSecurityConfig(),
+          partitionVersion: 2,
+          revision: Math.max(baseState.revision || 0, 1),
+          lastUpdatedBy: baseState.lastUpdatedBy || 'Admin',
+          lastAction: 'מיגרציה אוטומטית למחיצות מאובטחות לפי מערכת',
+          updatedAt: Date.now(),
+          clientId: this.clientId
+        });
+        await setDoc(doc(this.firestore, 'std_workspaces', 'meta'), metaDoc);
+      } else if (this.rtdb) {
+        const legacyWsSnap = await get(ref(this.rtdb, 'std_workspace')).catch(() => null);
+        if (legacyWsSnap && legacyWsSnap.exists()) {
+          baseState = this.normalizePayload(legacyWsSnap.val());
+        }
+        const systemsList = Array.from(
+          new Set([
+            ...(baseState.systems || DEFAULT_SYSTEMS),
+            ...(baseState.archivedSystems || []),
+            ...baseState.issues.map((i) => i.system)
+          ])
+        );
+        for (const sys of systemsList) {
+          const sysKey = encodeFirebaseSystemKey(sys);
+          const sysIssues = baseState.issues.filter((i) => i.system === sys);
+          await set(
+            ref(this.rtdb, `std_systems/${sysKey}`),
+            stripUndefinedDeep({
+              system: sys,
+              issues: sysIssues,
+              updatedAt: Date.now(),
+              revision: baseState.revision || 1,
+              lastUpdatedBy: baseState.lastUpdatedBy || 'Admin'
+            })
+          );
+        }
+
+        const metaNode = stripUndefinedDeep({
+          systems: baseState.systems || DEFAULT_SYSTEMS,
+          archivedSystems: baseState.archivedSystems || [],
+          deletedIssueIds: baseState.deletedIssueIds || [],
+          deletedSystemIds: baseState.deletedSystemIds || [],
+          teamMembers: baseState.teamMembers || getStoredTeamMembers(),
+          securityConfig: baseState.securityConfig || getStoredSecurityConfig(),
+          partitionVersion: 2,
+          revision: Math.max(baseState.revision || 0, 1),
+          lastUpdatedBy: baseState.lastUpdatedBy || 'Admin',
+          lastAction: 'מיגרציה אוטומטית למחיצות מאובטחות לפי מערכת',
+          updatedAt: Date.now(),
+          clientId: this.clientId
+        });
+        await set(ref(this.rtdb, 'std_meta'), metaNode);
+      }
+    } catch {
+      // ignore migration errors and retry next admin session if needed
+    } finally {
+      this.isMigratingPartitions = false;
+    }
+  }
+
+  private syncPerSystemListeners(config: FirebaseConfigData, allCandidateSystems: string[]) {
+    const permittedSystems = this.getPermittedSystemsForCurrentProfile(allCandidateSystems);
+    const permittedKeyMap = new Map<string, string>();
+    for (const sys of permittedSystems) {
+      permittedKeyMap.set(encodeFirebaseSystemKey(sys), sys);
+    }
+
+    // Close listeners for systems no longer permitted/active
+    for (const [sysKey, unsub] of this.partitionUnsubscribes.entries()) {
+      if (!permittedKeyMap.has(sysKey)) {
+        try {
+          unsub();
+        } catch {}
+        this.partitionUnsubscribes.delete(sysKey);
+        this.partitionIssues.delete(sysKey);
+      }
+    }
+    for (const [sysKey, unsub] of this.chatPartitionUnsubscribes.entries()) {
+      if (!permittedKeyMap.has(sysKey)) {
+        try {
+          unsub();
+        } catch {}
+        this.chatPartitionUnsubscribes.delete(sysKey);
+      }
+    }
+
+    const useFirestore = config.mode === 'firestore';
+    for (const [sysKey, sysName] of permittedKeyMap.entries()) {
+      if (!this.partitionUnsubscribes.has(sysKey)) {
+        if (useFirestore && this.firestore) {
+          const sysDocRef = doc(this.firestore, 'std_systems', sysKey);
+          const unsub = onSnapshot(
+            sysDocRef,
+            (snap) => {
+              const raw = snap.exists() ? (snap.data() as { issues?: StdIssue[] }) : null;
+              this.partitionIssues.set(sysKey, Array.isArray(raw?.issues) ? raw.issues : []);
+              this.rebuildStateFromPartitions(true);
+            },
+            () => {}
+          );
+          this.partitionUnsubscribes.set(sysKey, unsub);
+        } else if (this.rtdb) {
+          const sysRef = ref(this.rtdb, `std_systems/${sysKey}`);
+          const unsub = onValue(
+            sysRef,
+            (snap) => {
+              const raw = snap.val() as { issues?: StdIssue[] | Record<string, StdIssue> } | null;
+              const list = Array.isArray(raw?.issues)
+                ? raw.issues
+                : raw?.issues && typeof raw.issues === 'object'
+                ? Object.values(raw.issues)
+                : [];
+              this.partitionIssues.set(sysKey, list);
+              this.rebuildStateFromPartitions(true);
+            },
+            () => {}
+          );
+          this.partitionUnsubscribes.set(sysKey, unsub);
+        }
+      }
+
+      if (!this.chatPartitionUnsubscribes.has(sysKey)) {
+        if (useFirestore && this.firestore) {
+          const chatDocRef = doc(this.firestore, 'std_chats', sysKey);
+          const unsubChat = onSnapshot(
+            chatDocRef,
+            (snap) => {
+              if (!snap.exists()) {
+                this.hasLoadedInitialChatsFirebase = true;
+                return;
+              }
+              const data = snap.data() as { messages?: SystemChatMessage[]; clientId?: string };
+              const msgs = Array.isArray(data?.messages) ? data.messages : [];
+              const isRemote = Boolean(data?.clientId && data.clientId !== this.clientId);
+              this.applyIncomingRemoteChats({ [sysName]: msgs }, isRemote);
+            },
+            () => {}
+          );
+          this.chatPartitionUnsubscribes.set(sysKey, unsubChat);
+        } else if (this.rtdb) {
+          const chatRef = ref(this.rtdb, `std_chats/${sysKey}`);
+          const unsubChat = onValue(
+            chatRef,
+            (snap) => {
+              const bucket = snap.val() as Record<string, SystemChatMessage> | SystemChatMessage[] | null;
+              if (!bucket) {
+                this.hasLoadedInitialChatsFirebase = true;
+                return;
+              }
+              const list = (Array.isArray(bucket) ? bucket : Object.values(bucket)).filter(
+                (m) => m && m.id && m.system
+              );
+              this.applyIncomingRemoteChats({ [sysName]: list }, true);
+            },
+            () => {}
+          );
+          this.chatPartitionUnsubscribes.set(sysKey, unsubChat);
+        }
+      }
+    }
+  }
+
   private detachDataListenersOnly() {
+    this.clearPartitionListeners();
     if (this.unsubscribeFirebase) {
       this.unsubscribeFirebase();
       this.unsubscribeFirebase = null;
@@ -1565,8 +2014,83 @@ class RealtimeSyncService {
   private attachFirebaseDataListeners(config: FirebaseConfigData) {
     this.detachDataListenersOnly();
     const useFirestore = config.mode === 'firestore';
+    const isEnforced = Boolean(config.requireFirebaseAuth);
 
     if (useFirestore && this.firestore) {
+      if (isEnforced) {
+        // Phase 3 #2: Per-System Partitioned Firestore Sync (Server Rules enforce allowedSystemKeys)
+        const metaDocRef = doc(this.firestore, 'std_workspaces', 'meta');
+        this.unsubscribeFirebase = onSnapshot(
+          metaDocRef,
+          (snapshot) => {
+            if (!snapshot.exists()) {
+              if (this.firebaseUserProfile?.role === 'admin') {
+                this.migrateLegacyToPartitioned(config);
+              }
+              return;
+            }
+            const m = snapshot.data() as NonNullable<typeof this.currentMetaState>;
+            this.currentMetaState = {
+              systems: Array.isArray(m.systems) && m.systems.length > 0 ? m.systems : DEFAULT_SYSTEMS,
+              archivedSystems: Array.isArray(m.archivedSystems) ? m.archivedSystems : [],
+              deletedIssueIds: Array.isArray(m.deletedIssueIds) ? m.deletedIssueIds : [],
+              deletedSystemIds: Array.isArray(m.deletedSystemIds) ? m.deletedSystemIds : [],
+              teamMembers: Array.isArray(m.teamMembers) ? m.teamMembers : undefined,
+              securityConfig: m.securityConfig,
+              partitionVersion: m.partitionVersion,
+              revision: m.revision,
+              lastUpdatedBy: m.lastUpdatedBy,
+              lastAction: m.lastAction,
+              updatedAt: m.updatedAt,
+              clientId: m.clientId
+            };
+            const allSystems = [
+              ...this.currentMetaState.systems,
+              ...this.currentMetaState.archivedSystems
+            ];
+            const isRemote = Boolean(m.clientId && m.clientId !== this.clientId);
+            this.syncPerSystemListeners(config, allSystems);
+            this.rebuildStateFromPartitions(isRemote);
+            this.updateStatus({
+              mode: 'firebase-firestore',
+              connected: true,
+              projectId: config.projectId,
+              requireFirebaseAuth: true,
+              firebaseUid: this.firebaseUser?.uid,
+              firebaseUserEmail: this.firebaseUser?.email || undefined,
+              lastSyncAt: Date.now(),
+              lastEventText:
+                m.lastAction && !isSystemAdminAction(m.lastAction)
+                  ? `${m.lastUpdatedBy || 'צוות'}: ${m.lastAction}`
+                  : undefined,
+              errorMessage: undefined
+            });
+          },
+          (error) => {
+            this.updateStatus({
+              mode: 'error',
+              connected: false,
+              projectId: config.projectId,
+              errorMessage: `שגיאת Firestore: ${error.message}`
+            });
+          }
+        );
+
+        const privateDocRef = doc(this.firestore, 'std_workspaces', 'private_config');
+        this.unsubscribePrivateConfig = onSnapshot(
+          privateDocRef,
+          (snap) => {
+            if (!snap.exists()) return;
+            const pData = snap.data() as { googleDriveUrl?: string; apiSecret?: string };
+            const decodedUrl = decodeProtectedUrl(pData?.googleDriveUrl);
+            if (decodedUrl) setSavedGoogleDriveUrl(decodedUrl);
+            if (pData?.apiSecret) setSavedGoogleDriveSecret(String(pData.apiSecret));
+          },
+          () => {}
+        );
+        return;
+      }
+
       const workspaceDocRef = doc(this.firestore, 'std_workspaces', 'main_workspace');
 
       this.unsubscribeFirebase = onSnapshot(
@@ -1652,8 +2176,6 @@ class RealtimeSyncService {
     }
 
     if (this.rtdb) {
-      const stateRef = ref(this.rtdb, 'std_workspace');
-
       try {
         const myPresenceRef = ref(this.rtdb, `std_presence/${this.clientId}`);
         const allPresenceRef = ref(this.rtdb, 'std_presence');
@@ -1668,6 +2190,121 @@ class RealtimeSyncService {
       } catch {
         // ignore
       }
+
+      if (isEnforced) {
+        // Phase 3 #2: Per-System Partitioned RTDB Sync (Server Rules enforce allowedSystemKeys)
+        const metaRef = ref(this.rtdb, 'std_meta');
+        this.unsubscribeFirebase = onValue(
+          metaRef,
+          (snapshot) => {
+            const m = snapshot.val() as NonNullable<typeof this.currentMetaState> | null;
+            if (!m) {
+              if (this.firebaseUserProfile?.role === 'admin') {
+                this.migrateLegacyToPartitioned(config);
+              }
+              return;
+            }
+            this.currentMetaState = {
+              systems: Array.isArray(m.systems) && m.systems.length > 0 ? m.systems : DEFAULT_SYSTEMS,
+              archivedSystems: Array.isArray(m.archivedSystems) ? m.archivedSystems : [],
+              deletedIssueIds: Array.isArray(m.deletedIssueIds) ? m.deletedIssueIds : [],
+              deletedSystemIds: Array.isArray(m.deletedSystemIds) ? m.deletedSystemIds : [],
+              teamMembers: Array.isArray(m.teamMembers)
+                ? m.teamMembers
+                : m.teamMembers && typeof m.teamMembers === 'object'
+                ? Object.values(m.teamMembers)
+                : undefined,
+              securityConfig: m.securityConfig,
+              partitionVersion: m.partitionVersion,
+              revision: m.revision,
+              lastUpdatedBy: m.lastUpdatedBy,
+              lastAction: m.lastAction,
+              updatedAt: m.updatedAt,
+              clientId: m.clientId
+            };
+            const allSystems = [
+              ...this.currentMetaState.systems,
+              ...this.currentMetaState.archivedSystems
+            ];
+            const isRemote = Boolean(m.clientId && m.clientId !== this.clientId);
+            this.syncPerSystemListeners(config, allSystems);
+            this.rebuildStateFromPartitions(isRemote);
+            this.updateStatus({
+              mode: 'firebase-rtdb',
+              connected: true,
+              projectId: config.projectId,
+              requireFirebaseAuth: true,
+              firebaseUid: this.firebaseUser?.uid,
+              firebaseUserEmail: this.firebaseUser?.email || undefined,
+              lastSyncAt: Date.now(),
+              lastEventText:
+                m.lastAction && !isSystemAdminAction(m.lastAction)
+                  ? `${m.lastUpdatedBy || 'צוות'}: ${m.lastAction}`
+                  : undefined,
+              errorMessage: undefined
+            });
+          },
+          (error) => {
+            this.updateStatus({
+              mode: 'error',
+              connected: false,
+              projectId: config.projectId,
+              errorMessage: `שגיאת התחברות ל-Firebase Realtime DB: ${error.message}`
+            });
+          }
+        );
+
+        try {
+          const privateRef = ref(this.rtdb, 'std_private_config');
+          this.unsubscribePrivateConfig = onValue(
+            privateRef,
+            (snap) => {
+              const pData = snap.val() as { googleDriveUrl?: string; apiSecret?: string } | null;
+              if (!pData) return;
+              const decodedUrl = decodeProtectedUrl(pData.googleDriveUrl);
+              if (decodedUrl) setSavedGoogleDriveUrl(decodedUrl);
+              if (pData.apiSecret) setSavedGoogleDriveSecret(String(pData.apiSecret));
+            },
+            () => {}
+          );
+          const typingRef = ref(this.rtdb, 'std_chat_typing');
+          this.unsubscribeTypingFirebase = onValue(
+            typingRef,
+            (snap) => {
+              const rawVal = snap.val() as Record<string, any> | null;
+              const now = Date.now();
+              this.typingUsers.clear();
+              if (rawVal) {
+                for (const item of Object.values(rawVal)) {
+                  if (
+                    item &&
+                    item.isTyping &&
+                    item.system &&
+                    item.author &&
+                    item.clientId &&
+                    item.clientId !== this.clientId &&
+                    now - (item.timestamp || 0) < 6000
+                  ) {
+                    this.typingUsers.set(`${item.system}::${item.clientId}`, {
+                      system: item.system,
+                      author: item.author,
+                      clientId: item.clientId,
+                      updatedAt: item.timestamp || now
+                    });
+                  }
+                }
+              }
+              this.notifyTyping();
+            },
+            () => {}
+          );
+        } catch {
+          // ignore
+        }
+        return;
+      }
+
+      const stateRef = ref(this.rtdb, 'std_workspace');
 
       this.unsubscribeFirebase = onValue(
         stateRef,
@@ -1826,6 +2463,24 @@ class RealtimeSyncService {
       }
 
       this.firebaseApp = initializeApp(this.buildFirebaseOptions(config));
+
+      // Firebase App Check (reCAPTCHA v3): blocks use of the Firebase API key outside this app
+      if (isValidAppCheckSiteKey(config.appCheckSiteKey)) {
+        try {
+          if (import.meta.env.DEV) {
+            (self as any).FIREBASE_APPCHECK_DEBUG_TOKEN = true;
+          }
+          initializeAppCheck(this.firebaseApp, {
+            provider: new ReCaptchaV3Provider((config.appCheckSiteKey as string).trim()),
+            isTokenAutoRefreshEnabled: true
+          });
+        } catch (appCheckErr: any) {
+          this.updateStatus({
+            errorMessage: `App Check לא הופעל: ${appCheckErr?.message || appCheckErr}`
+          });
+        }
+      }
+
       this.firebaseAuth = getAuth(this.firebaseApp);
       if (useFirestore) {
         this.firestore = getFirestore(this.firebaseApp);
@@ -2817,25 +3472,67 @@ class RealtimeSyncService {
           this.activeFirebaseConfig.mode === 'firestore' &&
           this.firestore
         ) {
-          const workspaceDocRef = doc(this.firestore, 'std_workspaces', 'main_workspace');
-          await setDoc(
-            workspaceDocRef,
-            {
+          if (isAuthEnforced) {
+            const systems = this.getPermittedSystemsForCurrentProfile(
+              Array.from(new Set(drivePayload.issues.map((i) => i.system)))
+            );
+            for (const sys of systems) {
+              const sysKey = encodeFirebaseSystemKey(sys);
+              const sysIssues = drivePayload.issues.filter((i) => i.system === sys);
+              this.partitionIssues.set(sysKey, sysIssues);
+              await setDoc(
+                doc(this.firestore, 'std_systems', sysKey),
+                stripUndefinedDeep({
+                  system: sys,
+                  issues: sysIssues,
+                  updatedAt: drivePayload.updatedAt,
+                  revision: driveRev,
+                  lastUpdatedBy: this.currentState.lastUpdatedBy
+                })
+              );
+            }
+          } else {
+            const workspaceDocRef = doc(this.firestore, 'std_workspaces', 'main_workspace');
+            await setDoc(
+              workspaceDocRef,
+              {
+                issues: drivePayload.issues,
+                revision: driveRev,
+                updatedAt: drivePayload.updatedAt,
+                clientId: this.clientId
+              },
+              { merge: true }
+            );
+          }
+        } else if (this.activeFirebaseConfig && this.rtdb) {
+          if (isAuthEnforced) {
+            const systems = this.getPermittedSystemsForCurrentProfile(
+              Array.from(new Set(drivePayload.issues.map((i) => i.system)))
+            );
+            for (const sys of systems) {
+              const sysKey = encodeFirebaseSystemKey(sys);
+              const sysIssues = drivePayload.issues.filter((i) => i.system === sys);
+              this.partitionIssues.set(sysKey, sysIssues);
+              await set(
+                ref(this.rtdb, `std_systems/${sysKey}`),
+                stripUndefinedDeep({
+                  system: sys,
+                  issues: sysIssues,
+                  updatedAt: drivePayload.updatedAt,
+                  revision: driveRev,
+                  lastUpdatedBy: this.currentState.lastUpdatedBy
+                })
+              );
+            }
+          } else {
+            const stateRef = ref(this.rtdb, 'std_workspace');
+            await update(stateRef, {
               issues: drivePayload.issues,
               revision: driveRev,
               updatedAt: drivePayload.updatedAt,
               clientId: this.clientId
-            },
-            { merge: true }
-          );
-        } else if (this.activeFirebaseConfig && this.rtdb) {
-          const stateRef = ref(this.rtdb, 'std_workspace');
-          await update(stateRef, {
-            issues: drivePayload.issues,
-            revision: driveRev,
-            updatedAt: drivePayload.updatedAt,
-            clientId: this.clientId
-          });
+            });
+          }
         } else if (!isAuthEnforced) {
           await this.publishStateToMqtt(drivePayload);
         }
@@ -2949,22 +3646,66 @@ class RealtimeSyncService {
       this.activeFirebaseConfig.mode === 'firestore' &&
       this.firestore
     ) {
-      const workspaceDocRef = doc(this.firestore, 'std_workspaces', 'main_workspace');
-      if (isAuthEnforced && !isFirebaseAdmin) {
-        // Non-admin writes only issue + metadata fields so server Firestore rules validate RBAC strictly
-        await setDoc(
-          workspaceDocRef,
-          {
-            issues: payload.issues,
-            revision: payload.revision,
-            updatedAt: payload.updatedAt,
-            lastUpdatedBy: payload.lastUpdatedBy,
-            lastAction: payload.lastAction,
-            clientId: payload.clientId
-          },
-          { merge: true }
+      if (isAuthEnforced) {
+        const allKnownSystems = Array.from(
+          new Set([
+            ...payload.systems,
+            ...(payload.archivedSystems || []),
+            ...payload.issues.map((i) => i.system)
+          ])
         );
+        const permittedSystems = this.getPermittedSystemsForCurrentProfile(allKnownSystems);
+        for (const sys of permittedSystems) {
+          const sysKey = encodeFirebaseSystemKey(sys);
+          const sysIssues = payload.issues.filter((i) => i.system === sys);
+          this.partitionIssues.set(sysKey, sysIssues);
+          const partPayload = stripUndefinedDeep({
+            system: sys,
+            issues: sysIssues,
+            updatedAt: payload.updatedAt,
+            revision: payload.revision,
+            lastUpdatedBy: payload.lastUpdatedBy
+          });
+          const partHash = hashString(JSON.stringify(sysIssues));
+          if (nextState.replaceAll || this.lastPushedPartitionHashes.get(sysKey) !== partHash) {
+            await setDoc(doc(this.firestore, 'std_systems', sysKey), partPayload);
+            this.lastPushedPartitionHashes.set(sysKey, partHash);
+          }
+        }
+        const metaDocRef = doc(this.firestore, 'std_workspaces', 'meta');
+        if (isFirebaseAdmin) {
+          await setDoc(
+            metaDocRef,
+            stripUndefinedDeep({
+              systems: payload.systems,
+              archivedSystems: payload.archivedSystems || [],
+              deletedIssueIds: payload.deletedIssueIds || [],
+              deletedSystemIds: payload.deletedSystemIds || [],
+              teamMembers: payload.teamMembers,
+              securityConfig: payload.securityConfig,
+              partitionVersion: 2,
+              revision: payload.revision,
+              updatedAt: payload.updatedAt,
+              lastUpdatedBy: payload.lastUpdatedBy,
+              lastAction: payload.lastAction,
+              clientId: payload.clientId
+            })
+          );
+        } else {
+          await setDoc(
+            metaDocRef,
+            stripUndefinedDeep({
+              revision: payload.revision,
+              updatedAt: payload.updatedAt,
+              lastUpdatedBy: payload.lastUpdatedBy,
+              lastAction: payload.lastAction,
+              clientId: payload.clientId
+            }),
+            { merge: true }
+          );
+        }
       } else {
+        const workspaceDocRef = doc(this.firestore, 'std_workspaces', 'main_workspace');
         await setDoc(workspaceDocRef, payload);
       }
       if (getSavedGoogleDriveUrl()) {
@@ -2976,18 +3717,65 @@ class RealtimeSyncService {
 
     // 2. If connected to Firebase Realtime Database
     if (this.activeFirebaseConfig && this.rtdb) {
-      const stateRef = ref(this.rtdb, 'std_workspace');
-      if (isAuthEnforced && !isFirebaseAdmin) {
-        // Non-admin writes only allowed child paths enforced by database.rules.json
-        await update(stateRef, {
-          issues: payload.issues,
-          revision: payload.revision,
-          updatedAt: payload.updatedAt,
-          lastUpdatedBy: payload.lastUpdatedBy,
-          lastAction: payload.lastAction,
-          clientId: payload.clientId
-        });
+      if (isAuthEnforced) {
+        const allKnownSystems = Array.from(
+          new Set([
+            ...payload.systems,
+            ...(payload.archivedSystems || []),
+            ...payload.issues.map((i) => i.system)
+          ])
+        );
+        const permittedSystems = this.getPermittedSystemsForCurrentProfile(allKnownSystems);
+        for (const sys of permittedSystems) {
+          const sysKey = encodeFirebaseSystemKey(sys);
+          const sysIssues = payload.issues.filter((i) => i.system === sys);
+          this.partitionIssues.set(sysKey, sysIssues);
+          const partPayload = stripUndefinedDeep({
+            system: sys,
+            issues: sysIssues,
+            updatedAt: payload.updatedAt,
+            revision: payload.revision,
+            lastUpdatedBy: payload.lastUpdatedBy
+          });
+          const partHash = hashString(JSON.stringify(sysIssues));
+          if (nextState.replaceAll || this.lastPushedPartitionHashes.get(sysKey) !== partHash) {
+            await set(ref(this.rtdb, `std_systems/${sysKey}`), partPayload);
+            this.lastPushedPartitionHashes.set(sysKey, partHash);
+          }
+        }
+        const metaRef = ref(this.rtdb, 'std_meta');
+        if (isFirebaseAdmin) {
+          await set(
+            metaRef,
+            stripUndefinedDeep({
+              systems: payload.systems,
+              archivedSystems: payload.archivedSystems || [],
+              deletedIssueIds: payload.deletedIssueIds || [],
+              deletedSystemIds: payload.deletedSystemIds || [],
+              teamMembers: payload.teamMembers,
+              securityConfig: payload.securityConfig,
+              partitionVersion: 2,
+              revision: payload.revision,
+              updatedAt: payload.updatedAt,
+              lastUpdatedBy: payload.lastUpdatedBy,
+              lastAction: payload.lastAction,
+              clientId: payload.clientId
+            })
+          );
+        } else {
+          await update(
+            metaRef,
+            stripUndefinedDeep({
+              revision: payload.revision,
+              updatedAt: payload.updatedAt,
+              lastUpdatedBy: payload.lastUpdatedBy,
+              lastAction: payload.lastAction,
+              clientId: payload.clientId
+            })
+          );
+        }
       } else {
+        const stateRef = ref(this.rtdb, 'std_workspace');
         await set(stateRef, payload);
       }
       if (getSavedGoogleDriveUrl()) {

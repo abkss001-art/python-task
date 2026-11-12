@@ -73,6 +73,7 @@ export interface FirebaseConfigData {
   appId?: string;
   mode?: 'rtdb' | 'firestore';
   requireFirebaseAuth?: boolean;
+  appCheckSiteKey?: string;
 }
 
 export interface FirebaseUserProfile {
@@ -81,6 +82,10 @@ export interface FirebaseUserProfile {
   fullName: string;
   role: TeamRole;
   allowedSystems?: string[];
+  /** Map of encoded system keys -> true. Enforced by Firebase Security Rules (RTDB). */
+  allowedSystemKeys?: Record<string, boolean>;
+  /** True when the user may access every system (admins and users without restrictions). */
+  allSystems?: boolean;
   isSuperAdmin?: boolean;
   updatedAt?: number;
 }

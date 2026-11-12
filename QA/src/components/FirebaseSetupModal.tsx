@@ -16,6 +16,7 @@ import {
 import { FirebaseConfigData, SyncStatusInfo } from '../types/std';
 import {
   createShareableTeamLink,
+  isValidAppCheckSiteKey,
   parseFirebaseSnippet
 } from '../firebaseConfig';
 import {
@@ -53,6 +54,7 @@ export const FirebaseSetupModal: React.FC<FirebaseSetupModalProps> = ({
     Boolean(currentConfig?.requireFirebaseAuth)
   );
   const [copiedRules, setCopiedRules] = useState(false);
+  const [appCheckKey, setAppCheckKey] = useState<string>(currentConfig?.appCheckSiteKey || '');
   const [error, setError] = useState<string | null>(null);
   const [isConnecting, setIsConnecting] = useState(false);
   const [copiedLink, setCopiedLink] = useState(false);
@@ -84,6 +86,12 @@ export const FirebaseSetupModal: React.FC<FirebaseSetupModalProps> = ({
 
     parsed.mode = dbMode;
     parsed.requireFirebaseAuth = requireFirebaseAuth;
+    const cleanAppCheck = appCheckKey.trim();
+    if (cleanAppCheck && !isValidAppCheckSiteKey(cleanAppCheck)) {
+      setError('מפתח ה-reCAPTCHA v3 (App Check) אינו תקין. יש להדביק את ה-Site Key בלבד.');
+      return;
+    }
+    parsed.appCheckSiteKey = cleanAppCheck || undefined;
     setIsConnecting(true);
     const res = await onSaveConfig(parsed);
     setIsConnecting(false);
@@ -100,6 +108,7 @@ export const FirebaseSetupModal: React.FC<FirebaseSetupModalProps> = ({
     if (!parsed) return;
     parsed.mode = dbMode;
     parsed.requireFirebaseAuth = requireFirebaseAuth;
+    if (isValidAppCheckSiteKey(appCheckKey)) parsed.appCheckSiteKey = appCheckKey.trim();
     const link = createShareableTeamLink(parsed);
     navigator.clipboard.writeText(link);
     setCopiedLink(true);
@@ -269,6 +278,23 @@ export const FirebaseSetupModal: React.FC<FirebaseSetupModalProps> = ({
                 </p>
               </div>
             </label>
+
+            <div className="pt-2 border-t border-emerald-200/70 dark:border-emerald-800/50 space-y-1.5">
+              <label className="block text-xs font-extrabold text-emerald-950 dark:text-emerald-200">
+                Firebase App Check – מפתח reCAPTCHA v3 (Site Key, מומלץ):
+              </label>
+              <input
+                type="text"
+                dir="ltr"
+                value={appCheckKey}
+                onChange={(e) => setAppCheckKey(e.target.value)}
+                placeholder="6Lc..."
+                className="w-full px-3 py-2 rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-900 text-xs font-mono text-left"
+              />
+              <p className="text-[11px] text-slate-600 dark:text-slate-400 leading-relaxed">
+                ב-Firebase Console: App Check &rarr; Apps &rarr; רשום את האפליקציה עם ספק reCAPTCHA v3 (צור Site Key בכתובת google.com/recaptcha/admin והוסף את הדומיין abkss001-art.github.io). אחרי שמוודאים שהכול עובד, לחץ Enforce ב-Realtime Database / Firestore / Authentication. Site Key הוא מפתח ציבורי ולכן בטוח לשמור אותו באפליקציה.
+              </p>
+            </div>
 
             <div className="flex items-center justify-between pt-2 border-t border-emerald-200/70 dark:border-emerald-800/50">
               <button

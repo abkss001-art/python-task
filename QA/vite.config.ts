@@ -233,11 +233,12 @@ function realtimeSyncServerPlugin(): Plugin {
 function productionCspPlugin(): Plugin {
   const cspValue = [
     "default-src 'self'",
-    "script-src 'self'",
+    "script-src 'self' https://www.google.com/recaptcha/ https://www.gstatic.com/recaptcha/",
     "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com",
     "font-src 'self' https://fonts.gstatic.com data:",
     "img-src 'self' data: blob: https://drive.google.com https://*.googleusercontent.com https://firebasestorage.googleapis.com",
-    "connect-src 'self' wss://broker.emqx.io:8084 wss://broker.emqx.io:* https://bytebin.lucko.me https://api.restful-api.dev https://script.google.com https://script.googleusercontent.com https://*.firebaseio.com wss://*.firebaseio.com https://*.firebasedatabase.app wss://*.firebasedatabase.app https://firestore.googleapis.com https://*.googleapis.com",
+    "connect-src 'self' wss://broker.emqx.io:8084 wss://broker.emqx.io:* https://bytebin.lucko.me https://api.restful-api.dev https://script.google.com https://script.googleusercontent.com https://*.firebaseio.com wss://*.firebaseio.com https://*.firebasedatabase.app wss://*.firebasedatabase.app https://firestore.googleapis.com https://*.googleapis.com https://www.google.com/recaptcha/",
+    "frame-src https://www.google.com/recaptcha/ https://recaptcha.google.com",
     "object-src 'none'",
     "base-uri 'self'",
     "form-action 'self'"

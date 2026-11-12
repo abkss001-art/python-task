@@ -13,12 +13,9 @@
       ".read": "auth != null && root.child('std_users/' + auth.uid).exists()",
       ".write": "auth != null && root.child('std_users/' + auth.uid + '/role').val() === 'admin'"
     },
-    "std_workspace": {
+    "std_meta": {
       ".read": "auth != null && root.child('std_users/' + auth.uid).exists()",
       ".write": "auth != null && root.child('std_users/' + auth.uid + '/role').val() === 'admin'",
-      "issues": {
-        ".write": "auth != null && root.child('std_users/' + auth.uid).exists()"
-      },
       "revision": {
         ".write": "auth != null && root.child('std_users/' + auth.uid).exists()"
       },
@@ -35,11 +32,21 @@
         ".write": "auth != null && root.child('std_users/' + auth.uid).exists()"
       }
     },
-    "std_chats": {
-      ".read": "auth != null && root.child('std_users/' + auth.uid).exists()",
+    "std_systems": {
       "$systemKey": {
+        ".read": "auth != null && root.child('std_users/' + auth.uid).exists() && (root.child('std_users/' + auth.uid + '/role').val() === 'admin' || root.child('std_users/' + auth.uid + '/allSystems').val() === true || root.child('std_users/' + auth.uid + '/allowedSystemKeys/' + $systemKey).val() === true)",
+        ".write": "auth != null && root.child('std_users/' + auth.uid).exists() && (root.child('std_users/' + auth.uid + '/role').val() === 'admin' || root.child('std_users/' + auth.uid + '/allSystems').val() === true || root.child('std_users/' + auth.uid + '/allowedSystemKeys/' + $systemKey).val() === true)"
+      }
+    },
+    "std_workspace": {
+      ".read": "auth != null && (root.child('std_users/' + auth.uid + '/role').val() === 'admin' || root.child('std_users/' + auth.uid + '/allSystems').val() === true)",
+      ".write": "auth != null && root.child('std_users/' + auth.uid + '/role').val() === 'admin'"
+    },
+    "std_chats": {
+      "$systemKey": {
+        ".read": "auth != null && root.child('std_users/' + auth.uid).exists() && (root.child('std_users/' + auth.uid + '/role').val() === 'admin' || root.child('std_users/' + auth.uid + '/allSystems').val() === true || root.child('std_users/' + auth.uid + '/allowedSystemKeys/' + $systemKey).val() === true)",
         "$msgId": {
-          ".write": "auth != null && root.child('std_users/' + auth.uid).exists() && ((!data.exists() && (!newData.hasChild('authorUid') || newData.child('authorUid').val() === auth.uid)) || data.child('authorUid').val() === auth.uid || root.child('std_users/' + auth.uid + '/role').val() === 'admin' || (!data.child('deletedAt').exists() && newData.child('reactions').exists() && newData.child('text').val() === data.child('text').val()))"
+          ".write": "auth != null && root.child('std_users/' + auth.uid).exists() && (root.child('std_users/' + auth.uid + '/role').val() === 'admin' || root.child('std_users/' + auth.uid + '/allSystems').val() === true || root.child('std_users/' + auth.uid + '/allowedSystemKeys/' + $systemKey).val() === true) && ((!data.exists() && (!newData.hasChild('authorUid') || newData.child('authorUid').val() === auth.uid)) || data.child('authorUid').val() === auth.uid || root.child('std_users/' + auth.uid + '/role').val() === 'admin' || (!data.child('deletedAt').exists() && newData.child('reactions').exists() && newData.child('text').val() === data.child('text').val()))"
         }
       }
     },

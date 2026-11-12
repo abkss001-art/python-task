@@ -12,8 +12,13 @@ export const HARDCODED_FIREBASE_CONFIG: Partial<FirebaseConfigData> = {
   storageBucket: import.meta.env.VITE_FIREBASE_STORAGE_BUCKET || '',
   messagingSenderId: import.meta.env.VITE_FIREBASE_MESSAGING_SENDER_ID || '',
   appId: import.meta.env.VITE_FIREBASE_APP_ID || '',
-  requireFirebaseAuth: import.meta.env.VITE_FIREBASE_REQUIRE_AUTH === 'true'
+  requireFirebaseAuth: import.meta.env.VITE_FIREBASE_REQUIRE_AUTH === 'true',
+  appCheckSiteKey: import.meta.env.VITE_FIREBASE_APPCHECK_SITE_KEY || ''
 };
+
+export function isValidAppCheckSiteKey(key: string | undefined | null): boolean {
+  return typeof key === 'string' && /^[A-Za-z0-9_-]{20,80}$/.test(key.trim());
+}
 
 const STORAGE_KEY = 'std_qa_firebase_config_v1';
 

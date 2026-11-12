@@ -7,6 +7,8 @@ export interface TeamMember {
   role: TeamRole;
   isSuperAdmin?: boolean;
   allowedSystems?: string[];
+  /** Firebase Auth uid linked to this member (set when provisioned via Firebase Auth). */
+  uid?: string;
 }
 
 export const DEFAULT_TEAM_MEMBERS: TeamMember[] = [
@@ -76,6 +78,7 @@ export function mergeCloudTeamMembers(cloudMembers: TeamMember[]): TeamMember[] 
           fullName: m.fullName.trim(),
           role: m.role || 'qa',
           isSuperAdmin: Boolean(m.isSuperAdmin),
+          ...(typeof m.uid === 'string' && m.uid ? { uid: m.uid } : {}),
           allowedSystems:
             Array.isArray(m.allowedSystems) && m.allowedSystems.length > 0
               ? m.allowedSystems.filter((s): s is string => typeof s === 'string' && Boolean(s.trim()))
