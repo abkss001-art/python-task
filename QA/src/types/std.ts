@@ -26,6 +26,7 @@ export interface SystemChatMessage {
   id: string;
   system: string;
   author: string;
+  authorUid?: string;
   authorRole: TeamRole;
   text: string;
   screenshots?: string[];
@@ -71,6 +72,17 @@ export interface FirebaseConfigData {
   messagingSenderId?: string;
   appId?: string;
   mode?: 'rtdb' | 'firestore';
+  requireFirebaseAuth?: boolean;
+}
+
+export interface FirebaseUserProfile {
+  uid: string;
+  email?: string;
+  fullName: string;
+  role: TeamRole;
+  allowedSystems?: string[];
+  isSuperAdmin?: boolean;
+  updatedAt?: number;
 }
 
 export type SyncConnectionMode = 'firebase-rtdb' | 'firebase-firestore' | 'live-server' | 'connecting' | 'error';
@@ -84,6 +96,9 @@ export interface SyncStatusInfo {
   errorMessage?: string;
   lastSyncAt?: number;
   lastEventText?: string;
+  requireFirebaseAuth?: boolean;
+  firebaseUid?: string;
+  firebaseUserEmail?: string;
 }
 
 export const PLATFORMS: StdPlatform[] = ['IOS', 'אנדרואיד', 'מחשב'];

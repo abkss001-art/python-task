@@ -1,6 +1,7 @@
 import { sanitizeImageUrl } from '../utils/securityUtils';
 
 const GDRIVE_URL_STORAGE_KEY = 'std_qa_gdrive_webapp_url';
+const GDRIVE_SECRET_STORAGE_KEY = 'std_qa_gdrive_api_secret';
 
 export interface GoogleDriveUploadResult {
   ok: boolean;
@@ -14,9 +15,31 @@ export interface GoogleDriveUploadResult {
  * הקוד המוכן להדבקה ב-Google Apps Script בחשבון ה-Google Drive (5TB) של המנהל
  */
 export const GOOGLE_APPS_SCRIPT_CODE = `// ============================================================================
-// "צב מן" - מנוע אחסון אוטומטי של צילומי מסך וגיבויים ב-Google Drive (5TB)
+// "צב מן" - מנוע אחסון מאובטח של צילומי מסך וגיבויים ב-Google Drive (5TB)
+// מומלץ להגדיר קוד סודי משותף (TZAVMAN_API_SECRET) ב-Script Properties או בשורה הבאה:
 // ============================================================================
 var MAIN_FOLDER_NAME = "צב מן - צילומי מסך וגיבויים";
+var TZAVMAN_API_SECRET = ""; // הזן כאן קוד סודי ארוך (או הגדר Script Property בשם TZAVMAN_API_SECRET)
+
+function getConfiguredSecret() {
+  try {
+    var prop = PropertiesService.getScriptProperties().getProperty("TZAVMAN_API_SECRET");
+    if (prop && String(prop).trim()) return String(prop).trim();
+  } catch (e) {}
+  return String(TZAVMAN_API_SECRET || "").trim();
+}
+
+function isAuthorizedRequest(providedSecret) {
+  var expected = getConfiguredSecret();
+  if (!expected) return true; // תאימות לאחור אם טרם הוגדר קוד סודי בסקריפט
+  var supplied = String(providedSecret || "").trim();
+  if (expected.length !== supplied.length) return false;
+  var diff = 0;
+  for (var i = 0; i < expected.length; i++) {
+    diff |= expected.charCodeAt(i) ^ supplied.charCodeAt(i);
+  }
+  return diff === 0;
+}
 
 function getOrCreateMainFolder() {
   var folders = DriveApp.getFoldersByName(MAIN_FOLDER_NAME);
@@ -39,13 +62,11 @@ function getOrCreateSystemFolder(mainFolder, systemName) {
 }
 
 function doGet(e) {
-  var action = (e && e.parameter && e.parameter.action) || "ping";
-  var mainFolder = getOrCreateMainFolder();
+  // אינו חושף מזהי תיקיות או קבצים ללא אימות
   return ContentService.createTextOutput(JSON.stringify({
     ok: true,
-    action: action,
-    folderName: mainFolder.getName(),
-    folderUrl: mainFolder.getUrl()
+    service: "tzavman-drive-bridge",
+    secretProtected: Boolean(getConfiguredSecret())
   })).setMimeType(ContentService.MimeType.JSON);
 }
 
@@ -53,6 +74,14 @@ function doPost(e) {
   try {
     var raw = e.postData.contents;
     var body = JSON.parse(raw);
+
+    if (!isAuthorizedRequest(body.apiSecret)) {
+      return ContentService.createTextOutput(JSON.stringify({
+        ok: false,
+        error: "Unauthorized: Invalid API secret"
+      })).setMimeType(ContentService.MimeType.JSON);
+    }
+
     var mainFolder = getOrCreateMainFolder();
 
     // 1. בדיקת חיבור מהירה
@@ -150,6 +179,38 @@ export function setSavedGoogleDriveUrl(url: string) {
   }
 }
 
+export function getSavedGoogleDriveSecret(): string {
+  try {
+    return (localStorage.getItem(GDRIVE_SECRET_STORAGE_KEY) || '').trim();
+  } catch {
+    return '';
+  }
+}
+
+export function setSavedGoogleDriveSecret(secret: string) {
+  try {
+    const cleaned = secret.trim();
+    if (cleaned) {
+      localStorage.setItem(GDRIVE_SECRET_STORAGE_KEY, cleaned);
+    } else {
+      localStorage.removeItem(GDRIVE_SECRET_STORAGE_KEY);
+    }
+  } catch {
+    // ignore
+  }
+}
+
+export function buildGoogleDriveRequestBody(
+  action: 'PING' | 'UPLOAD_IMAGE' | 'SAVE_BACKUP',
+  extra: Record<string, unknown> = {},
+  explicitSecret?: string
+): Record<string, unknown> {
+  const secret = (explicitSecret !== undefined ? explicitSecret : getSavedGoogleDriveSecret()).trim();
+  return secret
+    ? { action, apiSecret: secret, ...extra }
+    : { action, ...extra };
+}
+
 export function isDataUrlImage(str: string): boolean {
   return typeof str === 'string' && str.startsWith('data:image/');
 }
@@ -158,7 +219,8 @@ export function isDataUrlImage(str: string): boolean {
  * בודק חיבור מול ה-Web App של Google Drive ומחזיר את שם התיקייה והקישור אליה
  */
 export async function testGoogleDriveConnection(
-  scriptUrl: string
+  scriptUrl: string,
+  explicitSecret?: string
 ): Promise<{ ok: boolean; folderName?: string; folderUrl?: string; error?: string }> {
   const cleaned = scriptUrl.trim();
   if (!isValidGoogleAppsScriptUrl(cleaned)) {
@@ -172,7 +234,7 @@ export async function testGoogleDriveConnection(
     const res = await fetch(cleaned, {
       method: 'POST',
       headers: { 'Content-Type': 'text/plain;charset=utf-8' },
-      body: JSON.stringify({ action: 'PING' }),
+      body: JSON.stringify(buildGoogleDriveRequestBody('PING', {}, explicitSecret)),
       redirect: 'follow'
     });
     if (!res.ok) {
@@ -214,12 +276,13 @@ export async function uploadImageToGoogleDrive(
     const res = await fetch(scriptUrl, {
       method: 'POST',
       headers: { 'Content-Type': 'text/plain;charset=utf-8' },
-      body: JSON.stringify({
-        action: 'UPLOAD_IMAGE',
-        dataUrl,
-        system: meta?.system || 'כללי',
-        fileName
-      }),
+      body: JSON.stringify(
+        buildGoogleDriveRequestBody('UPLOAD_IMAGE', {
+          dataUrl,
+          system: meta?.system || 'כללי',
+          fileName
+        })
+      ),
       redirect: 'follow'
     });
 
@@ -271,10 +334,9 @@ export function saveAutoBackupToGoogleDrive(payload: unknown) {
   fetch(scriptUrl, {
     method: 'POST',
     headers: { 'Content-Type': 'text/plain;charset=utf-8' },
-    body: JSON.stringify({
-      action: 'SAVE_BACKUP',
-      payload
-    }),
+    body: JSON.stringify(
+      buildGoogleDriveRequestBody('SAVE_BACKUP', { payload })
+    ),
     redirect: 'follow'
   }).catch(() => {});
 }

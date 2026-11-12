@@ -14,10 +14,13 @@ import {
   Pencil,
   Check,
   AlertTriangle,
-  RotateCcw
+  RotateCcw,
+  Mail,
+  KeyRound
 } from 'lucide-react';
 import { TeamMember } from '../utils/teamMembers';
 import { TeamRole } from '../types/std';
+import { syncService } from '../services/syncService';
 
 interface AdminTeamModalProps {
   systems: string[];
@@ -47,7 +50,11 @@ export const AdminTeamModal: React.FC<AdminTeamModalProps> = ({
   const [newFullName, setNewFullName] = useState('');
   const [newRole, setNewRole] = useState<TeamRole>('qa');
   const [newAllowedSystems, setNewAllowedSystems] = useState<string[]>([]);
+  const [newAuthEmail, setNewAuthEmail] = useState('');
+  const [newAuthPassword, setNewAuthPassword] = useState('');
+  const [isProvisioningAuth, setIsProvisioningAuth] = useState(false);
   const [statusMsg, setStatusMsg] = useState<string | null>(null);
+  const isFirebaseAuthActive = syncService.isFirebaseAuthRequired();
 
   // Filters state: role filter + system filter
   const [roleFilter, setRoleFilter] = useState<'ALL' | 'dev' | 'qa' | 'admin'>('ALL');
@@ -103,7 +110,7 @@ export const AdminTeamModal: React.FC<AdminTeamModalProps> = ({
     });
   }, [systemFilteredMembers, roleFilter]);
 
-  const handleAddMember = (e: React.FormEvent) => {
+  const handleAddMember = async (e: React.FormEvent) => {
     e.preventDefault();
     const cleanName = newFullName.trim();
     if (!cleanName) return;
@@ -111,6 +118,27 @@ export const AdminTeamModal: React.FC<AdminTeamModalProps> = ({
     if (members.some((m) => m.fullName.trim().toLowerCase() === cleanName.toLowerCase())) {
       setStatusMsg('איש צוות בשם זה כבר קיים ברשימה.');
       return;
+    }
+
+    const cleanEmail = newAuthEmail.trim();
+    if (isFirebaseAuthActive && cleanEmail) {
+      if (newAuthPassword.length < 6) {
+        setStatusMsg('ליצירת חשבון Firebase Auth נדרשת סיסמה באורך 6 תווים לפחות.');
+        return;
+      }
+      setIsProvisioningAuth(true);
+      const provRes = await syncService.registerTeamMemberInFirebaseAuth(
+        cleanEmail,
+        newAuthPassword,
+        cleanName,
+        newRole,
+        newRole !== 'admin' && newAllowedSystems.length > 0 ? newAllowedSystems : undefined
+      );
+      setIsProvisioningAuth(false);
+      if (!provRes.ok) {
+        setStatusMsg(provRes.error || 'שגיאה ביצירת חשבון Firebase Auth');
+        return;
+      }
     }
 
     const newMember: TeamMember = {
@@ -127,9 +155,15 @@ export const AdminTeamModal: React.FC<AdminTeamModalProps> = ({
     setMembers(nextMembers);
     onSaveTeamMembers(nextMembers);
     setNewFullName('');
+    setNewAuthEmail('');
+    setNewAuthPassword('');
     setNewAllowedSystems([]);
-    setStatusMsg(`נוסף בהצלחה: ${cleanName}`);
-    setTimeout(() => setStatusMsg(null), 3000);
+    setStatusMsg(
+      isFirebaseAuthActive && cleanEmail
+        ? `נוצר חשבון Firebase Auth + נוסף בהצלחה: ${cleanName}`
+        : `נוסף בהצלחה: ${cleanName}`
+    );
+    setTimeout(() => setStatusMsg(null), 3500);
   };
 
   const handleStartEdit = (m: TeamMember) => {
@@ -413,6 +447,40 @@ export const AdminTeamModal: React.FC<AdminTeamModalProps> = ({
               <div className="p-2.5 bg-emerald-50/70 dark:bg-emerald-950/40 border border-emerald-200 dark:border-emerald-800 rounded-xl text-xs font-semibold text-emerald-800 dark:text-emerald-300 flex items-center gap-2">
                 <ShieldCheck className="w-4 h-4 text-emerald-600 dark:text-emerald-400 shrink-0" />
                 <span>מנהל מערכת – גישה מלאה לכלל המערכות וכלי הניהול באופן מובנה.</span>
+              </div>
+            )}
+
+            {isFirebaseAuthActive && (
+              <div className="p-3 rounded-xl bg-emerald-50/70 dark:bg-emerald-950/30 border border-emerald-200 dark:border-emerald-800/70 space-y-2">
+                <div className="text-[11px] font-extrabold text-emerald-900 dark:text-emerald-200 flex items-center gap-1.5">
+                  <Lock className="w-3.5 h-3.5 text-emerald-600 dark:text-emerald-400" />
+                  <span>יצירת חשבון התחברות ב-Firebase Auth + פרופיל בשרת (`std_users`):</span>
+                </div>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                  <div className="relative">
+                    <Mail className="w-3.5 h-3.5 text-slate-400 absolute right-3 top-1/2 -translate-y-1/2 pointer-events-none" />
+                    <input
+                      type="email"
+                      dir="ltr"
+                      value={newAuthEmail}
+                      onChange={(e) => setNewAuthEmail(e.target.value)}
+                      placeholder="member@company.com"
+                      className="w-full pr-9 pl-3 py-1.5 rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-900 text-xs text-left"
+                    />
+                  </div>
+                  <div className="relative">
+                    <KeyRound className="w-3.5 h-3.5 text-slate-400 absolute right-3 top-1/2 -translate-y-1/2 pointer-events-none" />
+                    <input
+                      type="password"
+                      dir="ltr"
+                      value={newAuthPassword}
+                      onChange={(e) => setNewAuthPassword(e.target.value)}
+                      disabled={isProvisioningAuth}
+                      placeholder="סיסמה ראשונית (6+ תווים)"
+                      className="w-full pr-9 pl-3 py-1.5 rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-900 text-xs text-left"
+                    />
+                  </div>
+                </div>
               </div>
             )}
           </form>

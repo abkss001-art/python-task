@@ -1,9 +1,20 @@
 import { initializeApp, getApps, deleteApp, FirebaseApp } from 'firebase/app';
 import {
+  getAuth,
+  onAuthStateChanged,
+  signInWithEmailAndPassword,
+  createUserWithEmailAndPassword,
+  signOut,
+  Auth,
+  User
+} from 'firebase/auth';
+import {
   getDatabase,
   ref,
   onValue,
   set,
+  update,
+  get,
   onDisconnect,
   Database
 } from 'firebase/database';
@@ -12,6 +23,7 @@ import {
   doc,
   onSnapshot,
   setDoc,
+  getDoc,
   Firestore
 } from 'firebase/firestore';
 import mqtt, { MqttClient } from 'mqtt';
@@ -19,10 +31,12 @@ import {
   ChatTypingUser,
   DEFAULT_SYSTEMS,
   FirebaseConfigData,
+  FirebaseUserProfile,
   StdIssue,
   StdSeverity,
   SyncStatusInfo,
-  SystemChatMessage
+  SystemChatMessage,
+  TeamRole
 } from '../types/std';
 import {
   isValidFirebaseConfig,
@@ -42,9 +56,11 @@ import {
   pruneChatMessages
 } from '../utils/chatUtils';
 import {
+  getSavedGoogleDriveSecret,
   getSavedGoogleDriveUrl,
   isDataUrlImage,
   saveAutoBackupToGoogleDrive,
+  setSavedGoogleDriveSecret,
   setSavedGoogleDriveUrl,
   uploadImageToGoogleDrive
 } from './googleDriveService';
@@ -323,10 +339,19 @@ class RealtimeSyncService {
   };
 
   private firebaseApp: FirebaseApp | null = null;
+  private firebaseAuth: Auth | null = null;
+  private firebaseUser: User | null = null;
+  private firebaseUserProfile: FirebaseUserProfile | null = null;
+  private firebaseAuthInitialized = false;
+  private authListeners = new Set<
+    (profile: FirebaseUserProfile | null, rawUser: User | null, initialized: boolean) => void
+  >();
   private rtdb: Database | null = null;
   private firestore: Firestore | null = null;
   private unsubscribeFirebase: (() => void) | null = null;
   private unsubscribePresence: (() => void) | null = null;
+  private unsubscribeAuthState: (() => void) | null = null;
+  private unsubscribePrivateConfig: (() => void) | null = null;
   private eventSource: EventSource | null = null;
   private mqttClient: MqttClient | null = null;
 
@@ -801,6 +826,7 @@ class RealtimeSyncService {
       id: `chat-${now}-${Math.random().toString(36).substring(2, 7)}`,
       system: input.system,
       author: input.author,
+      ...(this.firebaseUser?.uid ? { authorUid: this.firebaseUser.uid } : {}),
       authorRole: input.authorRole,
       text: input.text,
       screenshots: Array.isArray(input.screenshots) ? input.screenshots : [],
@@ -1201,6 +1227,14 @@ class RealtimeSyncService {
       this.unsubscribeTypingFirebase();
       this.unsubscribeTypingFirebase = null;
     }
+    if (this.unsubscribePrivateConfig) {
+      this.unsubscribePrivateConfig();
+      this.unsubscribePrivateConfig = null;
+    }
+    if (this.unsubscribeAuthState) {
+      this.unsubscribeAuthState();
+      this.unsubscribeAuthState = null;
+    }
     this.hasLoadedInitialChatsFirebase = false;
     if (this.eventSource) {
       this.eventSource.close();
@@ -1224,6 +1258,551 @@ class RealtimeSyncService {
     }
   }
 
+  private buildFirebaseOptions(config: FirebaseConfigData) {
+    return {
+      apiKey: config.apiKey,
+      authDomain: config.authDomain || `${config.projectId}.firebaseapp.com`,
+      databaseURL:
+        config.databaseURL || `https://${config.projectId}-default-rtdb.firebaseio.com`,
+      projectId: config.projectId,
+      storageBucket: config.storageBucket,
+      messagingSenderId: config.messagingSenderId,
+      appId: config.appId
+    };
+  }
+
+  private notifyAuthListeners() {
+    for (const listener of this.authListeners) {
+      listener(this.firebaseUserProfile, this.firebaseUser, this.firebaseAuthInitialized);
+    }
+  }
+
+  public isFirebaseAuthRequired(): boolean {
+    return Boolean(this.activeFirebaseConfig && this.activeFirebaseConfig.requireFirebaseAuth);
+  }
+
+  public getCurrentFirebaseProfile(): FirebaseUserProfile | null {
+    return this.firebaseUserProfile;
+  }
+
+  public getCurrentFirebaseUser(): User | null {
+    return this.firebaseUser;
+  }
+
+  public subscribeFirebaseAuth(
+    listener: (profile: FirebaseUserProfile | null, rawUser: User | null, initialized: boolean) => void
+  ): () => void {
+    this.authListeners.add(listener);
+    listener(this.firebaseUserProfile, this.firebaseUser, this.firebaseAuthInitialized);
+    return () => {
+      this.authListeners.delete(listener);
+    };
+  }
+
+  public async fetchFirebaseUserProfile(uid: string): Promise<FirebaseUserProfile | null> {
+    if (!uid || !this.activeFirebaseConfig) return null;
+    try {
+      if (this.activeFirebaseConfig.mode === 'firestore' && this.firestore) {
+        const snap = await getDoc(doc(this.firestore, 'std_users', uid));
+        if (!snap.exists()) return null;
+        const data = snap.data() as Partial<FirebaseUserProfile>;
+        if (!data?.fullName || !data?.role) return null;
+        return {
+          uid,
+          email: data.email,
+          fullName: String(data.fullName).trim(),
+          role: data.role,
+          allowedSystems: Array.isArray(data.allowedSystems) ? data.allowedSystems : undefined,
+          isSuperAdmin: Boolean(data.isSuperAdmin || data.role === 'admin'),
+          updatedAt: data.updatedAt
+        };
+      }
+      if (this.rtdb) {
+        const snap = await get(ref(this.rtdb, `std_users/${uid}`));
+        const data = snap.val() as Partial<FirebaseUserProfile> | null;
+        if (!data || !data.fullName || !data.role) return null;
+        return {
+          uid,
+          email: data.email,
+          fullName: String(data.fullName).trim(),
+          role: data.role,
+          allowedSystems: Array.isArray(data.allowedSystems) ? data.allowedSystems : undefined,
+          isSuperAdmin: Boolean(data.isSuperAdmin || data.role === 'admin'),
+          updatedAt: data.updatedAt
+        };
+      }
+    } catch {
+      // ignore
+    }
+    return null;
+  }
+
+  public async signInWithFirebaseEmail(
+    email: string,
+    password: string
+  ): Promise<{
+    ok: boolean;
+    profile?: FirebaseUserProfile;
+    needsProfileBootstrap?: boolean;
+    error?: string;
+  }> {
+    if (!this.firebaseAuth) {
+      return { ok: false, error: 'Firebase Auth לא מאותחל בהגדרות הענן.' };
+    }
+    try {
+      const cred = await signInWithEmailAndPassword(this.firebaseAuth, email.trim(), password);
+      this.firebaseUser = cred.user;
+      const profile = await this.fetchFirebaseUserProfile(cred.user.uid);
+      if (profile) {
+        this.firebaseUserProfile = profile;
+        if (this.activeFirebaseConfig) {
+          this.attachFirebaseDataListeners(this.activeFirebaseConfig);
+        }
+        this.updateStatus({
+          firebaseUid: cred.user.uid,
+          firebaseUserEmail: cred.user.email || undefined
+        });
+        this.notifyAuthListeners();
+        return { ok: true, profile };
+      }
+      this.notifyAuthListeners();
+      return { ok: true, needsProfileBootstrap: true };
+    } catch (err: any) {
+      const code = String(err?.code || '');
+      if (code === 'auth/invalid-credential' || code === 'auth/wrong-password' || code === 'auth/user-not-found') {
+        return { ok: false, error: 'אימייל או סיסמה שגויים ב-Firebase Auth.' };
+      }
+      if (code === 'auth/too-many-requests') {
+        return { ok: false, error: 'יותר מדי ניסיונות כושלים. נסה שוב בעוד מספר דקות.' };
+      }
+      if (code === 'auth/user-disabled') {
+        return { ok: false, error: 'חשבון זה הושבת על ידי המנהל ב-Firebase Console.' };
+      }
+      return { ok: false, error: err?.message || 'שגיאת התחברות ל-Firebase Auth' };
+    }
+  }
+
+  public async bootstrapInitialAdminProfile(fullName: string): Promise<{
+    ok: boolean;
+    profile?: FirebaseUserProfile;
+    error?: string;
+  }> {
+    const cleanName = fullName.trim();
+    if (!cleanName || !this.firebaseUser || !this.activeFirebaseConfig) {
+      return { ok: false, error: 'אין משתמש Firebase מחובר או שם חסר.' };
+    }
+
+    const profile: FirebaseUserProfile = {
+      uid: this.firebaseUser.uid,
+      email: this.firebaseUser.email || undefined,
+      fullName: cleanName,
+      role: 'admin',
+      isSuperAdmin: true,
+      updatedAt: Date.now()
+    };
+
+    try {
+      if (this.activeFirebaseConfig.mode === 'firestore' && this.firestore) {
+        await setDoc(doc(this.firestore, 'std_users', profile.uid), profile);
+      } else if (this.rtdb) {
+        await set(ref(this.rtdb, `std_users/${profile.uid}`), profile);
+      } else {
+        return { ok: false, error: 'מסד הנתונים אינו מחובר.' };
+      }
+      this.firebaseUserProfile = profile;
+      this.attachFirebaseDataListeners(this.activeFirebaseConfig);
+      this.notifyAuthListeners();
+      return { ok: true, profile };
+    } catch (err: any) {
+      return {
+        ok: false,
+        error:
+          err?.message ||
+          'השרת חסם יצירת פרופיל מנהל. אם כבר קיימים משתמשים ב-std_users, רק מנהל קיים יכול להגדיר משתמשים חדשים.'
+      };
+    }
+  }
+
+  public async registerTeamMemberInFirebaseAuth(
+    email: string,
+    password: string,
+    fullName: string,
+    role: TeamRole,
+    allowedSystems?: string[]
+  ): Promise<{ ok: boolean; uid?: string; error?: string }> {
+    if (!this.activeFirebaseConfig) {
+      return { ok: false, error: 'Firebase אינו מחובר.' };
+    }
+    const cleanEmail = email.trim();
+    const cleanName = fullName.trim();
+    if (!cleanEmail || !password || password.length < 6 || !cleanName) {
+      return { ok: false, error: 'נא להזין אימייל תקין, שם מלא וסיסמה של לפחות 6 תווים.' };
+    }
+
+    // Use a secondary temporary app so creating the team member account does NOT log out the Admin!
+    const secondaryName = `provisioning-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`;
+    let secondaryApp: FirebaseApp | null = null;
+    try {
+      secondaryApp = initializeApp(this.buildFirebaseOptions(this.activeFirebaseConfig), secondaryName);
+      const secondaryAuth = getAuth(secondaryApp);
+      const cred = await createUserWithEmailAndPassword(secondaryAuth, cleanEmail, password);
+      const newUid = cred.user.uid;
+      await signOut(secondaryAuth).catch(() => {});
+
+      const profile: FirebaseUserProfile = {
+        uid: newUid,
+        email: cleanEmail,
+        fullName: cleanName,
+        role,
+        ...(role !== 'admin' && Array.isArray(allowedSystems) && allowedSystems.length > 0
+          ? { allowedSystems }
+          : {}),
+        ...(role === 'admin' ? { isSuperAdmin: false } : {}),
+        updatedAt: Date.now()
+      };
+
+      if (this.activeFirebaseConfig.mode === 'firestore' && this.firestore) {
+        await setDoc(doc(this.firestore, 'std_users', newUid), profile);
+      } else if (this.rtdb) {
+        await set(ref(this.rtdb, `std_users/${newUid}`), profile);
+      }
+
+      return { ok: true, uid: newUid };
+    } catch (err: any) {
+      const code = String(err?.code || '');
+      if (code === 'auth/email-already-in-use') {
+        return { ok: false, error: 'כתובת אימייל זו כבר רשומה ב-Firebase Auth.' };
+      }
+      if (code === 'auth/weak-password') {
+        return { ok: false, error: 'הסיסמה חלשה מדי — יש לבחור לפחות 6 תווים.' };
+      }
+      return { ok: false, error: err?.message || 'שגיאה ביצירת משתמש Firebase Auth' };
+    } finally {
+      if (secondaryApp) {
+        await deleteApp(secondaryApp).catch(() => {});
+      }
+    }
+  }
+
+  public async signOutFirebase(): Promise<void> {
+    this.firebaseUserProfile = null;
+    this.firebaseUser = null;
+    if (this.unsubscribeFirebase) {
+      this.unsubscribeFirebase();
+      this.unsubscribeFirebase = null;
+    }
+    if (this.unsubscribeChatFirebase) {
+      this.unsubscribeChatFirebase();
+      this.unsubscribeChatFirebase = null;
+    }
+    if (this.unsubscribeTypingFirebase) {
+      this.unsubscribeTypingFirebase();
+      this.unsubscribeTypingFirebase = null;
+    }
+    if (this.unsubscribePresence) {
+      this.unsubscribePresence();
+      this.unsubscribePresence = null;
+    }
+    if (this.unsubscribePrivateConfig) {
+      this.unsubscribePrivateConfig();
+      this.unsubscribePrivateConfig = null;
+    }
+    if (this.firebaseAuth) {
+      await signOut(this.firebaseAuth).catch(() => {});
+    }
+    this.updateStatus({
+      connected: false,
+      firebaseUid: undefined,
+      firebaseUserEmail: undefined
+    });
+    this.notifyAuthListeners();
+  }
+
+  public async syncPrivateDriveConfig(googleDriveUrl: string, apiSecret?: string): Promise<void> {
+    if (!this.activeFirebaseConfig) return;
+    const payload = {
+      googleDriveUrl: googleDriveUrl ? encodeProtectedUrl(googleDriveUrl) : '',
+      ...(apiSecret ? { apiSecret } : {}),
+      updatedAt: Date.now()
+    };
+    try {
+      if (this.activeFirebaseConfig.mode === 'firestore' && this.firestore) {
+        await setDoc(doc(this.firestore, 'std_workspaces', 'private_config'), payload, {
+          merge: true
+        });
+      } else if (this.rtdb) {
+        await set(ref(this.rtdb, 'std_private_config'), payload);
+      }
+    } catch {
+      // ignore if user does not have admin permission on private_config
+    }
+  }
+
+  private detachDataListenersOnly() {
+    if (this.unsubscribeFirebase) {
+      this.unsubscribeFirebase();
+      this.unsubscribeFirebase = null;
+    }
+    if (this.unsubscribePresence) {
+      this.unsubscribePresence();
+      this.unsubscribePresence = null;
+    }
+    if (this.unsubscribeChatFirebase) {
+      this.unsubscribeChatFirebase();
+      this.unsubscribeChatFirebase = null;
+    }
+    if (this.unsubscribeTypingFirebase) {
+      this.unsubscribeTypingFirebase();
+      this.unsubscribeTypingFirebase = null;
+    }
+    if (this.unsubscribePrivateConfig) {
+      this.unsubscribePrivateConfig();
+      this.unsubscribePrivateConfig = null;
+    }
+    this.hasLoadedInitialChatsFirebase = false;
+  }
+
+  private attachFirebaseDataListeners(config: FirebaseConfigData) {
+    this.detachDataListenersOnly();
+    const useFirestore = config.mode === 'firestore';
+
+    if (useFirestore && this.firestore) {
+      const workspaceDocRef = doc(this.firestore, 'std_workspaces', 'main_workspace');
+
+      this.unsubscribeFirebase = onSnapshot(
+        workspaceDocRef,
+        (snapshot) => {
+          if (snapshot.exists()) {
+            const data = snapshot.data() as SyncStatePayload;
+            const normalized = this.normalizePayload(data);
+            const isRemote = Boolean(normalized.clientId && normalized.clientId !== this.clientId);
+            this.currentState = normalized;
+            this.persistLocally(normalized);
+            this.updateStatus({
+              mode: 'firebase-firestore',
+              connected: true,
+              projectId: config.projectId,
+              requireFirebaseAuth: Boolean(config.requireFirebaseAuth),
+              firebaseUid: this.firebaseUser?.uid,
+              firebaseUserEmail: this.firebaseUser?.email || undefined,
+              lastSyncAt: Date.now(),
+              lastEventText:
+                normalized.lastAction && !isSystemAdminAction(normalized.lastAction)
+                  ? `${normalized.lastUpdatedBy || 'צוות'}: ${normalized.lastAction}`
+                  : undefined,
+              errorMessage: undefined
+            });
+            this.notifyState(isRemote);
+          } else {
+            this.pushStateToCloud(this.currentState, 'אתחול מסד נתונים בענן');
+            this.updateStatus({
+              mode: 'firebase-firestore',
+              connected: true,
+              projectId: config.projectId,
+              requireFirebaseAuth: Boolean(config.requireFirebaseAuth),
+              lastSyncAt: Date.now()
+            });
+          }
+        },
+        (error) => {
+          this.updateStatus({
+            mode: 'error',
+            connected: false,
+            projectId: config.projectId,
+            errorMessage: `שגיאת Firestore: ${error.message}`
+          });
+        }
+      );
+
+      // Private Drive config listener (protected by Firestore Rules)
+      const privateDocRef = doc(this.firestore, 'std_workspaces', 'private_config');
+      this.unsubscribePrivateConfig = onSnapshot(
+        privateDocRef,
+        (snap) => {
+          if (!snap.exists()) return;
+          const pData = snap.data() as { googleDriveUrl?: string; apiSecret?: string };
+          const decodedUrl = decodeProtectedUrl(pData?.googleDriveUrl);
+          if (decodedUrl) setSavedGoogleDriveUrl(decodedUrl);
+          if (pData?.apiSecret) setSavedGoogleDriveSecret(String(pData.apiSecret));
+        },
+        () => {}
+      );
+
+      // Listen to dedicated Firestore per-system chat document
+      const chatsDocRef = doc(this.firestore, 'std_workspaces', 'system_chats');
+      this.unsubscribeChatFirebase = onSnapshot(
+        chatsDocRef,
+        (snap) => {
+          if (snap.exists()) {
+            const data = snap.data() as {
+              chats?: Record<string, SystemChatMessage[]>;
+              clientId?: string;
+            };
+            if (data?.chats && typeof data.chats === 'object') {
+              const isRemote = Boolean(data.clientId && data.clientId !== this.clientId);
+              this.applyIncomingRemoteChats(data.chats, isRemote);
+            }
+          }
+        },
+        () => {
+          // ignore optional chat listener error
+        }
+      );
+      return;
+    }
+
+    if (this.rtdb) {
+      const stateRef = ref(this.rtdb, 'std_workspace');
+
+      try {
+        const myPresenceRef = ref(this.rtdb, `std_presence/${this.clientId}`);
+        const allPresenceRef = ref(this.rtdb, 'std_presence');
+        set(myPresenceRef, { online: true, seenAt: Date.now() }).catch(() => {});
+        onDisconnect(myPresenceRef).remove().catch(() => {});
+
+        this.unsubscribePresence = onValue(allPresenceRef, (snap) => {
+          const val = snap.val();
+          const count = val ? Object.keys(val).length : 1;
+          this.updateStatus({ onlineCount: Math.max(1, count) });
+        });
+      } catch {
+        // ignore
+      }
+
+      this.unsubscribeFirebase = onValue(
+        stateRef,
+        (snapshot) => {
+          const data = snapshot.val() as SyncStatePayload | null;
+          if (data) {
+            const normalized = this.normalizePayload(data);
+            const isRemote = Boolean(normalized.clientId && normalized.clientId !== this.clientId);
+            this.currentState = normalized;
+            this.persistLocally(normalized);
+            this.updateStatus({
+              mode: 'firebase-rtdb',
+              connected: true,
+              projectId: config.projectId,
+              requireFirebaseAuth: Boolean(config.requireFirebaseAuth),
+              firebaseUid: this.firebaseUser?.uid,
+              firebaseUserEmail: this.firebaseUser?.email || undefined,
+              lastSyncAt: Date.now(),
+              lastEventText:
+                normalized.lastAction && !isSystemAdminAction(normalized.lastAction)
+                  ? `${normalized.lastUpdatedBy || 'צוות'}: ${normalized.lastAction}`
+                  : undefined,
+              errorMessage: undefined
+            });
+            this.notifyState(isRemote);
+          } else {
+            this.pushStateToCloud(this.currentState, 'אתחול נתונים ראשוני ב-Firebase');
+            this.updateStatus({
+              mode: 'firebase-rtdb',
+              connected: true,
+              projectId: config.projectId,
+              requireFirebaseAuth: Boolean(config.requireFirebaseAuth),
+              lastSyncAt: Date.now()
+            });
+          }
+        },
+        (error) => {
+          this.updateStatus({
+            mode: 'error',
+            connected: false,
+            projectId: config.projectId,
+            errorMessage: `שגיאת התחברות ל-Firebase Realtime DB: ${error.message}`
+          });
+        }
+      );
+
+      // Private Drive config listener (protected by RTDB Rules)
+      try {
+        const privateRef = ref(this.rtdb, 'std_private_config');
+        this.unsubscribePrivateConfig = onValue(
+          privateRef,
+          (snap) => {
+            const pData = snap.val() as { googleDriveUrl?: string; apiSecret?: string } | null;
+            if (!pData) return;
+            const decodedUrl = decodeProtectedUrl(pData.googleDriveUrl);
+            if (decodedUrl) setSavedGoogleDriveUrl(decodedUrl);
+            if (pData.apiSecret) setSavedGoogleDriveSecret(String(pData.apiSecret));
+          },
+          () => {}
+        );
+      } catch {
+        // ignore
+      }
+
+      // Listen to dedicated RTDB per-system chats node
+      try {
+        const chatsRef = ref(this.rtdb, 'std_chats');
+        this.unsubscribeChatFirebase = onValue(
+          chatsRef,
+          (snap) => {
+            const rawVal = snap.val() as Record<
+              string,
+              Record<string, SystemChatMessage> | SystemChatMessage[]
+            > | null;
+            if (!rawVal) {
+              this.hasLoadedInitialChatsFirebase = true;
+              return;
+            }
+            const parsedChats: Record<string, SystemChatMessage[]> = {};
+            for (const bucket of Object.values(rawVal)) {
+              if (!bucket) continue;
+              const list = Array.isArray(bucket) ? bucket : Object.values(bucket);
+              for (const msg of list) {
+                if (msg && msg.id && msg.system) {
+                  if (!parsedChats[msg.system]) parsedChats[msg.system] = [];
+                  parsedChats[msg.system].push(msg);
+                }
+              }
+            }
+            this.applyIncomingRemoteChats(parsedChats, true);
+          },
+          () => {
+            // ignore chat listener error
+          }
+        );
+
+        const typingRef = ref(this.rtdb, 'std_chat_typing');
+        this.unsubscribeTypingFirebase = onValue(
+          typingRef,
+          (snap) => {
+            const rawVal = snap.val() as Record<string, any> | null;
+            const now = Date.now();
+            this.typingUsers.clear();
+            if (rawVal) {
+              for (const item of Object.values(rawVal)) {
+                if (
+                  item &&
+                  item.isTyping &&
+                  item.system &&
+                  item.author &&
+                  item.clientId &&
+                  item.clientId !== this.clientId &&
+                  now - (item.timestamp || 0) < 6000
+                ) {
+                  this.typingUsers.set(`${item.system}::${item.clientId}`, {
+                    system: item.system,
+                    author: item.author,
+                    clientId: item.clientId,
+                    updatedAt: item.timestamp || now
+                  });
+                }
+              }
+            }
+            this.notifyTyping();
+          },
+          () => {
+            // ignore typing listener error
+          }
+        );
+      } catch {
+        // ignore
+      }
+    }
+  }
+
   public async connectFirebase(
     config: FirebaseConfigData
   ): Promise<{ ok: boolean; error?: string }> {
@@ -1236,6 +1815,7 @@ class RealtimeSyncService {
       mode: useFirestore ? 'firebase-firestore' : 'firebase-rtdb',
       connected: false,
       projectId: config.projectId,
+      requireFirebaseAuth: Boolean(config.requireFirebaseAuth),
       errorMessage: undefined
     });
 
@@ -1245,209 +1825,48 @@ class RealtimeSyncService {
         await deleteApp(app);
       }
 
-      const firebaseOptions = {
-        apiKey: config.apiKey,
-        authDomain: config.authDomain || `${config.projectId}.firebaseapp.com`,
-        databaseURL:
-          config.databaseURL || `https://${config.projectId}-default-rtdb.firebaseio.com`,
-        projectId: config.projectId,
-        storageBucket: config.storageBucket,
-        messagingSenderId: config.messagingSenderId,
-        appId: config.appId
-      };
-
-      this.firebaseApp = initializeApp(firebaseOptions);
-
+      this.firebaseApp = initializeApp(this.buildFirebaseOptions(config));
+      this.firebaseAuth = getAuth(this.firebaseApp);
       if (useFirestore) {
         this.firestore = getFirestore(this.firebaseApp);
-        const workspaceDocRef = doc(this.firestore, 'std_workspaces', 'main_workspace');
-
-        this.unsubscribeFirebase = onSnapshot(
-          workspaceDocRef,
-          (snapshot) => {
-            if (snapshot.exists()) {
-              const data = snapshot.data() as SyncStatePayload;
-              const normalized = this.normalizePayload(data);
-              const isRemote = Boolean(normalized.clientId && normalized.clientId !== this.clientId);
-              this.currentState = normalized;
-              this.persistLocally(normalized);
-              this.updateStatus({
-                mode: 'firebase-firestore',
-                connected: true,
-                projectId: config.projectId,
-                lastSyncAt: Date.now(),
-                lastEventText:
-                  normalized.lastAction && !isSystemAdminAction(normalized.lastAction)
-                    ? `${normalized.lastUpdatedBy || 'צוות'}: ${normalized.lastAction}`
-                    : undefined,
-                errorMessage: undefined
-              });
-              this.notifyState(isRemote);
-            } else {
-              this.pushStateToCloud(this.currentState, 'אתחול מסד נתונים בענן');
-              this.updateStatus({
-                mode: 'firebase-firestore',
-                connected: true,
-                projectId: config.projectId,
-                lastSyncAt: Date.now()
-              });
-            }
-          },
-          (error) => {
-            this.updateStatus({
-              mode: 'error',
-              connected: false,
-              projectId: config.projectId,
-              errorMessage: `שגיאת Firestore: ${error.message}`
-            });
-          }
-        );
-
-        // Listen to dedicated Firestore per-system chat document
-        const chatsDocRef = doc(this.firestore, 'std_workspaces', 'system_chats');
-        this.unsubscribeChatFirebase = onSnapshot(
-          chatsDocRef,
-          (snap) => {
-            if (snap.exists()) {
-              const data = snap.data() as {
-                chats?: Record<string, SystemChatMessage[]>;
-                clientId?: string;
-              };
-              if (data?.chats && typeof data.chats === 'object') {
-                const isRemote = Boolean(data.clientId && data.clientId !== this.clientId);
-                this.applyIncomingRemoteChats(data.chats, isRemote);
-              }
-            }
-          },
-          () => {
-            // ignore optional chat listener error
-          }
-        );
+        this.rtdb = null;
       } else {
         this.rtdb = getDatabase(this.firebaseApp);
-        const stateRef = ref(this.rtdb, 'std_workspace');
+        this.firestore = null;
+      }
 
-        try {
-          const myPresenceRef = ref(this.rtdb, `std_presence/${this.clientId}`);
-          const allPresenceRef = ref(this.rtdb, 'std_presence');
-          set(myPresenceRef, { online: true, seenAt: Date.now() }).catch(() => {});
-          onDisconnect(myPresenceRef).remove().catch(() => {});
+      this.unsubscribeAuthState = onAuthStateChanged(this.firebaseAuth, async (user) => {
+        this.firebaseUser = user;
+        this.firebaseAuthInitialized = true;
 
-          this.unsubscribePresence = onValue(allPresenceRef, (snap) => {
-            const val = snap.val();
-            const count = val ? Object.keys(val).length : 1;
-            this.updateStatus({ onlineCount: Math.max(1, count) });
+        if (user) {
+          const profile = await this.fetchFirebaseUserProfile(user.uid);
+          this.firebaseUserProfile = profile;
+          this.updateStatus({
+            firebaseUid: user.uid,
+            firebaseUserEmail: user.email || undefined
           });
-        } catch {
-          // ignore
-        }
-
-        this.unsubscribeFirebase = onValue(
-          stateRef,
-          (snapshot) => {
-            const data = snapshot.val() as SyncStatePayload | null;
-            if (data) {
-              const normalized = this.normalizePayload(data);
-              const isRemote = Boolean(normalized.clientId && normalized.clientId !== this.clientId);
-              this.currentState = normalized;
-              this.persistLocally(normalized);
-              this.updateStatus({
-                mode: 'firebase-rtdb',
-                connected: true,
-                projectId: config.projectId,
-                lastSyncAt: Date.now(),
-                lastEventText:
-                  normalized.lastAction && !isSystemAdminAction(normalized.lastAction)
-                    ? `${normalized.lastUpdatedBy || 'צוות'}: ${normalized.lastAction}`
-                    : undefined,
-                errorMessage: undefined
-              });
-              this.notifyState(isRemote);
-            } else {
-              this.pushStateToCloud(this.currentState, 'אתחול נתונים ראשוני ב-Firebase');
-              this.updateStatus({
-                mode: 'firebase-rtdb',
-                connected: true,
-                projectId: config.projectId,
-                lastSyncAt: Date.now()
-              });
+          if (config.requireFirebaseAuth) {
+            if (profile) {
+              this.attachFirebaseDataListeners(config);
             }
-          },
-          (error) => {
-            this.updateStatus({
-              mode: 'error',
-              connected: false,
-              projectId: config.projectId,
-              errorMessage: `שגיאת התחברות ל-Firebase Realtime DB: ${error.message}`
-            });
           }
-        );
-
-        // Listen to dedicated RTDB per-system chats node
-        try {
-          const chatsRef = ref(this.rtdb, 'std_chats');
-          this.unsubscribeChatFirebase = onValue(
-            chatsRef,
-            (snap) => {
-              const rawVal = snap.val() as Record<string, Record<string, SystemChatMessage> | SystemChatMessage[]> | null;
-              if (!rawVal) {
-                this.hasLoadedInitialChatsFirebase = true;
-                return;
-              }
-              const parsedChats: Record<string, SystemChatMessage[]> = {};
-              for (const bucket of Object.values(rawVal)) {
-                if (!bucket) continue;
-                const list = Array.isArray(bucket) ? bucket : Object.values(bucket);
-                for (const msg of list) {
-                  if (msg && msg.id && msg.system) {
-                    if (!parsedChats[msg.system]) parsedChats[msg.system] = [];
-                    parsedChats[msg.system].push(msg);
-                  }
-                }
-              }
-              this.applyIncomingRemoteChats(parsedChats, true);
-            },
-            () => {
-              // ignore chat listener error
-            }
-          );
-
-          const typingRef = ref(this.rtdb, 'std_chat_typing');
-          this.unsubscribeTypingFirebase = onValue(
-            typingRef,
-            (snap) => {
-              const rawVal = snap.val() as Record<string, any> | null;
-              const now = Date.now();
-              this.typingUsers.clear();
-              if (rawVal) {
-                for (const item of Object.values(rawVal)) {
-                  if (
-                    item &&
-                    item.isTyping &&
-                    item.system &&
-                    item.author &&
-                    item.clientId &&
-                    item.clientId !== this.clientId &&
-                    now - (item.timestamp || 0) < 6000
-                  ) {
-                    this.typingUsers.set(`${item.system}::${item.clientId}`, {
-                      system: item.system,
-                      author: item.author,
-                      clientId: item.clientId,
-                      updatedAt: item.timestamp || now
-                    });
-                  }
-                }
-              }
-              this.notifyTyping();
-            },
-            () => {
-              // ignore typing listener error
-            }
-          );
-        } catch {
-          // ignore
+        } else {
+          this.firebaseUserProfile = null;
+          this.updateStatus({
+            firebaseUid: undefined,
+            firebaseUserEmail: undefined,
+            ...(config.requireFirebaseAuth ? { connected: false } : {})
+          });
+          if (config.requireFirebaseAuth) {
+            this.detachDataListenersOnly();
+          }
         }
+        this.notifyAuthListeners();
+      });
+
+      if (!config.requireFirebaseAuth) {
+        this.attachFirebaseDataListeners(config);
       }
 
       return { ok: true };
@@ -1465,6 +1884,14 @@ class RealtimeSyncService {
   public disconnectFirebaseAndUseLiveServer() {
     saveFirebaseConfigLocally(null);
     this.activeFirebaseConfig = null;
+    this.firebaseUser = null;
+    this.firebaseUserProfile = null;
+    this.updateStatus({
+      requireFirebaseAuth: false,
+      firebaseUid: undefined,
+      firebaseUserEmail: undefined
+    });
+    this.notifyAuthListeners();
     this.connectBuiltInCloudAndServer();
   }
 
@@ -2371,19 +2798,47 @@ class RealtimeSyncService {
           Math.max(this.currentState.revision || 0, this.highestSeenRevision) + 1;
         this.highestSeenRevision = driveRev;
 
+        const isAuthEnforced = this.isFirebaseAuthRequired();
         const drivePayload: SyncStatePayload = {
           ...this.currentState,
           issues: liveIssues,
           revision: driveRev,
           updatedAt: Date.now(),
-          googleDriveUrl: getSavedGoogleDriveUrl() || undefined
+          ...(!isAuthEnforced ? { googleDriveUrl: getSavedGoogleDriveUrl() || undefined } : {})
         };
 
         this.currentState = drivePayload;
         this.lastAppliedFingerprint = this.computeFingerprint(drivePayload);
         this.notifyState(false);
         this.persistLocally(drivePayload);
-        await this.publishStateToMqtt(drivePayload);
+
+        if (
+          this.activeFirebaseConfig &&
+          this.activeFirebaseConfig.mode === 'firestore' &&
+          this.firestore
+        ) {
+          const workspaceDocRef = doc(this.firestore, 'std_workspaces', 'main_workspace');
+          await setDoc(
+            workspaceDocRef,
+            {
+              issues: drivePayload.issues,
+              revision: driveRev,
+              updatedAt: drivePayload.updatedAt,
+              clientId: this.clientId
+            },
+            { merge: true }
+          );
+        } else if (this.activeFirebaseConfig && this.rtdb) {
+          const stateRef = ref(this.rtdb, 'std_workspace');
+          await update(stateRef, {
+            issues: drivePayload.issues,
+            revision: driveRev,
+            updatedAt: drivePayload.updatedAt,
+            clientId: this.clientId
+          });
+        } else if (!isAuthEnforced) {
+          await this.publishStateToMqtt(drivePayload);
+        }
       }
 
       // Always save the latest complete state to Google Drive auto-backup!
@@ -2442,7 +2897,9 @@ class RealtimeSyncService {
       updatedAt: Date.now(),
       revision: nextRevision,
       clientId: this.clientId,
-      googleDriveUrl: getSavedGoogleDriveUrl() || undefined
+      googleDriveUrl: this.isFirebaseAuthRequired()
+        ? undefined
+        : getSavedGoogleDriveUrl() || undefined
     };
 
     // Apply Anti-Wipe Union Merge unless Admin explicitly requested a full backup replacement
@@ -2483,6 +2940,9 @@ class RealtimeSyncService {
       }
     }
 
+    const isAuthEnforced = this.isFirebaseAuthRequired();
+    const isFirebaseAdmin = this.firebaseUserProfile?.role === 'admin';
+
     // 1. If connected to Firebase Firestore
     if (
       this.activeFirebaseConfig &&
@@ -2490,7 +2950,26 @@ class RealtimeSyncService {
       this.firestore
     ) {
       const workspaceDocRef = doc(this.firestore, 'std_workspaces', 'main_workspace');
-      await setDoc(workspaceDocRef, payload);
+      if (isAuthEnforced && !isFirebaseAdmin) {
+        // Non-admin writes only issue + metadata fields so server Firestore rules validate RBAC strictly
+        await setDoc(
+          workspaceDocRef,
+          {
+            issues: payload.issues,
+            revision: payload.revision,
+            updatedAt: payload.updatedAt,
+            lastUpdatedBy: payload.lastUpdatedBy,
+            lastAction: payload.lastAction,
+            clientId: payload.clientId
+          },
+          { merge: true }
+        );
+      } else {
+        await setDoc(workspaceDocRef, payload);
+      }
+      if (getSavedGoogleDriveUrl()) {
+        this.offloadNewImagesToGoogleDriveInBackground();
+      }
       localStorage.removeItem('std_qa_pending_push');
       return;
     }
@@ -2498,8 +2977,28 @@ class RealtimeSyncService {
     // 2. If connected to Firebase Realtime Database
     if (this.activeFirebaseConfig && this.rtdb) {
       const stateRef = ref(this.rtdb, 'std_workspace');
-      await set(stateRef, payload);
+      if (isAuthEnforced && !isFirebaseAdmin) {
+        // Non-admin writes only allowed child paths enforced by database.rules.json
+        await update(stateRef, {
+          issues: payload.issues,
+          revision: payload.revision,
+          updatedAt: payload.updatedAt,
+          lastUpdatedBy: payload.lastUpdatedBy,
+          lastAction: payload.lastAction,
+          clientId: payload.clientId
+        });
+      } else {
+        await set(stateRef, payload);
+      }
+      if (getSavedGoogleDriveUrl()) {
+        this.offloadNewImagesToGoogleDriveInBackground();
+      }
       localStorage.removeItem('std_qa_pending_push');
+      return;
+    }
+
+    // Never downgrade to unauthenticated public MQTT/Bytebin if strict Firebase Auth mode is enabled
+    if (isAuthEnforced) {
       return;
     }
 

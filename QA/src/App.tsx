@@ -308,6 +308,38 @@ export function App() {
   useEffect(() => {
     syncService.init();
 
+    const unsubFirebaseAuth = syncService.subscribeFirebaseAuth((profile, rawUser, initialized) => {
+      if (!syncService.isFirebaseAuthRequired()) return;
+      if (!initialized) return;
+      if (!rawUser || !profile) {
+        setAuthUser(null);
+        try {
+          localStorage.removeItem(AUTH_STORAGE_KEY);
+        } catch {}
+        return;
+      }
+      const parts = profile.fullName.trim().split(/\s+/);
+      const isServerAdmin = profile.role === 'admin';
+      const syncedUser: AuthenticatedUser = {
+        firstName: parts[0] || profile.fullName,
+        lastName: parts.slice(1).join(' ') || '',
+        fullName: profile.fullName.trim(),
+        role: isServerAdmin ? 'qa' : profile.role,
+        isAdmin: isServerAdmin,
+        uid: profile.uid,
+        email: profile.email,
+        allowedSystems:
+          !isServerAdmin && Array.isArray(profile.allowedSystems) && profile.allowedSystems.length > 0
+            ? profile.allowedSystems
+            : undefined
+      };
+      syncedUser.authSignature = computeUserAuthSignature(syncedUser);
+      setAuthUser(syncedUser);
+      try {
+        localStorage.setItem(AUTH_STORAGE_KEY, JSON.stringify(syncedUser));
+      } catch {}
+    });
+
     const unsubState = syncService.subscribeState((state, isRemoteUpdate) => {
       if (isRemoteUpdate && hasLoadedInitialStateRef.current && state.issues.length > 0) {
         const activePrefs = loadNotificationPreferences();
@@ -448,6 +480,7 @@ export function App() {
     });
 
     return () => {
+      unsubFirebaseAuth();
       unsubState();
       unsubStatus();
       unsubChat();
@@ -653,6 +686,9 @@ export function App() {
       localStorage.removeItem(AUTH_STORAGE_KEY);
       localStorage.removeItem(SHORTCUT_BANNER_STORAGE_KEY);
     } catch {}
+    if (syncService.getCurrentFirebaseUser()) {
+      syncService.signOutFirebase().catch(() => {});
+    }
   };
 
   const handleSecurityUpdated = (newSuperAdminName: string) => {
@@ -1703,6 +1739,15 @@ export function App() {
           onInstallAndNotify={handleInstallAndNotify}
           notificationsEnabled={notificationsEnabled}
           teamMembers={teamMembers}
+          firebaseAuthEnabled={Boolean(
+            syncStatus.requireFirebaseAuth || syncService.isFirebaseAuthRequired()
+          )}
+          onFirebaseEmailLogin={(email, password) =>
+            syncService.signInWithFirebaseEmail(email, password)
+          }
+          onBootstrapAdminProfile={(fullName) =>
+            syncService.bootstrapInitialAdminProfile(fullName)
+          }
         />
         {renderInstallModal()}
       </>

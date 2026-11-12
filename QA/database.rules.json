@@ -1,0 +1,59 @@
+{
+  "rules": {
+    ".read": false,
+    ".write": false,
+    "std_users": {
+      "$uid": {
+        ".read": "auth != null && (auth.uid === $uid || root.child('std_users/' + auth.uid + '/role').val() === 'admin')",
+        ".write": "auth != null && (root.child('std_users/' + auth.uid + '/role').val() === 'admin' || (!root.child('std_users').exists() && auth.uid === $uid && newData.child('role').val() === 'admin'))",
+        ".validate": "newData.hasChildren(['fullName', 'role']) && (newData.child('role').val() === 'admin' || newData.child('role').val() === 'qa' || newData.child('role').val() === 'dev')"
+      }
+    },
+    "std_private_config": {
+      ".read": "auth != null && root.child('std_users/' + auth.uid).exists()",
+      ".write": "auth != null && root.child('std_users/' + auth.uid + '/role').val() === 'admin'"
+    },
+    "std_workspace": {
+      ".read": "auth != null && root.child('std_users/' + auth.uid).exists()",
+      ".write": "auth != null && root.child('std_users/' + auth.uid + '/role').val() === 'admin'",
+      "issues": {
+        ".write": "auth != null && root.child('std_users/' + auth.uid).exists()"
+      },
+      "revision": {
+        ".write": "auth != null && root.child('std_users/' + auth.uid).exists()"
+      },
+      "updatedAt": {
+        ".write": "auth != null && root.child('std_users/' + auth.uid).exists()"
+      },
+      "lastUpdatedBy": {
+        ".write": "auth != null && root.child('std_users/' + auth.uid).exists()"
+      },
+      "lastAction": {
+        ".write": "auth != null && root.child('std_users/' + auth.uid).exists()"
+      },
+      "clientId": {
+        ".write": "auth != null && root.child('std_users/' + auth.uid).exists()"
+      }
+    },
+    "std_chats": {
+      ".read": "auth != null && root.child('std_users/' + auth.uid).exists()",
+      "$systemKey": {
+        "$msgId": {
+          ".write": "auth != null && root.child('std_users/' + auth.uid).exists() && ((!data.exists() && (!newData.hasChild('authorUid') || newData.child('authorUid').val() === auth.uid)) || data.child('authorUid').val() === auth.uid || root.child('std_users/' + auth.uid + '/role').val() === 'admin' || (!data.child('deletedAt').exists() && newData.child('reactions').exists() && newData.child('text').val() === data.child('text').val()))"
+        }
+      }
+    },
+    "std_presence": {
+      ".read": "auth != null && root.child('std_users/' + auth.uid).exists()",
+      "$clientId": {
+        ".write": "auth != null && root.child('std_users/' + auth.uid).exists()"
+      }
+    },
+    "std_chat_typing": {
+      ".read": "auth != null && root.child('std_users/' + auth.uid).exists()",
+      "$clientId": {
+        ".write": "auth != null && root.child('std_users/' + auth.uid).exists()"
+      }
+    }
+  }
+}

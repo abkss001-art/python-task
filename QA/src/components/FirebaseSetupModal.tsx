@@ -9,13 +9,19 @@ import {
   Sparkles,
   AlertCircle,
   Link2,
-  Trash2
+  Trash2,
+  ShieldCheck,
+  Lock
 } from 'lucide-react';
 import { FirebaseConfigData, SyncStatusInfo } from '../types/std';
 import {
   createShareableTeamLink,
   parseFirebaseSnippet
 } from '../firebaseConfig';
+import {
+  FIREBASE_FIRESTORE_RULES,
+  FIREBASE_RTDB_RULES_JSON
+} from '../utils/firebaseRulesTemplates';
 
 interface FirebaseSetupModalProps {
   currentConfig: FirebaseConfigData | null;
@@ -40,9 +46,29 @@ export const FirebaseSetupModal: React.FC<FirebaseSetupModalProps> = ({
   const [dbMode, setDbMode] = useState<'rtdb' | 'firestore'>(
     currentConfig?.mode || 'rtdb'
   );
+  const [requireFirebaseAuth, setRequireFirebaseAuth] = useState<boolean>(
+    Boolean(currentConfig?.requireFirebaseAuth)
+  );
+  const [showRulesPanel, setShowRulesPanel] = useState<boolean>(
+    Boolean(currentConfig?.requireFirebaseAuth)
+  );
+  const [copiedRules, setCopiedRules] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [isConnecting, setIsConnecting] = useState(false);
   const [copiedLink, setCopiedLink] = useState(false);
+
+  const activeRulesText =
+    dbMode === 'firestore' ? FIREBASE_FIRESTORE_RULES : FIREBASE_RTDB_RULES_JSON;
+
+  const handleCopyRules = async () => {
+    try {
+      await navigator.clipboard.writeText(activeRulesText);
+      setCopiedRules(true);
+      setTimeout(() => setCopiedRules(false), 2500);
+    } catch {
+      // ignore
+    }
+  };
 
   const handleConnect = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -57,6 +83,7 @@ export const FirebaseSetupModal: React.FC<FirebaseSetupModalProps> = ({
     }
 
     parsed.mode = dbMode;
+    parsed.requireFirebaseAuth = requireFirebaseAuth;
     setIsConnecting(true);
     const res = await onSaveConfig(parsed);
     setIsConnecting(false);
@@ -72,6 +99,7 @@ export const FirebaseSetupModal: React.FC<FirebaseSetupModalProps> = ({
     const parsed = parseFirebaseSnippet(rawSnippet) || currentConfig;
     if (!parsed) return;
     parsed.mode = dbMode;
+    parsed.requireFirebaseAuth = requireFirebaseAuth;
     const link = createShareableTeamLink(parsed);
     navigator.clipboard.writeText(link);
     setCopiedLink(true);
@@ -214,8 +242,93 @@ export const FirebaseSetupModal: React.FC<FirebaseSetupModalProps> = ({
               className="w-full rounded-xl border border-slate-300 dark:border-slate-700 bg-slate-950 text-emerald-400 font-mono text-xs p-3.5 focus:outline-none focus:ring-2 focus:ring-indigo-500 text-left"
             />
             <p className="text-xs text-slate-500 dark:text-slate-400 mt-1.5">
-              טיפ: ב-Firebase Console היכנס ל-Project Settings &rarr; Your apps &rarr; העתק את `firebaseConfig` והדבק כאן. ודא שה-Rules ב-Database מוגדרים למצב Test (`read: true, write: true`).
+              טיפ: ב-Firebase Console היכנס ל-Project Settings &rarr; Your apps &rarr; העתק את `firebaseConfig` והדבק כאן.
             </p>
+          </div>
+
+          {/* Phase 2 Server-Side Security Mode */}
+          <div className="rounded-xl border border-emerald-200 dark:border-emerald-800/70 bg-emerald-50/70 dark:bg-emerald-950/30 p-4 space-y-3">
+            <label className="flex items-start gap-3 cursor-pointer select-none">
+              <input
+                type="checkbox"
+                checked={requireFirebaseAuth}
+                onChange={(e) => {
+                  const next = e.target.checked;
+                  setRequireFirebaseAuth(next);
+                  if (next) setShowRulesPanel(true);
+                }}
+                className="mt-1 w-4 h-4 rounded text-emerald-600 focus:ring-emerald-500 border-slate-300 accent-emerald-600 cursor-pointer"
+              />
+              <div className="flex-1">
+                <div className="flex items-center gap-2 text-sm font-extrabold text-emerald-950 dark:text-emerald-200">
+                  <ShieldCheck className="w-4 h-4 text-emerald-600 dark:text-emerald-400 shrink-0" />
+                  <span>מצב אבטחה מלא (שלב 2): חובת אימות Firebase Auth + חוקי שרת (Rules)</span>
+                </div>
+                <p className="text-xs text-emerald-800/90 dark:text-emerald-300/80 mt-0.5 leading-relaxed">
+                  מומלץ בחום לייצור! חוסם גישה אנונימית, מבטל שידור פומבי ב-MQTT/Bytebin, מאמת משתמשים באימייל+סיסמה מול Firebase Auth ואוכף הרשאות מנהל/צוות בצד השרת.
+                </p>
+              </div>
+            </label>
+
+            <div className="flex items-center justify-between pt-2 border-t border-emerald-200/70 dark:border-emerald-800/50">
+              <button
+                type="button"
+                onClick={() => setShowRulesPanel((p) => !p)}
+                className="flex items-center gap-1.5 text-xs font-bold text-indigo-700 dark:text-indigo-300 hover:underline cursor-pointer"
+              >
+                <Lock className="w-3.5 h-3.5" />
+                <span>
+                  {showRulesPanel
+                    ? 'הסתר הוראות וחוקי אבטחה לשרת (Security Rules)'
+                    : 'הצג חוקי אבטחה מוכנים להדבקה ב-Firebase Console'}
+                </span>
+              </button>
+              <span className="text-[11px] font-semibold text-slate-600 dark:text-slate-400">
+                {dbMode === 'firestore' ? 'firestore.rules' : 'database.rules.json'}
+              </span>
+            </div>
+
+            {showRulesPanel && (
+              <div className="space-y-2.5 pt-1">
+                <ol className="text-[11px] text-slate-700 dark:text-slate-300 list-decimal list-inside space-y-1 leading-relaxed">
+                  <li>
+                    ב-Firebase Console פתח <strong>Authentication &rarr; Sign-in method</strong> והפעל <strong>Email/Password</strong> (מומלץ להוסיף את משתמשי הצוות מראש ב-Users או במסך "ניהול צוות").
+                  </li>
+                  <li>
+                    פתח ב-{dbMode === 'firestore' ? 'Firestore Database' : 'Realtime Database'} את לשונית <strong>Rules</strong>, הדבק את החוקים שלמטה ולחץ <strong>Publish</strong>.
+                  </li>
+                  <li>
+                    לאבטחה מרבית של קוד המקור, מומלץ להעביר את מאגר ה-GitHub מ-Public ל-<strong>Private</strong> בהגדרות המאגר.
+                  </li>
+                </ol>
+
+                <div className="relative">
+                  <button
+                    type="button"
+                    onClick={handleCopyRules}
+                    className="absolute top-2 left-2 z-10 flex items-center gap-1 px-2.5 py-1 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-100 text-[11px] font-bold border border-slate-600 transition cursor-pointer"
+                  >
+                    {copiedRules ? (
+                      <>
+                        <Check className="w-3.5 h-3.5 text-emerald-400" />
+                        <span>החוקים הועתקו!</span>
+                      </>
+                    ) : (
+                      <>
+                        <Copy className="w-3.5 h-3.5" />
+                        <span>העתק Rules</span>
+                      </>
+                    )}
+                  </button>
+                  <pre
+                    dir="ltr"
+                    className="w-full max-h-48 overflow-auto rounded-xl bg-slate-950 text-sky-300 font-mono text-[11px] p-3 text-left border border-slate-800"
+                  >
+                    {activeRulesText}
+                  </pre>
+                </div>
+              </div>
+            )}
           </div>
 
           {(error || syncStatus.errorMessage) && (

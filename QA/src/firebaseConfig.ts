@@ -11,7 +11,8 @@ export const HARDCODED_FIREBASE_CONFIG: Partial<FirebaseConfigData> = {
   projectId: import.meta.env.VITE_FIREBASE_PROJECT_ID || '',
   storageBucket: import.meta.env.VITE_FIREBASE_STORAGE_BUCKET || '',
   messagingSenderId: import.meta.env.VITE_FIREBASE_MESSAGING_SENDER_ID || '',
-  appId: import.meta.env.VITE_FIREBASE_APP_ID || ''
+  appId: import.meta.env.VITE_FIREBASE_APP_ID || '',
+  requireFirebaseAuth: import.meta.env.VITE_FIREBASE_REQUIRE_AUTH === 'true'
 };
 
 const STORAGE_KEY = 'std_qa_firebase_config_v1';

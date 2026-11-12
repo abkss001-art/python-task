@@ -18,13 +18,16 @@ import {
 import { StdIssue, StdPlatform, StdSeverity, StdStatus } from '../types/std';
 import {
   GOOGLE_APPS_SCRIPT_CODE,
+  getSavedGoogleDriveSecret,
   getSavedGoogleDriveUrl,
   isDataUrlImage,
   saveAutoBackupToGoogleDrive,
+  setSavedGoogleDriveSecret,
   setSavedGoogleDriveUrl,
   testGoogleDriveConnection,
   uploadImageToGoogleDrive
 } from '../services/googleDriveService';
+import { syncService } from '../services/syncService';
 
 interface AdminBackupModalProps {
   systems: string[];
@@ -55,6 +58,7 @@ export const AdminBackupModal: React.FC<AdminBackupModalProps> = ({
   const csvFileInputRef = useRef<HTMLInputElement | null>(null);
 
   const [driveUrlInput, setDriveUrlInput] = useState<string>(getSavedGoogleDriveUrl());
+  const [driveSecretInput, setDriveSecretInput] = useState<string>(getSavedGoogleDriveSecret());
   const [isConnectedDrive, setIsConnectedDrive] = useState<boolean>(
     Boolean(getSavedGoogleDriveUrl())
   );
@@ -109,16 +113,21 @@ export const AdminBackupModal: React.FC<AdminBackupModalProps> = ({
       return;
     }
 
+    const cleanedSecret = driveSecretInput.trim();
     setIsTestingDrive(true);
     setStatusMsg(null);
-    const result = await testGoogleDriveConnection(cleaned);
+    const result = await testGoogleDriveConnection(cleaned, cleanedSecret);
     setIsTestingDrive(false);
 
     if (result.ok) {
       setSavedGoogleDriveUrl(cleaned);
+      setSavedGoogleDriveSecret(cleanedSecret);
       setIsConnectedDrive(true);
       if (result.folderUrl) setDriveFolderUrl(result.folderUrl);
       setShowScriptInstructions(false);
+
+      // Sync the protected Google Drive URL & secret inside Firebase private_config (when Firebase Auth is active)
+      syncService.syncPrivateDriveConfig(cleaned, cleanedSecret).catch(() => {});
 
       // Sync the new Google Drive URL to all devices in the team & save initial backup!
       saveAutoBackupToGoogleDrive({ systems, archivedSystems, issues });
@@ -675,7 +684,7 @@ export const AdminBackupModal: React.FC<AdminBackupModalProps> = ({
                 כתובת ה-Web App של Google Drive שלך:
               </label>
               <div className="flex flex-col sm:flex-row gap-2">
-                <input
+                  <input
                   type="url"
                   dir="ltr"
                   value={driveUrlInput}
@@ -701,6 +710,19 @@ export const AdminBackupModal: React.FC<AdminBackupModalProps> = ({
                     </>
                   )}
                 </button>
+              </div>
+              <div className="pt-1">
+                <label className="block text-[11px] font-bold text-slate-600 dark:text-slate-300 mb-1">
+                  קוד אימות סודי של הסקריפט (`TZAVMAN_API_SECRET` — מומלץ להגנה מלאה):
+                </label>
+                <input
+                  type="password"
+                  dir="ltr"
+                  value={driveSecretInput}
+                  onChange={(e) => setDriveSecretInput(e.target.value)}
+                  placeholder="השאר ריק אם טרם הגדרת TZAVMAN_API_SECRET בסקריפט"
+                  className="w-full px-3.5 py-2 rounded-xl bg-white dark:bg-slate-950 border border-slate-300 dark:border-slate-700 focus:border-indigo-500 focus:outline-none text-xs font-mono text-slate-800 dark:text-slate-100 placeholder:text-slate-400 dark:placeholder:text-slate-400"
+                />
               </div>
             </div>
 
