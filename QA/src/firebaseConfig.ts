@@ -5,14 +5,17 @@ import { FirebaseConfigData } from './types/std';
  * או להגדיר אותן בקובץ .env, או להזין אותן בלחיצת כפתור מתוך אשף ההגדרות באפליקציה!
  */
 export const HARDCODED_FIREBASE_CONFIG: Partial<FirebaseConfigData> = {
-  apiKey: import.meta.env.VITE_FIREBASE_API_KEY || '',
-  authDomain: import.meta.env.VITE_FIREBASE_AUTH_DOMAIN || '',
-  databaseURL: import.meta.env.VITE_FIREBASE_DATABASE_URL || '',
-  projectId: import.meta.env.VITE_FIREBASE_PROJECT_ID || '',
-  storageBucket: import.meta.env.VITE_FIREBASE_STORAGE_BUCKET || '',
-  messagingSenderId: import.meta.env.VITE_FIREBASE_MESSAGING_SENDER_ID || '',
-  appId: import.meta.env.VITE_FIREBASE_APP_ID || '',
-  requireFirebaseAuth: import.meta.env.VITE_FIREBASE_REQUIRE_AUTH === 'true',
+  apiKey: import.meta.env.VITE_FIREBASE_API_KEY || 'AIzaSyBUlQYiSgJxqZGjIVSQdSNy1I0dn467j9E',
+  authDomain: import.meta.env.VITE_FIREBASE_AUTH_DOMAIN || 'tzavman-qa.firebaseapp.com',
+  databaseURL:
+    import.meta.env.VITE_FIREBASE_DATABASE_URL ||
+    'https://tzavman-qa-default-rtdb.europe-west1.firebasedatabase.app',
+  projectId: import.meta.env.VITE_FIREBASE_PROJECT_ID || 'tzavman-qa',
+  storageBucket: import.meta.env.VITE_FIREBASE_STORAGE_BUCKET || 'tzavman-qa.firebasestorage.app',
+  messagingSenderId: import.meta.env.VITE_FIREBASE_MESSAGING_SENDER_ID || '526394526293',
+  appId: import.meta.env.VITE_FIREBASE_APP_ID || '1:526394526293:web:aeee1272ebb2da9482e2dc',
+  mode: 'rtdb',
+  requireFirebaseAuth: import.meta.env.VITE_FIREBASE_REQUIRE_AUTH !== 'false',
   appCheckSiteKey: import.meta.env.VITE_FIREBASE_APPCHECK_SITE_KEY || ''
 };
 
@@ -99,12 +102,7 @@ export function parseFirebaseSnippet(rawInput: string): FirebaseConfigData | nul
 }
 
 export function loadActiveFirebaseConfig(): FirebaseConfigData | null {
-  // 1. Check .env / hardcoded config
-  if (isValidFirebaseConfig(HARDCODED_FIREBASE_CONFIG)) {
-    return HARDCODED_FIREBASE_CONFIG;
-  }
-
-  // 2. Check existing stored config first
+  // 1. Check existing stored config first (used to preserve optional local App Check Site Key or wizard settings)
   let existingStored: FirebaseConfigData | null = null;
   try {
     const saved = localStorage.getItem(STORAGE_KEY);
@@ -116,6 +114,26 @@ export function loadActiveFirebaseConfig(): FirebaseConfigData | null {
     }
   } catch {
     // ignore
+  }
+
+  // 2. Enforce hardcoded / .env production Firebase config by default so unauthenticated visitors never fall back to public MQTT
+  if (isValidFirebaseConfig(HARDCODED_FIREBASE_CONFIG)) {
+    const sameProjectStored =
+      existingStored && existingStored.projectId === HARDCODED_FIREBASE_CONFIG.projectId
+        ? existingStored
+        : null;
+    const mergedAppCheck =
+      HARDCODED_FIREBASE_CONFIG.appCheckSiteKey ||
+      (isValidAppCheckSiteKey(sameProjectStored?.appCheckSiteKey)
+        ? sameProjectStored?.appCheckSiteKey
+        : '');
+
+    return {
+      ...HARDCODED_FIREBASE_CONFIG,
+      mode: HARDCODED_FIREBASE_CONFIG.mode || sameProjectStored?.mode || 'rtdb',
+      requireFirebaseAuth: HARDCODED_FIREBASE_CONFIG.requireFirebaseAuth !== false,
+      ...(mergedAppCheck ? { appCheckSiteKey: mergedAppCheck } : {})
+    };
   }
 
   // 3. Handle optional URL ?fb=... safely: validate strictly, scrub from URL bar, and require explicit user confirmation

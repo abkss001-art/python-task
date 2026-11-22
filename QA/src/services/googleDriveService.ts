@@ -32,10 +32,10 @@ export const GOOGLE_APPS_SCRIPT_CODE = `// =====================================
 // אם הגדרת אימות Firebase, מומלץ להשאיר את TZAVMAN_API_SECRET ריק כדי שלא יישלח סוד קבוע לדפדפן.
 // ============================================================================
 var MAIN_FOLDER_NAME = "צב מן - צילומי מסך וגיבויים";
-var FIREBASE_API_KEY = "";    // הזן כאן את ה-apiKey של Firebase (או הגדר Script Property בשם FIREBASE_API_KEY)
-var FIREBASE_DB_URL = "";     // הזן כאן את ה-databaseURL של RTDB (או הגדר Script Property בשם FIREBASE_DB_URL)
+var FIREBASE_API_KEY = "AIzaSyBUlQYiSgJxqZGjIVSQdSNy1I0dn467j9E";    // מפתח הפרויקט tzavman-qa (ניתן גם להגדיר ב-Script Property בשם FIREBASE_API_KEY)
+var FIREBASE_DB_URL = "https://tzavman-qa-default-rtdb.europe-west1.firebasedatabase.app"; // כתובת Realtime Database של tzavman-qa
 var FIREBASE_PROJECT_ID = ""; // אופציונלי עבור Firestore בלבד (או Script Property בשם FIREBASE_PROJECT_ID)
-var TZAVMAN_API_SECRET = "";  // אופציונלי כגיבוי בלבד אם טרם חיברת Firebase Auth
+var TZAVMAN_API_SECRET = "";  // מומלץ להשאיר ריק כאשר אימות Firebase Token פעיל למעלה
 
 function getConfigProp(propName, fallbackVal) {
   try {

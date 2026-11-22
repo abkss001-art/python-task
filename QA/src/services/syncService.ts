@@ -427,7 +427,18 @@ class RealtimeSyncService {
       initialFbConfig && isValidFirebaseConfig(initialFbConfig) && initialFbConfig.requireFirebaseAuth
     );
 
-    if (!isStrictFirebaseBoot) {
+    if (isStrictFirebaseBoot) {
+      this.currentState = {
+        systems: [],
+        archivedSystems: [],
+        deletedIssueIds: [],
+        deletedSystemIds: [],
+        issues: [],
+        teamMembers: [],
+        revision: 0
+      };
+      this.chatsBySystem = {};
+    } else {
       this.loadChatsLocally();
     }
 
@@ -1646,13 +1657,7 @@ class RealtimeSyncService {
     }
   }
 
-  public async signOutFirebase(): Promise<void> {
-    this.firebaseUserProfile = null;
-    this.firebaseUser = null;
-    this.detachDataListenersOnly();
-    this.partitionIssues.clear();
-    this.lastPushedPartitionHashes.clear();
-    this.currentMetaState = null;
+  private async clearLocalSensitiveCaches(): Promise<void> {
     this.hasReceivedInitialCloud = false;
     this.highestSeenRevision = 0;
     this.lastAppliedFingerprint = '';
@@ -1662,11 +1667,11 @@ class RealtimeSyncService {
       deletedIssueIds: [],
       deletedSystemIds: [],
       issues: [],
+      teamMembers: [],
       revision: 0
     };
     this.chatsBySystem = {};
 
-    // Clear all cached workspace data, chats, and Google Drive credentials on logout
     try {
       const sensitiveKeys = [
         'std_qa_fallback_cache',
@@ -1684,6 +1689,17 @@ class RealtimeSyncService {
       // ignore
     }
     await clearWorkspaceAndChatsFromIndexedDB().catch(() => {});
+  }
+
+  public async signOutFirebase(): Promise<void> {
+    this.firebaseUserProfile = null;
+    this.firebaseUser = null;
+    this.detachDataListenersOnly();
+    this.partitionIssues.clear();
+    this.lastPushedPartitionHashes.clear();
+    this.currentMetaState = null;
+
+    await this.clearLocalSensitiveCaches();
 
     if (this.firebaseAuth) {
       await signOut(this.firebaseAuth).catch(() => {});
@@ -2725,6 +2741,9 @@ class RealtimeSyncService {
           });
           if (config.requireFirebaseAuth) {
             this.detachDataListenersOnly();
+            await this.clearLocalSensitiveCaches();
+            this.notifyState(false);
+            this.notifyChats();
           }
         }
         this.notifyAuthListeners();
