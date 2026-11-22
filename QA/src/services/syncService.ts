@@ -3025,6 +3025,7 @@ class RealtimeSyncService {
         clean: true,
         connectTimeout: 8000,
         reconnectPeriod: 3000,
+        timerVariant: 'native',
         will: {
           topic: `${CLOUD_TOPIC_PRESENCE_V4}${this.clientId}`,
           payload: JSON.stringify({ online: false, clientId: this.clientId, timestamp: Date.now() }),

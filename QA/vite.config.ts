@@ -234,6 +234,7 @@ function productionCspPlugin(): Plugin {
   const cspValue = [
     "default-src 'self'",
     "script-src 'self' https://www.google.com/recaptcha/ https://www.gstatic.com/recaptcha/",
+    "worker-src 'self' blob:",
     "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com",
     "font-src 'self' https://fonts.gstatic.com data:",
     "img-src 'self' data: blob: https://drive.google.com https://*.googleusercontent.com https://firebasestorage.googleapis.com",
