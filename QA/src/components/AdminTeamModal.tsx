@@ -65,6 +65,9 @@ export const AdminTeamModal: React.FC<AdminTeamModalProps> = ({
   const [editingFullName, setEditingFullName] = useState<string>('');
   const [editingRole, setEditingRole] = useState<TeamRole>('qa');
   const [editingAllowedSystems, setEditingAllowedSystems] = useState<string[]>([]);
+  const [editingAuthEmail, setEditingAuthEmail] = useState<string>('');
+  const [editingAuthPassword, setEditingAuthPassword] = useState<string>('');
+  const [isProvisioningEditAuth, setIsProvisioningEditAuth] = useState(false);
 
   // Deletion confirmation warning state
   const [memberToDelete, setMemberToDelete] = useState<TeamMember | null>(null);
@@ -174,14 +177,18 @@ export const AdminTeamModal: React.FC<AdminTeamModalProps> = ({
     setEditingFullName(m.fullName);
     setEditingRole(m.role);
     setEditingAllowedSystems(m.allowedSystems || []);
+    setEditingAuthEmail('');
+    setEditingAuthPassword('');
   };
 
   const handleCancelEdit = () => {
     setEditingMemberId(null);
     setEditingFullName('');
+    setEditingAuthEmail('');
+    setEditingAuthPassword('');
   };
 
-  const handleSaveEdit = (id: string) => {
+  const handleSaveEdit = async (id: string) => {
     const cleanName = editingFullName.trim();
     if (!cleanName) {
       setStatusMsg('יש להזין שם מלא תקין.');
@@ -202,12 +209,38 @@ export const AdminTeamModal: React.FC<AdminTeamModalProps> = ({
     const isRenamed = oldName && oldName !== cleanName;
     const renameInfo = isRenamed ? { oldName, newName: cleanName } : undefined;
 
+    let linkedUid = original?.uid;
+    const cleanEditEmail = editingAuthEmail.trim();
+    if (isFirebaseAuthActive && !linkedUid && cleanEditEmail) {
+      if (editingAuthPassword.length < 6) {
+        setStatusMsg('ליצירת חשבון Firebase Auth נדרשת סיסמה באורך 6 תווים לפחות.');
+        return;
+      }
+      setIsProvisioningEditAuth(true);
+      const provRes = await syncService.registerTeamMemberInFirebaseAuth(
+        cleanEditEmail,
+        editingAuthPassword,
+        cleanName,
+        editingRole,
+        editingRole !== 'admin' && editingAllowedSystems.length > 0
+          ? editingAllowedSystems
+          : undefined
+      );
+      setIsProvisioningEditAuth(false);
+      if (!provRes.ok) {
+        setStatusMsg(provRes.error || 'שגיאה ביצירת חשבון Firebase Auth');
+        return;
+      }
+      linkedUid = provRes.uid;
+    }
+
     const nextMembers = members.map((m) => {
       if (m.id !== id) return m;
       return {
         ...m,
         fullName: cleanName,
         role: editingRole,
+        ...(linkedUid ? { uid: linkedUid } : {}),
         allowedSystems:
           editingRole !== 'admin' && editingAllowedSystems.length > 0
             ? editingAllowedSystems
@@ -219,8 +252,12 @@ export const AdminTeamModal: React.FC<AdminTeamModalProps> = ({
     onSaveTeamMembers(nextMembers, renameInfo);
     setEditingMemberId(null);
     setEditingFullName('');
+    setEditingAuthEmail('');
+    setEditingAuthPassword('');
     setStatusMsg(
-      isRenamed
+      linkedUid && cleanEditEmail
+        ? `נוצר וקישר חשבון Firebase Auth עבור "${cleanName}" והרשאותיו עודכנו!`
+        : isRenamed
         ? `השם עודכן ל-"${cleanName}" וסונכרן בהצלחה בכל הדיווחים וההערות במערכת!`
         : 'פרטי איש הצוות וההרשאות עודכנו בהצלחה!'
     );
@@ -670,11 +707,12 @@ export const AdminTeamModal: React.FC<AdminTeamModalProps> = ({
                           <div className="flex gap-1.5">
                             <button
                               type="button"
+                              disabled={isProvisioningEditAuth}
                               onClick={() => handleSaveEdit(m.id)}
-                              className="px-3 py-1.5 rounded-lg bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-bold flex items-center gap-1 transition cursor-pointer shadow-xs"
+                              className="px-3 py-1.5 rounded-lg bg-indigo-600 hover:bg-indigo-700 disabled:opacity-60 text-white text-xs font-bold flex items-center gap-1 transition cursor-pointer shadow-xs"
                             >
                               <Check className="w-3.5 h-3.5 stroke-[2.5]" />
-                              <span>שמור שינויים</span>
+                              <span>{isProvisioningEditAuth ? 'יוצר חשבון...' : 'שמור שינויים'}</span>
                             </button>
                             <button
                               type="button"
@@ -820,6 +858,42 @@ export const AdminTeamModal: React.FC<AdminTeamModalProps> = ({
                           <p className="text-[11px] text-emerald-700 dark:text-emerald-400 font-semibold">
                             מנהל מערכת – גישה מלאה לכלל המערכות באופן מובנה.
                           </p>
+                        )}
+
+                        {/* Link existing member to Firebase Auth when Phase 2 is active */}
+                        {isFirebaseAuthActive && (
+                          <div className="p-2.5 rounded-xl border border-emerald-200 dark:border-emerald-800/70 bg-emerald-50/70 dark:bg-emerald-950/30 space-y-2">
+                            {m.uid ? (
+                              <div className="text-[11px] font-bold text-emerald-800 dark:text-emerald-300 flex items-center gap-1.5">
+                                <CheckCircle2 className="w-3.5 h-3.5 shrink-0" />
+                                <span>מקושר לחשבון Firebase Auth בשרת (שינויי תפקיד/מערכות ייאכפו אוטומטית).</span>
+                              </div>
+                            ) : (
+                              <>
+                                <div className="text-[11px] font-extrabold text-emerald-900 dark:text-emerald-200">
+                                  יצירת וקישור חשבון Firebase Auth לאיש צוות קיים (אימייל + סיסמה):
+                                </div>
+                                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                                  <input
+                                    type="email"
+                                    dir="ltr"
+                                    value={editingAuthEmail}
+                                    onChange={(e) => setEditingAuthEmail(e.target.value)}
+                                    placeholder="name@company.com"
+                                    className="px-3 py-1.5 rounded-lg bg-white dark:bg-slate-950 border border-emerald-300 dark:border-emerald-800 text-xs font-mono text-left text-slate-900 dark:text-slate-100"
+                                  />
+                                  <input
+                                    type="password"
+                                    dir="ltr"
+                                    value={editingAuthPassword}
+                                    onChange={(e) => setEditingAuthPassword(e.target.value)}
+                                    placeholder="סיסמה ראשונית (6+ תווים)"
+                                    className="px-3 py-1.5 rounded-lg bg-white dark:bg-slate-950 border border-emerald-300 dark:border-emerald-800 text-xs font-mono text-left text-slate-900 dark:text-slate-100"
+                                  />
+                                </div>
+                              </>
+                            )}
+                          </div>
                         )}
                       </div>
                     );

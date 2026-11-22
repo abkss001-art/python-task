@@ -130,16 +130,24 @@ export function loadActiveFirebaseConfig(): FirebaseConfigData | null {
       const decoded = JSON.parse(atob(fbParam));
       if (isValidFirebaseConfig(decoded)) {
         const targetLabel = decoded.projectId || decoded.databaseURL || 'Firebase';
-        const isSameConfig =
+        const isSameTarget =
           existingStored &&
           existingStored.projectId === decoded.projectId &&
           existingStored.databaseURL === decoded.databaseURL;
 
-        if (isSameConfig) {
+        const isExactSameConfig =
+          isSameTarget &&
+          (existingStored?.mode || 'rtdb') === (decoded.mode || 'rtdb') &&
+          Boolean(existingStored?.requireFirebaseAuth) === Boolean(decoded.requireFirebaseAuth) &&
+          (existingStored?.appCheckSiteKey || '') === (decoded.appCheckSiteKey || '');
+
+        if (isExactSameConfig) {
           return existingStored;
         }
 
-        const promptMsg = existingStored
+        const promptMsg = isSameTarget
+          ? `קישור זה מעדכן את הגדרות האבטחה (Firebase Auth / App Check) עבור המסד "${targetLabel}". האם אתה מאשר לעדכן?`
+          : existingStored
           ? `קישור זה מבקש להחליף את מסד הנתונים הפעיל במסד Firebase חדש ("${targetLabel}"). האם אתה סומך על שולח הקישור ומאשר להחליף חיבור?`
           : `קישור זה מבקש לחבר את האפליקציה למסד Firebase ("${targetLabel}"). האם אתה מאשר להתחבר?`;
 

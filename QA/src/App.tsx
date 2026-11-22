@@ -117,7 +117,6 @@ export function App() {
         if (
           parsed &&
           parsed.firstName &&
-          parsed.lastName &&
           parsed.fullName &&
           parsed.role &&
           parsed.fullName !== 'בודק צוות'

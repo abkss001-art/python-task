@@ -78,3 +78,25 @@ export async function saveChatsToIndexedDB(chats: unknown): Promise<void> {
 export async function loadChatsFromIndexedDB<T>(): Promise<T | null> {
   return getKeyFromIndexedDB<T>(CHATS_KEY);
 }
+
+export async function clearWorkspaceAndChatsFromIndexedDB(): Promise<void> {
+  try {
+    const db = await openDatabase();
+    await new Promise<void>((resolve, reject) => {
+      const tx = db.transaction(STORE_NAME, 'readwrite');
+      const store = tx.objectStore(STORE_NAME);
+      store.delete(STATE_KEY);
+      store.delete(CHATS_KEY);
+      tx.oncomplete = () => {
+        db.close();
+        resolve();
+      };
+      tx.onerror = () => {
+        db.close();
+        reject(tx.error);
+      };
+    });
+  } catch {
+    // ignore IndexedDB cleanup error
+  }
+}

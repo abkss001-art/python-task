@@ -16,6 +16,7 @@ import {
   set,
   update,
   get,
+  remove,
   onDisconnect,
   Database
 } from 'firebase/database';
@@ -27,6 +28,7 @@ import {
   onSnapshot,
   setDoc,
   getDoc,
+  deleteDoc,
   Firestore
 } from 'firebase/firestore';
 import mqtt, { MqttClient } from 'mqtt';
@@ -53,6 +55,7 @@ import {
   saveFirebaseConfigLocally
 } from '../firebaseConfig';
 import {
+  clearWorkspaceAndChatsFromIndexedDB,
   loadChatsFromIndexedDB,
   loadWorkspaceFromIndexedDB,
   saveChatsToIndexedDB,
@@ -68,6 +71,7 @@ import {
   getSavedGoogleDriveSecret,
   getSavedGoogleDriveUrl,
   isDataUrlImage,
+  registerFirebaseIdTokenProvider,
   saveAutoBackupToGoogleDrive,
   setSavedGoogleDriveSecret,
   setSavedGoogleDriveUrl,
@@ -134,6 +138,9 @@ function stripUndefinedChatFields(msg: SystemChatMessage): Record<string, any> {
     createdAt: msg.createdAt,
     updatedAt: msg.updatedAt
   };
+  if (msg.authorUid) {
+    clean.authorUid = msg.authorUid;
+  }
   if (Array.isArray(msg.screenshots) && msg.screenshots.length > 0) {
     clean.screenshots = msg.screenshots;
   }
@@ -407,7 +414,22 @@ class RealtimeSyncService {
   } | null = null;
 
   public init() {
-    this.loadChatsLocally();
+    registerFirebaseIdTokenProvider(async () => {
+      try {
+        return this.firebaseUser ? await this.firebaseUser.getIdToken() : null;
+      } catch {
+        return null;
+      }
+    });
+
+    const initialFbConfig = loadActiveFirebaseConfig();
+    const isStrictFirebaseBoot = Boolean(
+      initialFbConfig && isValidFirebaseConfig(initialFbConfig) && initialFbConfig.requireFirebaseAuth
+    );
+
+    if (!isStrictFirebaseBoot) {
+      this.loadChatsLocally();
+    }
 
     if (typeof BroadcastChannel !== 'undefined') {
       this.broadcastChannel = new BroadcastChannel('std_qa_live_channel');
@@ -477,7 +499,6 @@ class RealtimeSyncService {
       });
     }
 
-    const initialFbConfig = loadActiveFirebaseConfig();
     if (initialFbConfig && isValidFirebaseConfig(initialFbConfig)) {
       this.connectFirebase(initialFbConfig);
     } else {
@@ -1050,6 +1071,60 @@ class RealtimeSyncService {
     this.chatsBySystem = next;
     this.persistChatsLocally(next);
     this.notifyChats();
+    this.broadcastChatToTabs();
+
+    if (
+      this.activeFirebaseConfig &&
+      this.activeFirebaseConfig.mode === 'firestore' &&
+      this.firestore
+    ) {
+      const oldKey = encodeFirebaseSystemKey(oldSystem);
+      const newKey = encodeFirebaseSystemKey(newSystem);
+      if (this.isFirebaseAuthRequired()) {
+        const msgs = pruneChatMessages(next[newSystem] || []).map(stripUndefinedChatFields);
+        setDoc(doc(this.firestore, 'std_chats', newKey), {
+          system: newSystem,
+          messages: msgs,
+          updatedAt: Date.now(),
+          clientId: this.clientId
+        })
+          .then(() => {
+            if (oldKey !== newKey && this.firestore) {
+              return deleteDoc(doc(this.firestore, 'std_chats', oldKey));
+            }
+          })
+          .catch(() => {});
+      } else {
+        const sanitized: Record<string, Record<string, any>[]> = {};
+        for (const [sys, arr] of Object.entries(next)) {
+          sanitized[sys] = pruneChatMessages(arr).map(stripUndefinedChatFields);
+        }
+        setDoc(doc(this.firestore, 'std_workspaces', 'system_chats'), {
+          chats: sanitized,
+          updatedAt: Date.now(),
+          clientId: this.clientId
+        }).catch(() => {});
+      }
+      return;
+    }
+
+    if (this.activeFirebaseConfig && this.rtdb) {
+      const oldKey = encodeFirebaseSystemKey(oldSystem);
+      const newKey = encodeFirebaseSystemKey(newSystem);
+      const bucket: Record<string, Record<string, any>> = {};
+      for (const m of pruneChatMessages(next[newSystem] || [])) {
+        bucket[m.id] = stripUndefinedChatFields(m);
+      }
+      set(ref(this.rtdb, `std_chats/${newKey}`), bucket)
+        .then(() => {
+          if (oldKey !== newKey && this.rtdb) {
+            return remove(ref(this.rtdb, `std_chats/${oldKey}`));
+          }
+        })
+        .catch(() => {});
+      return;
+    }
+
     this.publishChatSnapshotToMqtt(next);
   }
 
@@ -1371,7 +1446,7 @@ class RealtimeSyncService {
         fullName: String(data.fullName).trim(),
         role: data.role,
         ...access,
-        isSuperAdmin: Boolean(data.isSuperAdmin || data.role === 'admin'),
+        isSuperAdmin: Boolean(data.isSuperAdmin),
         updatedAt: data.updatedAt
       };
       return { profile, needsUpgrade };
@@ -1485,11 +1560,16 @@ class RealtimeSyncService {
       this.notifyAuthListeners();
       return { ok: true, profile };
     } catch (err: any) {
+      const firestoreHint =
+        this.activeFirebaseConfig.mode === 'firestore'
+          ? ' (ב-Cloud Firestore יש ליצור את מסמך המנהל הראשון ידנית ב-std_users/{uid} ב-Firebase Console, או להשתמש ב-Realtime Database שתומך באתחול אוטומטי)'
+          : '';
       return {
         ok: false,
         error:
-          err?.message ||
-          'השרת חסם יצירת פרופיל מנהל. אם כבר קיימים משתמשים ב-std_users, רק מנהל קיים יכול להגדיר משתמשים חדשים.'
+          (err?.message ||
+            'השרת חסם יצירת פרופיל מנהל. אם כבר קיימים משתמשים ב-std_users, רק מנהל קיים יכול להגדיר משתמשים חדשים.') +
+          firestoreHint
       };
     }
   }
@@ -1515,6 +1595,18 @@ class RealtimeSyncService {
     let secondaryApp: FirebaseApp | null = null;
     try {
       secondaryApp = initializeApp(this.buildFirebaseOptions(this.activeFirebaseConfig), secondaryName);
+      if (isValidAppCheckSiteKey(this.activeFirebaseConfig.appCheckSiteKey)) {
+        try {
+          initializeAppCheck(secondaryApp, {
+            provider: new ReCaptchaV3Provider(
+              (this.activeFirebaseConfig.appCheckSiteKey as string).trim()
+            ),
+            isTokenAutoRefreshEnabled: false
+          });
+        } catch {
+          // ignore secondary App Check init error if already initialized
+        }
+      }
       const secondaryAuth = getAuth(secondaryApp);
       const cred = await createUserWithEmailAndPassword(secondaryAuth, cleanEmail, password);
       const newUid = cred.user.uid;
@@ -1561,9 +1653,43 @@ class RealtimeSyncService {
     this.partitionIssues.clear();
     this.lastPushedPartitionHashes.clear();
     this.currentMetaState = null;
+    this.hasReceivedInitialCloud = false;
+    this.highestSeenRevision = 0;
+    this.lastAppliedFingerprint = '';
+    this.currentState = {
+      systems: [],
+      archivedSystems: [],
+      deletedIssueIds: [],
+      deletedSystemIds: [],
+      issues: [],
+      revision: 0
+    };
+    this.chatsBySystem = {};
+
+    // Clear all cached workspace data, chats, and Google Drive credentials on logout
+    try {
+      const sensitiveKeys = [
+        'std_qa_fallback_cache',
+        CHATS_LOCAL_STORAGE_KEY,
+        'std_qa_gdrive_webapp_url',
+        'std_qa_gdrive_api_secret',
+        'std_qa_pending_push',
+        'tzavman_team_members_v2',
+        'tzavman_security_config_v2'
+      ];
+      for (const k of sensitiveKeys) {
+        localStorage.removeItem(k);
+      }
+    } catch {
+      // ignore
+    }
+    await clearWorkspaceAndChatsFromIndexedDB().catch(() => {});
+
     if (this.firebaseAuth) {
       await signOut(this.firebaseAuth).catch(() => {});
     }
+    this.notifyState(false);
+    this.notifyChats();
     this.updateStatus({
       connected: false,
       firebaseUid: undefined,
@@ -1574,9 +1700,10 @@ class RealtimeSyncService {
 
   public async syncPrivateDriveConfig(googleDriveUrl: string, apiSecret?: string): Promise<void> {
     if (!this.activeFirebaseConfig) return;
+    const cleanSecret = typeof apiSecret === 'string' ? apiSecret.trim() : '';
     const payload = {
       googleDriveUrl: googleDriveUrl ? encodeProtectedUrl(googleDriveUrl) : '',
-      ...(apiSecret ? { apiSecret } : {}),
+      apiSecret: cleanSecret,
       updatedAt: Date.now()
     };
     try {
@@ -1733,10 +1860,12 @@ class RealtimeSyncService {
         }
       }
 
+      const activeUids = new Set<string>();
       for (const m of members) {
         const targetProfile =
           (m.uid ? byUid.get(m.uid) : undefined) || byName.get(m.fullName.trim().toLowerCase());
         if (!targetProfile) continue;
+        activeUids.add(targetProfile.uid);
 
         const access = buildProfileAccessFields(m.role, m.allowedSystems);
         const updatedProfile: FirebaseUserProfile = {
@@ -1759,6 +1888,17 @@ class RealtimeSyncService {
             ref(this.rtdb, `std_users/${targetProfile.uid}`),
             stripUndefinedDeep(updatedProfile)
           );
+        }
+      }
+
+      // Revoke server access immediately for any removed team members (never delete active admin or super admin)
+      for (const [uid, existingProfile] of byUid.entries()) {
+        if (activeUids.has(uid)) continue;
+        if (uid === this.firebaseUser?.uid || existingProfile.isSuperAdmin) continue;
+        if (this.activeFirebaseConfig.mode === 'firestore' && this.firestore) {
+          await deleteDoc(doc(this.firestore, 'std_users', uid)).catch(() => {});
+        } else if (this.rtdb) {
+          await remove(ref(this.rtdb, `std_users/${uid}`)).catch(() => {});
         }
       }
     } catch {
@@ -1843,11 +1983,33 @@ class RealtimeSyncService {
         if (legacyWsSnap && legacyWsSnap.exists()) {
           baseState = this.normalizePayload(legacyWsSnap.val());
         }
+        const existingChatsSnap = await get(ref(this.rtdb, 'std_chats')).catch(() => null);
+        if (existingChatsSnap && existingChatsSnap.exists()) {
+          const rawChats = existingChatsSnap.val() as Record<
+            string,
+            Record<string, SystemChatMessage> | SystemChatMessage[]
+          > | null;
+          if (rawChats) {
+            const parsedLegacyChats: Record<string, SystemChatMessage[]> = {};
+            for (const bucket of Object.values(rawChats)) {
+              if (!bucket) continue;
+              const list = Array.isArray(bucket) ? bucket : Object.values(bucket);
+              for (const msg of list) {
+                if (msg && msg.id && msg.system) {
+                  if (!parsedLegacyChats[msg.system]) parsedLegacyChats[msg.system] = [];
+                  parsedLegacyChats[msg.system].push(msg);
+                }
+              }
+            }
+            baseChats = mergeAllChats(baseChats, parsedLegacyChats);
+          }
+        }
         const systemsList = Array.from(
           new Set([
             ...(baseState.systems || DEFAULT_SYSTEMS),
             ...(baseState.archivedSystems || []),
-            ...baseState.issues.map((i) => i.system)
+            ...baseState.issues.map((i) => i.system),
+            ...Object.keys(baseChats)
           ])
         );
         for (const sys of systemsList) {
@@ -1860,9 +2022,17 @@ class RealtimeSyncService {
               issues: sysIssues,
               updatedAt: Date.now(),
               revision: baseState.revision || 1,
-              lastUpdatedBy: baseState.lastUpdatedBy || 'Admin'
+              lastUpdatedBy: baseState.lastUpdatedBy || 'Admin',
+              clientId: this.clientId
             })
           );
+          if (baseChats[sys] && baseChats[sys].length > 0) {
+            const chatBucket: Record<string, Record<string, any>> = {};
+            for (const msg of pruneChatMessages(baseChats[sys])) {
+              chatBucket[msg.id] = stripUndefinedChatFields(msg);
+            }
+            await set(ref(this.rtdb, `std_chats/${sysKey}`), chatBucket);
+          }
         }
 
         const metaNode = stripUndefinedDeep({
@@ -2119,7 +2289,7 @@ class RealtimeSyncService {
             const pData = snap.data() as { googleDriveUrl?: string; apiSecret?: string };
             const decodedUrl = decodeProtectedUrl(pData?.googleDriveUrl);
             if (decodedUrl) setSavedGoogleDriveUrl(decodedUrl);
-            if (pData?.apiSecret) setSavedGoogleDriveSecret(String(pData.apiSecret));
+            if (typeof pData?.apiSecret === 'string') setSavedGoogleDriveSecret(pData.apiSecret);
           },
           () => {}
         );
@@ -2182,7 +2352,7 @@ class RealtimeSyncService {
           const pData = snap.data() as { googleDriveUrl?: string; apiSecret?: string };
           const decodedUrl = decodeProtectedUrl(pData?.googleDriveUrl);
           if (decodedUrl) setSavedGoogleDriveUrl(decodedUrl);
-          if (pData?.apiSecret) setSavedGoogleDriveSecret(String(pData.apiSecret));
+          if (typeof pData?.apiSecret === 'string') setSavedGoogleDriveSecret(pData.apiSecret);
         },
         () => {}
       );
@@ -2303,7 +2473,7 @@ class RealtimeSyncService {
               if (!pData) return;
               const decodedUrl = decodeProtectedUrl(pData.googleDriveUrl);
               if (decodedUrl) setSavedGoogleDriveUrl(decodedUrl);
-              if (pData.apiSecret) setSavedGoogleDriveSecret(String(pData.apiSecret));
+              if (typeof pData.apiSecret === 'string') setSavedGoogleDriveSecret(pData.apiSecret);
             },
             () => {}
           );
@@ -2401,7 +2571,7 @@ class RealtimeSyncService {
             if (!pData) return;
             const decodedUrl = decodeProtectedUrl(pData.googleDriveUrl);
             if (decodedUrl) setSavedGoogleDriveUrl(decodedUrl);
-            if (pData.apiSecret) setSavedGoogleDriveSecret(String(pData.apiSecret));
+            if (typeof pData.apiSecret === 'string') setSavedGoogleDriveSecret(pData.apiSecret);
           },
           () => {}
         );
@@ -3526,6 +3696,8 @@ class RealtimeSyncService {
             for (const sys of systems) {
               const sysKey = encodeFirebaseSystemKey(sys);
               const sysIssues = drivePayload.issues.filter((i) => i.system === sys);
+              const partHash = hashString(JSON.stringify(sysIssues));
+              if (this.lastPushedPartitionHashes.get(sysKey) === partHash) continue;
               this.partitionIssues.set(sysKey, sysIssues);
               await setDoc(
                 doc(this.firestore, 'std_systems', sysKey),
@@ -3534,9 +3706,11 @@ class RealtimeSyncService {
                   issues: sysIssues,
                   updatedAt: drivePayload.updatedAt,
                   revision: driveRev,
-                  lastUpdatedBy: this.currentState.lastUpdatedBy
+                  lastUpdatedBy: this.currentState.lastUpdatedBy,
+                  clientId: this.clientId
                 })
               );
+              this.lastPushedPartitionHashes.set(sysKey, partHash);
             }
           } else {
             const workspaceDocRef = doc(this.firestore, 'std_workspaces', 'main_workspace');
@@ -3559,6 +3733,8 @@ class RealtimeSyncService {
             for (const sys of systems) {
               const sysKey = encodeFirebaseSystemKey(sys);
               const sysIssues = drivePayload.issues.filter((i) => i.system === sys);
+              const partHash = hashString(JSON.stringify(sysIssues));
+              if (this.lastPushedPartitionHashes.get(sysKey) === partHash) continue;
               this.partitionIssues.set(sysKey, sysIssues);
               await set(
                 ref(this.rtdb, `std_systems/${sysKey}`),
@@ -3567,9 +3743,11 @@ class RealtimeSyncService {
                   issues: sysIssues,
                   updatedAt: drivePayload.updatedAt,
                   revision: driveRev,
-                  lastUpdatedBy: this.currentState.lastUpdatedBy
+                  lastUpdatedBy: this.currentState.lastUpdatedBy,
+                  clientId: this.clientId
                 })
               );
+              this.lastPushedPartitionHashes.set(sysKey, partHash);
             }
           } else {
             const stateRef = ref(this.rtdb, 'std_workspace');
@@ -3585,8 +3763,15 @@ class RealtimeSyncService {
         }
       }
 
-      // Always save the latest complete state to Google Drive auto-backup!
-      saveAutoBackupToGoogleDrive(this.currentState);
+      // Only admins / unrestricted profiles may overwrite the global auto-backup file on Google Drive!
+      // Prevents a single-system dev/QA user from wiping other systems out of tzavman_auto_backup.json.
+      const canSaveGlobalDriveBackup =
+        !this.isFirebaseAuthRequired() ||
+        this.firebaseUserProfile?.role === 'admin' ||
+        this.firebaseUserProfile?.allSystems === true;
+      if (canSaveGlobalDriveBackup) {
+        saveAutoBackupToGoogleDrive(this.currentState);
+      }
     } catch {
       // ignore background drive error
     } finally {
