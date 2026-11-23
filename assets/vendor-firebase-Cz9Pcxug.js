@@ -552,7 +552,7 @@ const Ry=()=>{};var Ph={};/**
  * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
  * See the License for the specific language governing permissions and
  * limitations under the License.
- */const up="https://content-firebaseappcheck.googleapis.com/v1",mE="exchangeRecaptchaV3Token",gE="exchangeDebugToken",Bh={RETRIAL_MIN_WAIT:30*1e3,RETRIAL_MAX_WAIT:960*1e3},yE=1440*60*1e3;/**
+ */const up="https://content-firebaseappcheck.googleapis.com/v1",mE="exchangeRecaptchaEnterpriseToken",gE="exchangeDebugToken",Bh={RETRIAL_MIN_WAIT:30*1e3,RETRIAL_MAX_WAIT:960*1e3},yE=1440*60*1e3;/**
  * @license
  * Copyright 2020 Google LLC
  *
@@ -612,7 +612,7 @@ const Ry=()=>{};var Ph={};/**
  * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
  * See the License for the specific language governing permissions and
  * limitations under the License.
- */async function Jl({url:n,body:e},t){const i={"Content-Type":"application/json"},r=t.getImmediate({optional:!0});if(r){const p=await r.getHeartbeatsHeader();p&&(i["X-Firebase-Client"]=p)}const s={method:"POST",body:JSON.stringify(e),headers:i};let o;try{o=await fetch(n,s)}catch(p){throw ze.create("fetch-network-error",{originalErrorMessage:p==null?void 0:p.message})}if(o.status!==200)throw ze.create("fetch-status-error",{httpStatus:o.status});let l;try{l=await o.json()}catch(p){throw ze.create("fetch-parse-error",{originalErrorMessage:p==null?void 0:p.message})}const c=l.ttl.match(/^([\d.]+)(s)$/);if(!c||!c[2]||isNaN(Number(c[1])))throw ze.create("fetch-parse-error",{originalErrorMessage:`ttl field (timeToLive) is not in standard Protobuf Duration format: ${l.ttl}`});const u=Number(c[1])*1e3,f=Date.now();return{token:l.token,expireTimeMillis:f+u,issuedAtTimeMillis:f}}function IE(n,e){const{projectId:t,appId:i,apiKey:r}=n.options;return{url:`${up}/projects/${t}/apps/${i}:${mE}?key=${r}`,body:{recaptcha_v3_token:e}}}function dp(n,e){const{projectId:t,appId:i,apiKey:r}=n.options;return{url:`${up}/projects/${t}/apps/${i}:${gE}?key=${r}`,body:{debug_token:e}}}/**
+ */async function Jl({url:n,body:e},t){const i={"Content-Type":"application/json"},r=t.getImmediate({optional:!0});if(r){const p=await r.getHeartbeatsHeader();p&&(i["X-Firebase-Client"]=p)}const s={method:"POST",body:JSON.stringify(e),headers:i};let o;try{o=await fetch(n,s)}catch(p){throw ze.create("fetch-network-error",{originalErrorMessage:p==null?void 0:p.message})}if(o.status!==200)throw ze.create("fetch-status-error",{httpStatus:o.status});let l;try{l=await o.json()}catch(p){throw ze.create("fetch-parse-error",{originalErrorMessage:p==null?void 0:p.message})}const c=l.ttl.match(/^([\d.]+)(s)$/);if(!c||!c[2]||isNaN(Number(c[1])))throw ze.create("fetch-parse-error",{originalErrorMessage:`ttl field (timeToLive) is not in standard Protobuf Duration format: ${l.ttl}`});const u=Number(c[1])*1e3,f=Date.now();return{token:l.token,expireTimeMillis:f+u,issuedAtTimeMillis:f}}function IE(n,e){const{projectId:t,appId:i,apiKey:r}=n.options;return{url:`${up}/projects/${t}/apps/${i}:${mE}?key=${r}`,body:{recaptcha_enterprise_token:e}}}function dp(n,e){const{projectId:t,appId:i,apiKey:r}=n.options;return{url:`${up}/projects/${t}/apps/${i}:${gE}?key=${r}`,body:{debug_token:e}}}/**
  * @license
  * Copyright 2020 Google LLC
  *
@@ -704,37 +704,7 @@ const Ry=()=>{};var Ph={};/**
  * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
  * See the License for the specific language governing permissions and
  * limitations under the License.
- */class ME{constructor(e,t){this.app=e,this.heartbeatServiceProvider=t}_delete(){const{tokenObservers:e}=Ie(this.app);for(const t of e)vp(this.app,t.next);return Promise.resolve()}}function LE(n,e){return new ME(n,e)}function FE(n){return{getToken:e=>Js(n,e),getLimitedUseToken:()=>VE(n),addTokenListener:e=>yp(n,"INTERNAL",e),removeTokenListener:e=>vp(n.app,e)}}const UE="@firebase/app-check",BE="0.10.1";/**
- * @license
- * Copyright 2020 Google LLC
- *
- * Licensed under the Apache License, Version 2.0 (the "License");
- * you may not use this file except in compliance with the License.
- * You may obtain a copy of the License at
- *
- *   http://www.apache.org/licenses/LICENSE-2.0
- *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
- */const qE="https://www.google.com/recaptcha/api.js";function jE(n,e){const t=new He,i=Ie(n);i.reCAPTCHAState={initialized:t};const r=WE(n),s=qh(!1);return s?Wh(n,e,s,r,t):zE(()=>{const o=qh(!1);if(!o)throw new Error("no recaptcha");Wh(n,e,o,r,t)}),t.promise}function Wh(n,e,t,i,r){t.ready(()=>{HE(n,e,t,i),r.resolve(t)})}function WE(n){const e=`fire_app_check_${n.name}`,t=document.createElement("div");return t.id=e,t.style.display="none",document.body.appendChild(t),e}async function $E(n){Xl(n);const t=await Ie(n).reCAPTCHAState.initialized.promise;return new Promise((i,r)=>{const s=Ie(n).reCAPTCHAState;t.ready(()=>{i(t.execute(s.widgetId,{action:"fire_app_check"}))})})}function HE(n,e,t,i){const r=t.render(i,{sitekey:e,size:"invisible",callback:()=>{Ie(n).reCAPTCHAState.succeeded=!0},"error-callback":()=>{Ie(n).reCAPTCHAState.succeeded=!1}}),s=Ie(n);s.reCAPTCHAState=Object.assign(Object.assign({},s.reCAPTCHAState),{widgetId:r})}function zE(n){const e=document.createElement("script");e.src=qE,e.onload=n,document.head.appendChild(e)}/**
- * @license
- * Copyright 2021 Google LLC
- *
- * Licensed under the Apache License, Version 2.0 (the "License");
- * you may not use this file except in compliance with the License.
- * You may obtain a copy of the License at
- *
- *   http://www.apache.org/licenses/LICENSE-2.0
- *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
- */class Tp{constructor(e){this._siteKey=e,this._throttleData=null}async getToken(){var e,t,i;KE(this._throttleData);const r=await $E(this._app).catch(o=>{throw ze.create("recaptcha-error")});if(!(!((e=Ie(this._app).reCAPTCHAState)===null||e===void 0)&&e.succeeded))throw ze.create("recaptcha-error");let s;try{s=await Jl(IE(this._app,r),this._heartbeatServiceProvider)}catch(o){throw!((t=o.code)===null||t===void 0)&&t.includes("fetch-status-error")?(this._throttleData=GE(Number((i=o.customData)===null||i===void 0?void 0:i.httpStatus),this._throttleData),ze.create("initial-throttle",{time:hp(this._throttleData.allowRequestsAfter-Date.now()),httpStatus:this._throttleData.httpStatus})):o}return this._throttleData=null,s}initialize(e){this._app=e,this._heartbeatServiceProvider=bi(e,"heartbeat"),jE(e,this._siteKey).catch(()=>{})}isEqual(e){return e instanceof Tp?this._siteKey===e._siteKey:!1}}function GE(n,e){if(n===404||n===403)return{backoffCount:1,allowRequestsAfter:Date.now()+yE,httpStatus:n};{const t=e?e.backoffCount:0,i=iv(t,1e3,2);return{backoffCount:t+1,allowRequestsAfter:Date.now()+i,httpStatus:n}}}function KE(n){if(n&&Date.now()-n.allowRequestsAfter<=0)throw ze.create("throttled",{time:hp(n.allowRequestsAfter-Date.now()),httpStatus:n.httpStatus})}/**
+ */class ME{constructor(e,t){this.app=e,this.heartbeatServiceProvider=t}_delete(){const{tokenObservers:e}=Ie(this.app);for(const t of e)vp(this.app,t.next);return Promise.resolve()}}function LE(n,e){return new ME(n,e)}function FE(n){return{getToken:e=>Js(n,e),getLimitedUseToken:()=>VE(n),addTokenListener:e=>yp(n,"INTERNAL",e),removeTokenListener:e=>vp(n.app,e)}}const UE="@firebase/app-check",BE="0.10.1",qE="https://www.google.com/recaptcha/enterprise.js";function jE(n,e){const t=new He,i=Ie(n);i.reCAPTCHAState={initialized:t};const r=WE(n),s=qh(!0);return s?Wh(n,e,s,r,t):zE(()=>{const o=qh(!0);if(!o)throw new Error("no recaptcha");Wh(n,e,o,r,t)}),t.promise}function Wh(n,e,t,i,r){t.ready(()=>{HE(n,e,t,i),r.resolve(t)})}function WE(n){const e=`fire_app_check_${n.name}`,t=document.createElement("div");return t.id=e,t.style.display="none",document.body.appendChild(t),e}async function $E(n){Xl(n);const t=await Ie(n).reCAPTCHAState.initialized.promise;return new Promise((i,r)=>{const s=Ie(n).reCAPTCHAState;t.ready(()=>{i(t.execute(s.widgetId,{action:"fire_app_check"}))})})}function HE(n,e,t,i){const r=t.render(i,{sitekey:e,size:"invisible",callback:()=>{Ie(n).reCAPTCHAState.succeeded=!0},"error-callback":()=>{Ie(n).reCAPTCHAState.succeeded=!1}}),s=Ie(n);s.reCAPTCHAState=Object.assign(Object.assign({},s.reCAPTCHAState),{widgetId:r})}function zE(n){const e=document.createElement("script");e.src=qE,e.onload=n,document.head.appendChild(e)}class Tp{constructor(e){this._siteKey=e,this._throttleData=null}async getToken(){var e,t,i;KE(this._throttleData);const r=await $E(this._app).catch(o=>{throw ze.create("recaptcha-error")});if(!(!((e=Ie(this._app).reCAPTCHAState)===null||e===void 0)&&e.succeeded))throw ze.create("recaptcha-error");let s;try{s=await Jl(IE(this._app,r),this._heartbeatServiceProvider)}catch(o){throw!((t=o.code)===null||t===void 0)&&t.includes("fetch-status-error")?(this._throttleData=GE(Number((i=o.customData)===null||i===void 0?void 0:i.httpStatus),this._throttleData),ze.create("initial-throttle",{time:hp(this._throttleData.allowRequestsAfter-Date.now()),httpStatus:this._throttleData.httpStatus})):o}return this._throttleData=null,s}initialize(e){this._app=e,this._heartbeatServiceProvider=bi(e,"heartbeat"),jE(e,this._siteKey).catch(()=>{})}isEqual(e){return e instanceof Tp?this._siteKey===e._siteKey:!1}}function GE(n,e){if(n===404||n===403)return{backoffCount:1,allowRequestsAfter:Date.now()+yE,httpStatus:n};{const t=e?e.backoffCount:0,i=iv(t,1e3,2);return{backoffCount:t+1,allowRequestsAfter:Date.now()+i,httpStatus:n}}}function KE(n){if(n&&Date.now()-n.allowRequestsAfter<=0)throw ze.create("throttled",{time:hp(n.allowRequestsAfter-Date.now()),httpStatus:n.httpStatus})}/**
  * @license
  * Copyright 2020 Google LLC
  *
