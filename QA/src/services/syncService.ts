@@ -1054,8 +1054,173 @@ class RealtimeSyncService {
     };
   }
 
-  public async fetchFirebaseUserProfile(uid: string): Promise<FirebaseUserProfile | null> {
-    if (!uid || !this.activeFirebaseConfig) return null;
+  private withTimeout<T>(promise: Promise<T>, ms: number, label = 'timeout'): Promise<T> {
+    return new Promise<T>((resolve, reject) => {
+      const timer = setTimeout(() => reject(new Error(label)), ms);
+      promise.then(
+        (val) => {
+          clearTimeout(timer);
+          resolve(val);
+        },
+        (err) => {
+          clearTimeout(timer);
+          reject(err);
+        }
+      );
+    });
+  }
+
+  /**
+   * מנקה מטמון ישן של App Check מ-IndexedDB (למשל במכשיר שביקר באפליקציה לפני עדכון מפתח האבטחה)
+   */
+  private async clearAppCheckIndexedDb(): Promise<void> {
+    if (typeof indexedDB === 'undefined') return;
+    try {
+      await this.withTimeout(
+        new Promise<void>((resolve) => {
+          try {
+            const req = indexedDB.deleteDatabase('firebase-app-check-database');
+            req.onsuccess = () => resolve();
+            req.onerror = () => resolve();
+            req.onblocked = () => resolve();
+          } catch {
+            resolve();
+          }
+        }),
+        1500,
+        'idb-delete-timeout'
+      );
+    } catch {
+      // ignore timeout/errors
+    }
+  }
+
+  /**
+   * קריאת צומת RTDB עם Timeout קצר + גיבוי HTTPS REST מאומת, כך ש-get() לעולם לא יתקע לנצח בטלפון/PWA
+   */
+  private async fetchRtdbNodeWithFallback<T = any>(
+    nodePath: string,
+    sdkTimeoutMs = 4500
+  ): Promise<{ ok: boolean; exists: boolean; value: T | null; error?: string }> {
+    // 1. Fast path: Firebase RTDB SDK with strict timeout
+    if (this.rtdb) {
+      try {
+        const snap = await this.withTimeout(
+          get(ref(this.rtdb, nodePath)),
+          sdkTimeoutMs,
+          'rtdb-get-timeout'
+        );
+        return {
+          ok: true,
+          exists: snap.exists(),
+          value: (snap.exists() ? snap.val() : null) as T | null
+        };
+      } catch {
+        // Fall through to authenticated HTTPS REST fallback
+      }
+    }
+
+    // 2. Fallback: Direct HTTPS REST request with Firebase ID token + App Check token + AbortController
+    const dbUrl = (this.activeFirebaseConfig?.databaseURL || '').replace(/\/+$/, '');
+    if (!dbUrl || !this.firebaseUser) {
+      return { ok: false, exists: false, value: null, error: 'חיבור הנתונים לא זמין' };
+    }
+
+    try {
+      const idToken = await this.withTimeout(
+        this.firebaseUser.getIdToken(),
+        4000,
+        'id-token-timeout'
+      );
+      let acToken = '';
+      if (this.firebaseAppCheck) {
+        try {
+          const acRes = await this.withTimeout(
+            getAppCheckToken(this.firebaseAppCheck, false),
+            4000,
+            'appcheck-token-timeout'
+          );
+          acToken = acRes?.token || '';
+        } catch {
+          try {
+            const acResForced = await this.withTimeout(
+              getAppCheckToken(this.firebaseAppCheck, true),
+              4500,
+              'appcheck-force-timeout'
+            );
+            acToken = acResForced?.token || '';
+          } catch {
+            acToken = '';
+          }
+        }
+      }
+
+      const controller = typeof AbortController !== 'undefined' ? new AbortController() : null;
+      const abortTimer = controller ? setTimeout(() => controller.abort(), 5000) : null;
+      try {
+        const res = await fetch(
+          `${dbUrl}/${nodePath}.json?auth=${encodeURIComponent(idToken)}`,
+          {
+            method: 'GET',
+            headers: acToken ? { 'X-Firebase-AppCheck': acToken } : undefined,
+            signal: controller?.signal
+          }
+        );
+        if (abortTimer) clearTimeout(abortTimer);
+        if (res.status === 200) {
+          const val = (await res.json()) as T | null;
+          return { ok: true, exists: val !== null && val !== undefined, value: val };
+        }
+        return { ok: false, exists: false, value: null, error: `HTTP ${res.status}` };
+      } catch (fetchErr: any) {
+        if (abortTimer) clearTimeout(abortTimer);
+        return {
+          ok: false,
+          exists: false,
+          value: null,
+          error: fetchErr?.message || 'שגיאת תקשורת'
+        };
+      }
+    } catch (err: any) {
+      return { ok: false, exists: false, value: null, error: err?.message || 'שגיאת אימות' };
+    }
+  }
+
+  public async resetAppCheckCacheAndReload(): Promise<void> {
+    try {
+      localStorage.removeItem('tzavman_ac_sitekey_v1');
+      localStorage.removeItem('tzavman_last_ac_hash');
+    } catch {
+      // ignore
+    }
+    await this.clearAppCheckIndexedDb();
+    if (typeof window !== 'undefined') {
+      window.location.reload();
+    }
+  }
+
+  public async forceSignOutAndResetStartup(): Promise<void> {
+    try {
+      localStorage.removeItem('tzavman_ac_sitekey_v1');
+      localStorage.removeItem('tzavman_last_ac_hash');
+    } catch {
+      // ignore
+    }
+    await this.clearAppCheckIndexedDb();
+    await this.signOutFirebase();
+    this.firebaseAuthInitialized = true;
+    this.updateStatus({ errorMessage: undefined });
+    this.notifyAuthListeners();
+  }
+
+  private async fetchFirebaseUserProfileDetailed(uid: string): Promise<{
+    status: 'found' | 'not_found' | 'error';
+    profile: FirebaseUserProfile | null;
+    error?: string;
+  }> {
+    if (!uid || !this.activeFirebaseConfig) {
+      return { status: 'error', profile: null, error: 'הגדרות החיבור חסרות' };
+    }
     const normalizeAndUpgradeProfile = (
       data: Partial<FirebaseUserProfile> | null | undefined
     ): { profile: FirebaseUserProfile; needsUpgrade: boolean } | null => {
@@ -1080,32 +1245,50 @@ class RealtimeSyncService {
 
     try {
       if (this.activeFirebaseConfig.mode === 'firestore' && this.firestore) {
-        const snap = await getDoc(doc(this.firestore, 'std_users', uid));
-        if (!snap.exists()) return null;
+        const snap = await this.withTimeout(
+          getDoc(doc(this.firestore, 'std_users', uid)),
+          6000,
+          'firestore-profile-timeout'
+        );
+        if (!snap.exists()) return { status: 'not_found', profile: null };
         const res = normalizeAndUpgradeProfile(snap.data() as Partial<FirebaseUserProfile>);
-        if (!res) return null;
+        if (!res) return { status: 'not_found', profile: null };
         if (res.needsUpgrade && res.profile.role === 'admin') {
           await setDoc(doc(this.firestore, 'std_users', uid), stripUndefinedDeep(res.profile)).catch(
             () => {}
           );
         }
-        return res.profile;
+        return { status: 'found', profile: res.profile };
       }
       if (this.rtdb) {
-        const snap = await get(ref(this.rtdb, `std_users/${uid}`));
-        const res = normalizeAndUpgradeProfile(snap.val() as Partial<FirebaseUserProfile> | null);
-        if (!res) return null;
+        const nodeRes = await this.fetchRtdbNodeWithFallback<Partial<FirebaseUserProfile>>(
+          `std_users/${uid}`,
+          4500
+        );
+        if (!nodeRes.ok) {
+          return { status: 'error', profile: null, error: nodeRes.error || 'שגיאת חיבור' };
+        }
+        if (!nodeRes.exists || !nodeRes.value) {
+          return { status: 'not_found', profile: null };
+        }
+        const res = normalizeAndUpgradeProfile(nodeRes.value);
+        if (!res) return { status: 'not_found', profile: null };
         if (res.needsUpgrade && res.profile.role === 'admin') {
           await set(ref(this.rtdb, `std_users/${uid}`), stripUndefinedDeep(res.profile)).catch(
             () => {}
           );
         }
-        return res.profile;
+        return { status: 'found', profile: res.profile };
       }
-    } catch {
-      // ignore
+    } catch (err: any) {
+      return { status: 'error', profile: null, error: err?.message || 'שגיאת תקשורת' };
     }
-    return null;
+    return { status: 'error', profile: null, error: 'המסד אינו מחובר' };
+  }
+
+  public async fetchFirebaseUserProfile(uid: string): Promise<FirebaseUserProfile | null> {
+    const detailed = await this.fetchFirebaseUserProfileDetailed(uid);
+    return detailed.profile;
   }
 
   public async signInWithFirebaseEmail(
@@ -1130,7 +1313,14 @@ class RealtimeSyncService {
     try {
       const cred = await signInWithEmailAndPassword(this.firebaseAuth, normalizedEmail, password);
       this.firebaseUser = cred.user;
-      const profile = await this.fetchFirebaseUserProfile(cred.user.uid);
+      const profileRes = await this.fetchFirebaseUserProfileDetailed(cred.user.uid);
+      if (profileRes.status === 'error') {
+        return {
+          ok: false,
+          error: 'החיבור למערכת נכשל זמנית. נסה שוב בעוד רגע.'
+        };
+      }
+      const profile = profileRes.profile;
       if (profile) {
         this.firebaseUserProfile = profile;
         this.detachWaitingRoomListeners();
@@ -1302,14 +1492,21 @@ class RealtimeSyncService {
     if (!uid || !this.activeFirebaseConfig) return null;
     try {
       if (this.activeFirebaseConfig.mode === 'firestore' && this.firestore) {
-        const snap = await getDoc(doc(this.firestore, 'std_join_requests', uid));
+        const snap = await this.withTimeout(
+          getDoc(doc(this.firestore, 'std_join_requests', uid)),
+          5000,
+          'firestore-join-req-timeout'
+        );
         if (!snap.exists()) return null;
         return this.normalizeJoinRequestRecord(uid, snap.data());
       }
       if (this.rtdb) {
-        const snap = await get(ref(this.rtdb, `std_join_requests/${uid}`));
-        if (!snap.exists()) return null;
-        return this.normalizeJoinRequestRecord(uid, snap.val());
+        const nodeRes = await this.fetchRtdbNodeWithFallback<any>(
+          `std_join_requests/${uid}`,
+          4500
+        );
+        if (!nodeRes.ok || !nodeRes.exists || !nodeRes.value) return null;
+        return this.normalizeJoinRequestRecord(uid, nodeRes.value);
       }
     } catch {
       // ignore
@@ -3292,12 +3489,23 @@ class RealtimeSyncService {
 
       // Firebase App Check (Fraud Defense / reCAPTCHA Enterprise): blocks use of the Firebase API key outside this app
       if (isValidAppCheckSiteKey(config.appCheckSiteKey)) {
+        const activeKey = (config.appCheckSiteKey as string).trim();
+        try {
+          // One-time cleanup if device previously cached an older/broken App Check key in IndexedDB (e.g. phone PWA)
+          const savedAcKey = localStorage.getItem('tzavman_ac_sitekey_v1');
+          if (savedAcKey !== activeKey) {
+            await this.clearAppCheckIndexedDb();
+            localStorage.setItem('tzavman_ac_sitekey_v1', activeKey);
+          }
+        } catch {
+          // ignore storage errors
+        }
         try {
           if (import.meta.env.DEV) {
             (self as any).FIREBASE_APPCHECK_DEBUG_TOKEN = true;
           }
           this.firebaseAppCheck = initializeAppCheck(this.firebaseApp, {
-            provider: new ReCaptchaEnterpriseProvider((config.appCheckSiteKey as string).trim()),
+            provider: new ReCaptchaEnterpriseProvider(activeKey),
             isTokenAutoRefreshEnabled: true
           });
           this.unsubscribeAppCheckToken = onTokenChanged(this.firebaseAppCheck, (tokenRes) => {
@@ -3307,7 +3515,7 @@ class RealtimeSyncService {
           });
         } catch (appCheckErr: any) {
           this.updateStatus({
-            errorMessage: `App Check לא הופעל: ${appCheckErr?.message || appCheckErr}`
+            errorMessage: `שגיאה באתחול הגנת החיבור: ${appCheckErr?.message || appCheckErr}`
           });
         }
       }
@@ -3325,7 +3533,17 @@ class RealtimeSyncService {
         this.firebaseUser = user;
 
         if (user) {
-          const profile = await this.fetchFirebaseUserProfile(user.uid);
+          const profileRes = await this.fetchFirebaseUserProfileDetailed(user.uid);
+          if (profileRes.status === 'error') {
+            // Do NOT mistakenly send an approved user to Waiting Room on a transient connection/AppCheck error!
+            this.updateStatus({
+              firebaseUid: user.uid,
+              firebaseUserEmail: user.email || undefined,
+              errorMessage: 'לא ניתן להשלים את החיבור כרגע. נסה שוב או התחבר מחדש.'
+            });
+            return;
+          }
+          const profile = profileRes.profile;
           this.firebaseUserProfile = profile;
           if (!profile && config.requireFirebaseAuth) {
             this.pendingJoinRequest = await this.fetchOwnJoinRequest(user.uid);
@@ -3337,7 +3555,8 @@ class RealtimeSyncService {
           this.firebaseAuthInitialized = true;
           this.updateStatus({
             firebaseUid: user.uid,
-            firebaseUserEmail: user.email || undefined
+            firebaseUserEmail: user.email || undefined,
+            errorMessage: undefined
           });
           if (config.requireFirebaseAuth && profile) {
             this.attachFirebaseDataListeners(config);
@@ -3378,11 +3597,13 @@ class RealtimeSyncService {
       return { ok: true };
     } catch (err: any) {
       const msg = err?.message || String(err);
+      this.firebaseAuthInitialized = true;
       this.updateStatus({
         mode: 'error',
         connected: false,
         errorMessage: msg
       });
+      this.notifyAuthListeners();
       return { ok: false, error: msg };
     }
   }

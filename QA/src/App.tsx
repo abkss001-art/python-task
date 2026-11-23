@@ -127,6 +127,19 @@ export function App() {
   const [pendingUndoRejections, setPendingUndoRejections] = useState<PendingUndoRejection[]>([]);
   const undoRejectionTimersRef = useRef<Record<string, number>>({});
   const [authReady, setAuthReady] = useState<boolean>(false);
+  const [authTakingLong, setAuthTakingLong] = useState<boolean>(false);
+  const [isRecoveringAuth, setIsRecoveringAuth] = useState<boolean>(false);
+
+  useEffect(() => {
+    if (authReady) {
+      setAuthTakingLong(false);
+      return;
+    }
+    const timer = window.setTimeout(() => {
+      setAuthTakingLong(true);
+    }, 6500);
+    return () => window.clearTimeout(timer);
+  }, [authReady]);
 
   // Dismissible banners state (remembers dismissal per user session until logout)
   const [showShortcutBanner, setShowShortcutBanner] = useState<boolean>(() => {
@@ -1888,24 +1901,59 @@ export function App() {
 
   // Wait for Firebase Auth server verification before rendering either dashboard or login (prevents any pre-auth localStorage flash)
   if (!authReady) {
+    const showRecovery = authTakingLong || Boolean(syncStatus.errorMessage);
     return (
       <div
         className="min-h-screen flex flex-col items-center justify-center bg-slate-50 dark:bg-slate-950 text-slate-900 dark:text-slate-100 p-6 transition-colors"
         dir="rtl"
       >
-        <div className="flex flex-col items-center gap-4 text-center max-w-xs">
+        <div className="flex flex-col items-center gap-4 text-center max-w-xs w-full">
           <div className="w-14 h-14 rounded-2xl bg-indigo-600/15 dark:bg-indigo-500/20 border border-indigo-500/30 flex items-center justify-center shadow-lg shadow-indigo-500/10">
             <ShieldCheck className="w-7 h-7 text-indigo-600 dark:text-indigo-400 animate-pulse" />
           </div>
           <div className="space-y-1">
             <h1 className="text-xl font-black tracking-tight">צב מן</h1>
             <p className="text-xs font-medium text-slate-500 dark:text-slate-400">
-              מתחבר למערכת...
+              {showRecovery ? 'החיבור מתעכב — ניתן לנסות שוב או להתחבר מחדש' : 'מתחבר למערכת...'}
             </p>
           </div>
-          <div className="w-36 h-1.5 rounded-full bg-slate-200 dark:bg-slate-800 overflow-hidden">
-            <div className="h-full w-1/2 rounded-full bg-indigo-600 dark:bg-indigo-400 animate-pulse" />
-          </div>
+          {!showRecovery && (
+            <div className="w-36 h-1.5 rounded-full bg-slate-200 dark:bg-slate-800 overflow-hidden">
+              <div className="h-full w-1/2 rounded-full bg-indigo-600 dark:bg-indigo-400 animate-pulse" />
+            </div>
+          )}
+          {showRecovery && (
+            <div className="w-full space-y-2 pt-2">
+              {syncStatus.errorMessage && (
+                <p className="text-[11px] font-semibold text-amber-700 dark:text-amber-300 bg-amber-50 dark:bg-amber-950/40 border border-amber-200 dark:border-amber-800 rounded-xl px-3 py-2">
+                  {syncStatus.errorMessage}
+                </p>
+              )}
+              <button
+                type="button"
+                disabled={isRecoveringAuth}
+                onClick={async () => {
+                  setIsRecoveringAuth(true);
+                  await syncService.resetAppCheckCacheAndReload();
+                }}
+                className="w-full py-2.5 px-4 rounded-xl bg-indigo-600 hover:bg-indigo-700 disabled:opacity-60 text-white text-xs font-extrabold cursor-pointer transition shadow-sm"
+              >
+                {isRecoveringAuth ? 'מרענן...' : 'נסה שוב'}
+              </button>
+              <button
+                type="button"
+                disabled={isRecoveringAuth}
+                onClick={async () => {
+                  setIsRecoveringAuth(true);
+                  await syncService.forceSignOutAndResetStartup();
+                  setIsRecoveringAuth(false);
+                }}
+                className="w-full py-2.5 px-4 rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-900 hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-700 dark:text-slate-200 text-xs font-bold cursor-pointer transition"
+              >
+                חזור למסך ההתחברות
+              </button>
+            </div>
+          )}
         </div>
       </div>
     );
