@@ -51,6 +51,11 @@ export const AdminSecurityModal: React.FC<AdminSecurityModalProps> = ({ onClose 
   const [logs, setLogs] = useState<ServerAuditLogEntry[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [appCheckHealth, setAppCheckHealth] = useState<{
+    checked: boolean;
+    ok: boolean;
+    error?: string;
+  }>({ checked: false, ok: false });
 
   const fbConfig = syncService.getActiveFirebaseConfig();
   const hasAppCheck = Boolean(fbConfig?.appCheckSiteKey);
@@ -72,6 +77,10 @@ export const AdminSecurityModal: React.FC<AdminSecurityModalProps> = ({ onClose 
 
   useEffect(() => {
     loadLogs();
+    syncService
+      .checkAppCheckHealth()
+      .then((res) => setAppCheckHealth({ checked: true, ok: res.ok, error: res.error }))
+      .catch(() => setAppCheckHealth({ checked: true, ok: false, error: 'בדיקה נכשלה' }));
   }, [loadLogs]);
 
   const formatTime = (ts: number) => {
@@ -172,12 +181,12 @@ export const AdminSecurityModal: React.FC<AdminSecurityModalProps> = ({ onClose 
 
             <div
               className={`p-3 rounded-xl border flex items-start gap-2.5 ${
-                hasAppCheck
+                hasAppCheck && (!appCheckHealth.checked || appCheckHealth.ok)
                   ? 'border-emerald-200 dark:border-emerald-800/70 bg-emerald-50/70 dark:bg-emerald-950/30'
                   : 'border-amber-200 dark:border-amber-800/70 bg-amber-50/70 dark:bg-amber-950/30'
               }`}
             >
-              {hasAppCheck ? (
+              {hasAppCheck && (!appCheckHealth.checked || appCheckHealth.ok) ? (
                 <Lock className="w-4 h-4 text-emerald-600 dark:text-emerald-400 shrink-0 mt-0.5" />
               ) : (
                 <AlertTriangle className="w-4 h-4 text-amber-600 dark:text-amber-400 shrink-0 mt-0.5" />
@@ -187,9 +196,13 @@ export const AdminSecurityModal: React.FC<AdminSecurityModalProps> = ({ onClose 
                   Firebase App Check (Fraud Defense / reCAPTCHA)
                 </div>
                 <div className="text-[11px] text-slate-600 dark:text-slate-300 mt-0.5">
-                  {hasAppCheck
-                    ? 'מופעל ופעיל להגנה מפני בוטים.'
-                    : 'אופציונלי — ניתן להוסיף מפתח Site Key בהגדרות Firebase.'}
+                  {!hasAppCheck
+                    ? 'אופציונלי — ניתן להוסיף מפתח Site Key בהגדרות Firebase.'
+                    : !appCheckHealth.checked
+                    ? 'בודק הנפקת טוקן App Check מול השרת...'
+                    : appCheckHealth.ok
+                    ? 'מאומת חי — טוקן App Check תקין ופעיל להגנה מפני בוטים.'
+                    : `המפתח מוגדר אך הנפקת הטוקן נכשלה: ${appCheckHealth.error || 'שגיאה לא ידועה'}`}
                 </div>
               </div>
             </div>

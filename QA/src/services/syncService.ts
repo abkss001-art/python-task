@@ -229,6 +229,7 @@ class RealtimeSyncService {
 
   private firebaseApp: FirebaseApp | null = null;
   private firebaseAppCheck: AppCheck | null = null;
+  private isInitialized = false;
   private firebaseAuth: Auth | null = null;
   private firebaseUser: User | null = null;
   private firebaseUserProfile: FirebaseUserProfile | null = null;
@@ -280,6 +281,9 @@ class RealtimeSyncService {
   } | null = null;
 
   public init() {
+    if (this.isInitialized) return;
+    this.isInitialized = true;
+
     registerFirebaseIdTokenProvider(async () => {
       try {
         return this.firebaseUser ? await this.firebaseUser.getIdToken() : null;
@@ -360,6 +364,28 @@ class RealtimeSyncService {
 
   public getActiveFirebaseConfig(): FirebaseConfigData | null {
     return this.activeFirebaseConfig;
+  }
+
+  public async checkAppCheckHealth(): Promise<{ ok: boolean; configured: boolean; error?: string }> {
+    const configured = Boolean(
+      this.activeFirebaseConfig && isValidAppCheckSiteKey(this.activeFirebaseConfig.appCheckSiteKey)
+    );
+    if (!configured || !this.firebaseAppCheck) {
+      return { ok: false, configured };
+    }
+    try {
+      const res = await getAppCheckToken(this.firebaseAppCheck, false);
+      if (res?.token) {
+        return { ok: true, configured: true };
+      }
+      return { ok: false, configured: true, error: 'לא התקבל טוקן App Check' };
+    } catch (err: any) {
+      return {
+        ok: false,
+        configured: true,
+        error: String(err?.code || err?.message || err || 'App Check error')
+      };
+    }
   }
 
   public getStatus(): SyncStatusInfo {
