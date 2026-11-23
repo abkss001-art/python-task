@@ -184,7 +184,7 @@ export const AdminSecurityModal: React.FC<AdminSecurityModalProps> = ({ onClose 
               )}
               <div className="text-xs">
                 <div className="font-extrabold text-slate-900 dark:text-slate-100">
-                  Firebase App Check (reCAPTCHA v3)
+                  Firebase App Check (Fraud Defense / reCAPTCHA)
                 </div>
                 <div className="text-[11px] text-slate-600 dark:text-slate-300 mt-0.5">
                   {hasAppCheck

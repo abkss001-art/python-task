@@ -16,7 +16,9 @@ export const HARDCODED_FIREBASE_CONFIG: Partial<FirebaseConfigData> = {
   appId: import.meta.env.VITE_FIREBASE_APP_ID || '1:526394526293:web:aeee1272ebb2da9482e2dc',
   mode: 'rtdb',
   requireFirebaseAuth: import.meta.env.VITE_FIREBASE_REQUIRE_AUTH !== 'false',
-  appCheckSiteKey: import.meta.env.VITE_FIREBASE_APPCHECK_SITE_KEY || ''
+  appCheckSiteKey:
+    import.meta.env.VITE_FIREBASE_APPCHECK_SITE_KEY ||
+    '6Lc0-y4uAAAAAK06XUhGmjcPzityKZIH-mJbPSim'
 };
 
 export function isValidAppCheckSiteKey(key: string | undefined | null): boolean {

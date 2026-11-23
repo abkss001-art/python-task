@@ -1,7 +1,7 @@
 import { initializeApp, getApps, deleteApp, FirebaseApp } from 'firebase/app';
 import {
   initializeAppCheck,
-  ReCaptchaV3Provider,
+  ReCaptchaEnterpriseProvider,
   getToken as getAppCheckToken,
   AppCheck
 } from 'firebase/app-check';
@@ -1164,7 +1164,7 @@ class RealtimeSyncService {
       if (isValidAppCheckSiteKey(this.activeFirebaseConfig.appCheckSiteKey)) {
         try {
           initializeAppCheck(secondaryApp, {
-            provider: new ReCaptchaV3Provider(
+            provider: new ReCaptchaEnterpriseProvider(
               (this.activeFirebaseConfig.appCheckSiteKey as string).trim()
             ),
             isTokenAutoRefreshEnabled: false
@@ -2348,14 +2348,14 @@ class RealtimeSyncService {
       this.firebaseApp = initializeApp(this.buildFirebaseOptions(config));
       this.firebaseAppCheck = null;
 
-      // Firebase App Check (reCAPTCHA v3): blocks use of the Firebase API key outside this app
+      // Firebase App Check (Fraud Defense / reCAPTCHA Enterprise): blocks use of the Firebase API key outside this app
       if (isValidAppCheckSiteKey(config.appCheckSiteKey)) {
         try {
           if (import.meta.env.DEV) {
             (self as any).FIREBASE_APPCHECK_DEBUG_TOKEN = true;
           }
           this.firebaseAppCheck = initializeAppCheck(this.firebaseApp, {
-            provider: new ReCaptchaV3Provider((config.appCheckSiteKey as string).trim()),
+            provider: new ReCaptchaEnterpriseProvider((config.appCheckSiteKey as string).trim()),
             isTokenAutoRefreshEnabled: true
           });
         } catch (appCheckErr: any) {
