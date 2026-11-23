@@ -13,7 +13,6 @@ import {
   BellRing,
   AtSign,
   Hash,
-  Cloud,
   Sparkles
 } from 'lucide-react';
 import {
@@ -36,7 +35,6 @@ import {
   getChatDayKey,
   parseMessageTokens
 } from '../utils/chatUtils';
-import { getSavedGoogleDriveUrl } from '../services/googleDriveService';
 import { sanitizeImageUrl } from '../utils/securityUtils';
 
 interface SystemChatDrawerProps {
@@ -130,8 +128,6 @@ export const SystemChatDrawer: React.FC<SystemChatDrawerProps> = ({
   const fileInputRef = useRef<HTMLInputElement>(null);
   const lastTypingSentRef = useRef<number>(0);
   const typingStopTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-
-  const hasDriveConfigured = Boolean(getSavedGoogleDriveUrl());
 
   const teamMemberNames = useMemo(
     () => teamMembers.map((m) => m.fullName),
@@ -429,16 +425,7 @@ export const SystemChatDrawer: React.FC<SystemChatDrawerProps> = ({
                 </h2>
               </div>
               <div className="flex items-center gap-2 text-[11px] text-indigo-100/90 dark:text-slate-400">
-                <span>{messages.length} הודעות שמורות</span>
-                {hasDriveConfigured && (
-                  <span
-                    className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-md bg-white/15 text-[10px] font-bold"
-                    title="תמונות בצ׳אט מסונכרנות בענן Google Drive של המערכת"
-                  >
-                    <Cloud className="w-3 h-3" />
-                    <span>ענן תמונות פעיל</span>
-                  </span>
-                )}
+                <span>{messages.length} הודעות</span>
               </div>
             </div>
           </div>

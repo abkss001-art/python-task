@@ -144,7 +144,7 @@ export const AdminTeamModal: React.FC<AdminTeamModalProps> = ({
     let provisionedUid: string | undefined;
     if (isFirebaseAuthActive && cleanEmail) {
       if (newAuthPassword.length < 6) {
-        setStatusMsg('ליצירת חשבון Firebase Auth נדרשת סיסמה באורך 6 תווים לפחות.');
+        setStatusMsg('נדרשת סיסמה באורך 6 תווים לפחות.');
         return;
       }
       setIsProvisioningAuth(true);
@@ -157,7 +157,7 @@ export const AdminTeamModal: React.FC<AdminTeamModalProps> = ({
       );
       setIsProvisioningAuth(false);
       if (!provRes.ok) {
-        setStatusMsg(provRes.error || 'שגיאה ביצירת חשבון Firebase Auth');
+        setStatusMsg(provRes.error || 'שגיאה ביצירת החשבון');
         return;
       }
       provisionedUid = provRes.uid;
@@ -194,7 +194,7 @@ export const AdminTeamModal: React.FC<AdminTeamModalProps> = ({
     setNewAllowedSystems([]);
     setStatusMsg(
       isFirebaseAuthActive && cleanEmail
-        ? `נוצר חשבון Firebase Auth + נוסף בהצלחה: ${cleanName}`
+        ? `נוצר חשבון ונוסף בהצלחה: ${cleanName}`
         : `נוסף בהצלחה: ${cleanName}`
     );
     setTimeout(() => setStatusMsg(null), 3500);
@@ -241,7 +241,7 @@ export const AdminTeamModal: React.FC<AdminTeamModalProps> = ({
     const cleanEditEmail = editingAuthEmail.trim();
     if (isFirebaseAuthActive && !linkedUid && cleanEditEmail) {
       if (editingAuthPassword.length < 6) {
-        setStatusMsg('ליצירת חשבון Firebase Auth נדרשת סיסמה באורך 6 תווים לפחות.');
+        setStatusMsg('נדרשת סיסמה באורך 6 תווים לפחות.');
         return;
       }
       setIsProvisioningEditAuth(true);
@@ -256,7 +256,7 @@ export const AdminTeamModal: React.FC<AdminTeamModalProps> = ({
       );
       setIsProvisioningEditAuth(false);
       if (!provRes.ok) {
-        setStatusMsg(provRes.error || 'שגיאה ביצירת חשבון Firebase Auth');
+        setStatusMsg(provRes.error || 'שגיאה ביצירת החשבון');
         return;
       }
       linkedUid = provRes.uid;
@@ -295,7 +295,7 @@ export const AdminTeamModal: React.FC<AdminTeamModalProps> = ({
     setEditingAuthPassword('');
     setStatusMsg(
       linkedUid && cleanEditEmail
-        ? `נוצר וקישר חשבון Firebase Auth עבור "${cleanName}" והרשאותיו עודכנו!`
+        ? `נוצר וקישר חשבון עבור "${cleanName}" והרשאותיו עודכנו!`
         : isRenamed
         ? `השם עודכן ל-"${cleanName}" וסונכרן בהצלחה בכל הדיווחים וההערות במערכת!`
         : 'פרטי איש הצוות וההרשאות עודכנו בהצלחה!'
@@ -609,7 +609,7 @@ export const AdminTeamModal: React.FC<AdminTeamModalProps> = ({
               <div className="p-3 rounded-xl bg-emerald-50/70 dark:bg-emerald-950/30 border border-emerald-200 dark:border-emerald-800/70 space-y-2">
                 <div className="text-[11px] font-extrabold text-emerald-900 dark:text-emerald-200 flex items-center gap-1.5">
                   <Lock className="w-3.5 h-3.5 text-emerald-600 dark:text-emerald-400" />
-                  <span>יצירת חשבון התחברות ב-Firebase Auth + פרופיל בשרת (`std_users`):</span>
+                  <span>פרטי התחברות (אימייל או שם משתמש + סיסמה):</span>
                 </div>
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
                   <div className="relative">
@@ -990,12 +990,12 @@ export const AdminTeamModal: React.FC<AdminTeamModalProps> = ({
                             {m.uid ? (
                               <div className="text-[11px] font-bold text-emerald-800 dark:text-emerald-300 flex items-center gap-1.5">
                                 <CheckCircle2 className="w-3.5 h-3.5 shrink-0" />
-                                <span>מקושר לחשבון Firebase Auth בשרת (שינויי תפקיד/מערכות ייאכפו אוטומטית).</span>
+                                <span>חשבון פעיל ומקושר (שינויי תפקיד והרשאות מתעדכנים אוטומטית).</span>
                               </div>
                             ) : (
                               <>
                                 <div className="text-[11px] font-extrabold text-emerald-900 dark:text-emerald-200">
-                                  יצירת וקישור חשבון Firebase Auth לאיש צוות קיים (אימייל + סיסמה):
+                                  יצירת פרטי התחברות לאיש הצוות (אימייל + סיסמה):
                                 </div>
                                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
                                   <input

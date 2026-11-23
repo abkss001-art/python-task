@@ -120,9 +120,9 @@ export const FirebaseSetupModal: React.FC<FirebaseSetupModalProps> = ({
               <Cloud className="w-6 h-6" />
             </div>
             <div>
-              <h2 className="text-lg font-bold">הגדרת סנכרון ענן חי (Firebase Realtime / Firestore)</h2>
+              <h2 className="text-lg font-bold">הגדרות חיבור וסנכרון</h2>
               <p className="text-xs text-indigo-100">
-                חיבור ישיר למסד נתונים בענן כך שכל הצוות יראה עדכונים בזמן אמת ללא רענון דף (ללא F5)
+                הגדרות סנכרון בזמן אמת לכל חברי הצוות
               </p>
             </div>
           </div>
@@ -154,14 +154,10 @@ export const FirebaseSetupModal: React.FC<FirebaseSetupModalProps> = ({
               />
               <div>
                 <div className="font-semibold">
-                  {syncStatus.mode === 'firebase-rtdb' && syncStatus.connected
-                    ? `מחובר לענן Firebase Realtime Database (${syncStatus.projectId})`
-                    : syncStatus.mode === 'firebase-firestore' && syncStatus.connected
-                    ? `מחובר לענן Firebase Firestore (${syncStatus.projectId})`
-                    : 'ממתין לחיבור מאובטח ל-Firebase'}
+                  {syncStatus.connected ? 'החיבור בזמן אמת פעיל ותקין' : 'ממתין לחיבור'}
                 </div>
                 <div className="text-xs text-slate-600 dark:text-slate-400 mt-0.5">
-                  כל שינוי משודר בזמן אמת דרך Firebase בלבד — ערוצי MQTT/Bytebin הפומביים הוסרו לחלוטין מהאפליקציה.
+                  כל שינוי מתעדכן אוטומטית אצל כל הצוות.
                 </div>
               </div>
             </div>
@@ -242,29 +238,26 @@ export const FirebaseSetupModal: React.FC<FirebaseSetupModalProps> = ({
               </div>
               <div className="flex-1">
                 <div className="flex items-center gap-2 text-sm font-extrabold text-emerald-950 dark:text-emerald-200">
-                  <span>מצב אבטחה מלא (נעול תמידית): Firebase Auth + חוקי שרת + מחיצות מערכת</span>
+                  <span>אבטחה והרשאות פעילות</span>
                 </div>
                 <p className="text-xs text-emerald-800/90 dark:text-emerald-300/80 mt-0.5 leading-relaxed">
-                  גישה אנונימית ו-MQTT פומבי הוסרו לצמיתות. כל בקשה מאומתת מול Firebase Auth, הרשאות המערכות נאכפות בשרת, ופעולות רגישות מתועדות ביומן ביקורת בלתי-ניתן למחיקה (`std_audit_log`).
+                  גישה למערכת מותרת למשתמשים מאומתים בלבד עם הפרדת הרשאות לפי מערכת.
                 </p>
               </div>
             </div>
 
             <div className="pt-2 border-t border-emerald-200/70 dark:border-emerald-800/50 space-y-1.5">
               <label className="block text-xs font-extrabold text-emerald-950 dark:text-emerald-200">
-                Firebase App Check – מפתח reCAPTCHA v3 (Site Key, מומלץ):
+                מפתח הגנה (Site Key):
               </label>
               <input
                 type="text"
                 dir="ltr"
                 value={appCheckKey}
                 onChange={(e) => setAppCheckKey(e.target.value)}
-                placeholder="6Lc..."
+                placeholder="6Ld..."
                 className="w-full px-3 py-2 rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-900 text-xs font-mono text-left"
               />
-              <p className="text-[11px] text-slate-600 dark:text-slate-400 leading-relaxed">
-                ב-Firebase Console: App Check &rarr; Apps &rarr; רשום את האפליקציה עם ספק reCAPTCHA v3 (צור Site Key בכתובת google.com/recaptcha/admin והוסף את הדומיין abkss001-art.github.io). אחרי שמוודאים שהכול עובד, לחץ Enforce ב-Realtime Database / Firestore / Authentication. Site Key הוא מפתח ציבורי ולכן בטוח לשמור אותו באפליקציה.
-              </p>
             </div>
 
             <div className="flex items-center justify-between pt-2 border-t border-emerald-200/70 dark:border-emerald-800/50">

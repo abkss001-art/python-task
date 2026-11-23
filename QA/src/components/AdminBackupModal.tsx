@@ -544,10 +544,10 @@ export const AdminBackupModal: React.FC<AdminBackupModalProps> = ({
             <DatabaseBackup className="w-5 h-5 text-indigo-400" />
             <div>
               <h3 className="text-base font-extrabold">
-                אחסון Google Drive (5TB), גיבוי וייבוא אקסל (מנהל)
+                גיבוי, שחזור וייבוא אקסל
               </h3>
               <p className="text-xs text-slate-300 dark:text-slate-400">
-                חיבור אוטומטי של כל צילומי המסך והגיבויים ל-Google Drive שלך ללא הגבלת מקום
+                ניהול גיבויים, אחסון תמונות וייבוא תסריטים
               </p>
             </div>
           </div>
@@ -588,7 +588,7 @@ export const AdminBackupModal: React.FC<AdminBackupModalProps> = ({
                 <div>
                   <div className="flex items-center gap-2">
                     <span className="text-sm font-black text-slate-900 dark:text-slate-100">
-                      אחסון אוטומטי ב-Google Drive שלך (5TB)
+                      אחסון תמונות וגיבויים חיצוני
                     </span>
                     <span
                       className={`px-2 py-0.5 rounded-full text-[10px] font-extrabold ${
@@ -597,11 +597,11 @@ export const AdminBackupModal: React.FC<AdminBackupModalProps> = ({
                           : 'bg-amber-100 dark:bg-amber-950 text-amber-800 dark:text-amber-300 border border-amber-300 dark:border-amber-800'
                       }`}
                     >
-                      {isConnectedDrive ? 'מחובר ופעיל לכל הצוות' : 'ממתין לחיבור חד-פעמי'}
+                      {isConnectedDrive ? 'מחובר ופעיל' : 'לא מחובר'}
                     </span>
                   </div>
                   <p className="text-xs text-slate-600 dark:text-slate-300 mt-0.5">
-                    שומר אוטומטית כל צילום מסך בתיקייה מסודרת לפי מערכת אצלך בדרייב ומשאיר את המערכת מהירה גם עם 10 מערכות ומאות תמונות!
+                    שומר אוטומטית צילומי מסך וגיבויים בתיקייה מסודרת לפי מערכת.
                   </p>
                 </div>
               </div>
@@ -713,14 +713,14 @@ export const AdminBackupModal: React.FC<AdminBackupModalProps> = ({
               </div>
               <div className="pt-1">
                 <label className="block text-[11px] font-bold text-slate-600 dark:text-slate-300 mb-1">
-                  קוד אימות סודי של הסקריפט (`TZAVMAN_API_SECRET` — אופציונלי אם הגדרת אימות Firebase Token בסקריפט):
+                  קוד אימות (אופציונלי):
                 </label>
                 <input
                   type="password"
                   dir="ltr"
                   value={driveSecretInput}
                   onChange={(e) => setDriveSecretInput(e.target.value)}
-                  placeholder="השאר ריק במצב אימות Firebase Token (מומלץ) או הזן TZAVMAN_API_SECRET"
+                  placeholder="אופציונלי"
                   className="w-full px-3.5 py-2 rounded-xl bg-white dark:bg-slate-950 border border-slate-300 dark:border-slate-700 focus:border-indigo-500 focus:outline-none text-xs font-mono text-slate-800 dark:text-slate-100 placeholder:text-slate-400 dark:placeholder:text-slate-400"
                 />
               </div>

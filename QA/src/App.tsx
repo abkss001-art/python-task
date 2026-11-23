@@ -1900,7 +1900,7 @@ export function App() {
           <div className="space-y-1">
             <h1 className="text-xl font-black tracking-tight">צב מן</h1>
             <p className="text-xs font-medium text-slate-500 dark:text-slate-400">
-              מאמת התחברות מאובטחת מול Firebase...
+              מתחבר למערכת...
             </p>
           </div>
           <div className="w-36 h-1.5 rounded-full bg-slate-200 dark:bg-slate-800 overflow-hidden">
@@ -1997,7 +1997,7 @@ export function App() {
         pendingJoinRequestsCount={isAdmin ? pendingJoinRequestsCount : 0}
         onManualSync={() => {
           syncService.requestManualSync();
-          setLiveToast('🔄 מושך נתונים עדכניים מהענן...');
+          setLiveToast('🔄 מרענן נתונים...');
           setTimeout(() => setLiveToast(null), 2500);
         }}
         issues={issues}
@@ -2045,7 +2045,7 @@ export function App() {
                     <span className="font-mono text-amber-300">{item.secondsLeft}</span> שניות...
                   </div>
                   <div className="text-[11px] text-amber-200/90">
-                    עדיין לא נשמר בשרת • לחץ לביטול מיידי
+                    ניתן לבטל לפני הביצוע
                   </div>
                 </div>
               </div>
@@ -2530,7 +2530,7 @@ export function App() {
         syncStatus={syncStatus}
         onManualSync={() => {
           syncService.requestManualSync();
-          setLiveToast('🔄 מושך נתונים עדכניים מהענן...');
+          setLiveToast('🔄 מרענן נתונים...');
           setTimeout(() => setLiveToast(null), 2500);
         }}
         theme={theme}

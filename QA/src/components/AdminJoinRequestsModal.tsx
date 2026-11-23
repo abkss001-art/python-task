@@ -340,7 +340,7 @@ export const AdminJoinRequestsModal: React.FC<AdminJoinRequestsModalProps> = ({
                             </span>
                           </div>
                           <p className="text-[11px] text-amber-800 dark:text-amber-300">
-                            עדיין לא נרשמה דחייה בשרת. לחצת בטעות? לחץ &ldquo;בטל דחייה&rdquo; עכשיו!
+                            לחצת בטעות? לחץ &ldquo;בטל דחייה&rdquo; עכשיו.
                           </p>
                         </div>
                         <button
@@ -708,7 +708,7 @@ export const AdminJoinRequestsModal: React.FC<AdminJoinRequestsModalProps> = ({
             </div>
 
             <div className="text-[11px] text-amber-800 dark:text-amber-300 bg-amber-50 dark:bg-amber-950/40 border border-amber-200 dark:border-amber-800 rounded-xl px-3 py-2 font-semibold">
-              🛡️ הגנה נגד לחיצה בטעות: לאחר האישור ייפתח חלון של <strong>10 שניות לביטול</strong> לפני שהדחייה תישלח לשרת.
+              לאחר האישור ייפתח חלון של <strong>10 שניות לביטול</strong>.
             </div>
 
             <div className="flex items-center justify-end gap-2.5 pt-2 border-t border-slate-100 dark:border-slate-800">

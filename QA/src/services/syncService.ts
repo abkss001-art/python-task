@@ -1121,11 +1121,11 @@ class RealtimeSyncService {
     error?: string;
   }> {
     if (!this.firebaseAuth) {
-      return { ok: false, error: 'Firebase Auth לא מאותחל בהגדרות הענן.' };
+      return { ok: false, error: 'שירות ההתחברות אינו זמין כרגע.' };
     }
     const { email: normalizedEmail } = normalizeLoginEmail(email);
     if (!normalizedEmail) {
-      return { ok: false, error: 'נא להזין כתובת אימייל או שם משתמש.' };
+      return { ok: false, error: 'נא להזין אימייל או שם משתמש.' };
     }
     try {
       const cred = await signInWithEmailAndPassword(this.firebaseAuth, normalizedEmail, password);
@@ -1174,9 +1174,9 @@ class RealtimeSyncService {
         return { ok: false, error: 'יותר מדי ניסיונות כושלים. נסה שוב בעוד מספר דקות.' };
       }
       if (code === 'auth/user-disabled') {
-        return { ok: false, error: 'חשבון זה הושבת על ידי המנהל ב-Firebase Console.' };
+        return { ok: false, error: 'חשבון זה הושבת ע״י המנהל.' };
       }
-      return { ok: false, error: err?.message || 'שגיאת התחברות ל-Firebase Auth' };
+      return { ok: false, error: err?.message || 'ההתחברות נכשלה. נסה שוב.' };
     }
   }
 
@@ -1184,7 +1184,7 @@ class RealtimeSyncService {
     rawEmailOrUsername: string
   ): Promise<{ ok: boolean; normalizedEmail?: string; error?: string }> {
     if (!this.firebaseAuth) {
-      return { ok: false, error: 'Firebase Auth לא מאותחל.' };
+      return { ok: false, error: 'שירות איפוס הסיסמה אינו זמין כרגע.' };
     }
     const { email } = normalizeLoginEmail(rawEmailOrUsername);
     if (!email || !email.includes('@')) {
@@ -1463,7 +1463,7 @@ class RealtimeSyncService {
     error?: string;
   }> {
     if (!this.firebaseAuth || !this.activeFirebaseConfig) {
-      return { ok: false, error: 'Firebase Auth לא מאותחל בהגדרות הענן.' };
+      return { ok: false, error: 'שירות ההרשמה אינו זמין כרגע.' };
     }
     const cleanName = fullName.trim().slice(0, 120);
     const { email: normalizedEmail } = normalizeLoginEmail(rawEmailOrUsername);
@@ -1920,12 +1920,12 @@ class RealtimeSyncService {
     } catch (err: any) {
       const code = String(err?.code || '');
       if (code === 'auth/email-already-in-use') {
-        return { ok: false, error: 'כתובת אימייל זו כבר רשומה ב-Firebase Auth.' };
+        return { ok: false, error: 'כתובת אימייל זו כבר רשומה במערכת.' };
       }
       if (code === 'auth/weak-password') {
         return { ok: false, error: 'הסיסמה חלשה מדי — יש לבחור לפחות 6 תווים.' };
       }
-      return { ok: false, error: err?.message || 'שגיאה ביצירת משתמש Firebase Auth' };
+      return { ok: false, error: err?.message || 'שגיאה ביצירת החשבון.' };
     } finally {
       if (secondaryApp) {
         await deleteApp(secondaryApp).catch(() => {});

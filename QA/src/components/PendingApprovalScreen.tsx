@@ -163,7 +163,7 @@ export const PendingApprovalScreen: React.FC<PendingApprovalScreenProps> = ({
                 </span>
               </div>
               <p className="text-[11px] text-slate-500 dark:text-slate-400 font-medium">
-                דף הבית • סביבת עבודה מאובטחת של צוות בדיקות מדור נחשון
+                דף הבית • צוות בדיקות מדור נחשון
               </p>
             </div>
           </div>
@@ -231,7 +231,7 @@ export const PendingApprovalScreen: React.FC<PendingApprovalScreenProps> = ({
                   החשבון שלך נחסם מהתחברות למערכת
                 </h2>
                 <p className="text-xs sm:text-sm text-slate-600 dark:text-slate-300 mt-2 max-w-lg mx-auto leading-relaxed">
-                  בקשת ההצטרפות שלך נדחתה <strong>3 פעמים</strong>, ולכן האפשרות לשלוח בקשות נוספות נחסמה אוטומטית ע״י השרת.
+                  בקשת ההצטרפות שלך נדחתה <strong>3 פעמים</strong>, ולכן האפשרות לשלוח בקשות נוספות נחסמה.
                 </p>
               </>
             ) : isRejected ? (
@@ -490,7 +490,7 @@ export const PendingApprovalScreen: React.FC<PendingApprovalScreenProps> = ({
               <div className="absolute inset-0 flex items-center justify-center bg-white/60 dark:bg-slate-900/60 backdrop-blur-[1px]">
                 <div className="flex items-center gap-2 px-3.5 py-1.5 rounded-full bg-slate-900 dark:bg-slate-800 text-white text-[11px] font-bold shadow-md border border-slate-700">
                   <Lock className="w-3.5 h-3.5 text-amber-400" />
-                  <span>המערכות, התקלות והצ׳אט נעולים ברמת השרת עד לאישור המנהל</span>
+                  <span>הגישה למערכות נעולה עד לאישור המנהל</span>
                 </div>
               </div>
             </div>
@@ -504,7 +504,7 @@ export const PendingApprovalScreen: React.FC<PendingApprovalScreenProps> = ({
                     onClick={() => setShowBootstrapPanel(true)}
                     className="text-[11px] font-semibold text-slate-400 hover:text-indigo-600 dark:hover:text-indigo-400 cursor-pointer transition"
                   >
-                    מתקין שרת חדש וריק כמנהל ראשי?
+                    הגדרת מנהל ראשי (התקנה ראשונית)
                   </button>
                 ) : (
                   <form
@@ -513,7 +513,7 @@ export const PendingApprovalScreen: React.FC<PendingApprovalScreenProps> = ({
                   >
                     <div className="flex items-center gap-2 text-[11px] font-bold text-indigo-900 dark:text-indigo-200">
                       <ShieldCheck className="w-4 h-4 shrink-0" />
-                      <span>אתחול מנהל ראשי (פועל רק כשהשרת ריק לחלוטין)</span>
+                      <span>הגדרת מנהל ראשי למערכת חדשה</span>
                     </div>
                     <button
                       type="submit"

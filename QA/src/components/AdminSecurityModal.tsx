@@ -69,7 +69,7 @@ export const AdminSecurityModal: React.FC<AdminSecurityModalProps> = ({ onClose 
       const entries = await syncService.fetchRecentAuditLogs(80);
       setLogs(entries);
     } catch (err: any) {
-      setError(err?.message || 'לא ניתן לטעון את יומן הביקורת מהשרת.');
+      setError(err?.message || 'לא ניתן לטעון את יומן הפעולות.');
     } finally {
       setIsLoading(false);
     }
@@ -111,9 +111,9 @@ export const AdminSecurityModal: React.FC<AdminSecurityModalProps> = ({ onClose 
               <ShieldCheck className="w-5 h-5" />
             </div>
             <div>
-              <h3 className="text-base font-extrabold">אבטחת המערכת ויומן ביקורת שרת (Audit Log)</h3>
+              <h3 className="text-base font-extrabold">אבטחה ויומן פעולות</h3>
               <p className="text-xs text-slate-300">
-                יומן תיעוד בלתי-ניתן למחיקה בצד השרת (`std_audit_log`) ומצב שכבות ההגנה
+                מצב הגנות המערכת ותיעוד פעולות אחרונות
               </p>
             </div>
           </div>
@@ -133,10 +133,10 @@ export const AdminSecurityModal: React.FC<AdminSecurityModalProps> = ({ onClose 
               <CheckCircle2 className="w-4 h-4 text-emerald-600 dark:text-emerald-400 shrink-0 mt-0.5" />
               <div className="text-xs">
                 <div className="font-extrabold text-emerald-950 dark:text-emerald-200">
-                  Firebase Auth + חוקי שרת פעילים
+                  אימות משתמשים פעיל
                 </div>
                 <div className="text-[11px] text-emerald-800/90 dark:text-emerald-300/80 mt-0.5">
-                  גישה אנונימית ו-MQTT פומבי הוסרו לצמיתות.
+                  גישה למערכת מותרת למשתמשים מאושרים בלבד.
                 </div>
               </div>
             </div>
@@ -145,10 +145,10 @@ export const AdminSecurityModal: React.FC<AdminSecurityModalProps> = ({ onClose 
               <Database className="w-4 h-4 text-emerald-600 dark:text-emerald-400 shrink-0 mt-0.5" />
               <div className="text-xs">
                 <div className="font-extrabold text-emerald-950 dark:text-emerald-200">
-                  הפרדת מערכות בצד השרת
+                  הפרדת הרשאות לפי מערכת
                 </div>
                 <div className="text-[11px] text-emerald-800/90 dark:text-emerald-300/80 mt-0.5">
-                  משתמשים מוגבלים קוראים רק את `std_systems` המורשים להם.
+                  כל משתמש נחשף רק למערכות שאושרו עבורו.
                 </div>
               </div>
             </div>
@@ -169,12 +169,12 @@ export const AdminSecurityModal: React.FC<AdminSecurityModalProps> = ({ onClose 
               />
               <div className="text-xs">
                 <div className="font-extrabold text-slate-900 dark:text-slate-100">
-                  Google Drive + אימות Firebase Token
+                  אחסון תמונות וגיבויים
                 </div>
                 <div className="text-[11px] text-slate-600 dark:text-slate-300 mt-0.5">
                   {hasDrive
-                    ? 'מחובר ל-std_private_config ללא סוד משותף בדפדפן.'
-                    : 'טרם הוגדרה כתובת Google Drive במסך הגיבוי.'}
+                    ? 'מחובר ופעיל עבור כלל הצוות.'
+                    : 'טרם הוגדר אחסון חיצוני במסך הגיבוי.'}
                 </div>
               </div>
             </div>
@@ -193,16 +193,16 @@ export const AdminSecurityModal: React.FC<AdminSecurityModalProps> = ({ onClose 
               )}
               <div className="text-xs">
                 <div className="font-extrabold text-slate-900 dark:text-slate-100">
-                  Firebase App Check (Fraud Defense / reCAPTCHA)
+                  הגנה מפני בוטים
                 </div>
                 <div className="text-[11px] text-slate-600 dark:text-slate-300 mt-0.5">
                   {!hasAppCheck
-                    ? 'אופציונלי — ניתן להוסיף מפתח Site Key בהגדרות Firebase.'
+                    ? 'לא הוגדר מפתח הגנה.'
                     : !appCheckHealth.checked
-                    ? 'בודק הנפקת טוקן App Check מול השרת...'
+                    ? 'בודק תקינות...'
                     : appCheckHealth.ok
-                    ? 'מאומת חי — טוקן App Check תקין ופעיל להגנה מפני בוטים.'
-                    : `המפתח מוגדר אך הנפקת הטוקן נכשלה: ${appCheckHealth.error || 'שגיאה לא ידועה'}`}
+                    ? 'מאומת ופעיל.'
+                    : `נכשלה בדיקת תקינות: ${appCheckHealth.error || 'שגיאה'}`}
                 </div>
               </div>
             </div>
@@ -212,7 +212,7 @@ export const AdminSecurityModal: React.FC<AdminSecurityModalProps> = ({ onClose 
           <div className="flex flex-wrap items-center justify-between gap-2 p-3.5 rounded-xl bg-slate-50 dark:bg-slate-800/60 border border-slate-200 dark:border-slate-700">
             <div className="flex items-center gap-2 text-xs text-slate-700 dark:text-slate-200">
               <UserCheck className="w-4 h-4 text-indigo-600 dark:text-indigo-400 shrink-0" />
-              <span>איפוס סיסמאות והשבתת חשבונות מתבצעים מאובטח ב-Firebase Authentication Console:</span>
+              <span>ניהול חשבונות, איפוס סיסמאות והשבתת משתמשים:</span>
             </div>
             <a
               href={`https://console.firebase.google.com/project/${encodeURIComponent(projectId)}/authentication/users`}
@@ -231,7 +231,7 @@ export const AdminSecurityModal: React.FC<AdminSecurityModalProps> = ({ onClose 
               <div className="flex items-center gap-2">
                 <History className="w-4 h-4 text-indigo-600 dark:text-indigo-400" />
                 <h4 className="text-sm font-extrabold text-slate-900 dark:text-slate-100">
-                  יומן ביקורת שרת ({logs.length} פעולות אחרונות)
+                  יומן פעולות ({logs.length} אחרונות)
                 </h4>
               </div>
               <button
@@ -241,7 +241,7 @@ export const AdminSecurityModal: React.FC<AdminSecurityModalProps> = ({ onClose 
                 className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 hover:bg-slate-50 dark:hover:bg-slate-700 text-xs font-bold text-slate-700 dark:text-slate-200 cursor-pointer transition disabled:opacity-50"
               >
                 <RefreshCw className={`w-3.5 h-3.5 ${isLoading ? 'animate-spin' : ''}`} />
-                <span>רענן יומן</span>
+                <span>רענן</span>
               </button>
             </div>
 
@@ -253,10 +253,10 @@ export const AdminSecurityModal: React.FC<AdminSecurityModalProps> = ({ onClose 
 
             <div className="rounded-xl border border-slate-200 dark:border-slate-800 divide-y divide-slate-100 dark:divide-slate-800 max-h-72 overflow-y-auto bg-white dark:bg-slate-950">
               {isLoading ? (
-                <div className="p-6 text-center text-xs text-slate-500">טוען יומן ביקורת מהשרת...</div>
+                <div className="p-6 text-center text-xs text-slate-500">טוען יומן פעולות...</div>
               ) : logs.length === 0 ? (
                 <div className="p-6 text-center text-xs text-slate-500">
-                  אין עדיין רשומות ביומן הביקורת (`std_audit_log`). פעולות רגישות שיתבצעו מעכשיו יירשמו כאן אוטומטית בלי יכולת מחיקה.
+                  אין עדיין פעולות מתועדות.
                 </div>
               ) : (
                 logs.map((entry) => {

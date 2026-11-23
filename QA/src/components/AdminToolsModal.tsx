@@ -43,30 +43,30 @@ export const AdminToolsModal: React.FC<AdminToolsModalProps> = ({
   const tools = [
     {
       id: 'join-requests',
-      title: 'בקשות הצטרפות ואישור משתמשים',
-      subtitle: 'אישור מהיר של עובדים חדשים כבודקי QA או מפתחים, הקצאת מערכות ושחרור חסימות',
+      title: 'בקשות הצטרפות',
+      subtitle: 'אישור משתמשים חדשים, הקצאת תפקידים ושחרור חסימות',
       icon: UserPlus,
       iconBg:
         pendingJoinRequestsCount > 0
           ? 'bg-rose-100 text-rose-700 border-rose-300'
           : 'bg-teal-100 text-teal-700 border-teal-200',
       badge:
-        pendingJoinRequestsCount > 0 ? `${pendingJoinRequestsCount} ממתינות לאישור` : undefined,
+        pendingJoinRequestsCount > 0 ? `${pendingJoinRequestsCount} ממתינות` : undefined,
       badgeUrgent: pendingJoinRequestsCount > 0,
       action: onOpenJoinRequests
     },
     {
       id: 'report',
       title: 'דוח התקדמות מנהלים',
-      subtitle: 'גרפים, פילוחים וסיכום כלל המערכות לפי סטטוסים וחומרה',
+      subtitle: 'גרפים, פילוחים וסיכום כלל המערכות',
       icon: BarChart3,
       iconBg: 'bg-indigo-100 text-indigo-700 border-indigo-200',
       action: onOpenReport
     },
     {
       id: 'backup',
-      title: 'דרייב, גיבוי נתונים וייבוא אקסל (5TB)',
-      subtitle: 'חיבור Google Drive, ייצוא גיבוי מלא וייבוא תסריטים מקובצי CSV/Excel',
+      title: 'גיבוי נתונים וייבוא אקסל',
+      subtitle: 'גיבוי, שחזור וייבוא תסריטים מאקסל / CSV',
       icon: DatabaseBackup,
       iconBg: 'bg-emerald-100 text-emerald-700 border-emerald-200',
       action: onOpenBackup
@@ -74,31 +74,31 @@ export const AdminToolsModal: React.FC<AdminToolsModalProps> = ({
     {
       id: 'team',
       title: 'ניהול חברי צוות והרשאות',
-      subtitle: 'הוספה והסרה של בודקי QA, מפתחים ומנהלי מערכת מורשים',
+      subtitle: 'הוספה, עריכה והקצאת מערכות לצוות',
       icon: Users,
       iconBg: 'bg-violet-100 text-violet-700 border-violet-200',
       action: onOpenTeam
     },
     {
       id: 'cloud',
-      title: 'הגדרות ענן וחיבור בזמן אמת (Firebase)',
-      subtitle: 'חיבור שרת ענן וסנכרון תקלות וצילומי מסך מול כל הצוות',
+      title: 'הגדרות חיבור וסנכרון',
+      subtitle: 'הגדרות סנכרון בזמן אמת של המערכת',
       icon: Settings,
       iconBg: 'bg-sky-100 text-sky-700 border-sky-200',
       action: onOpenCloud
     },
     {
       id: 'security',
-      title: 'אבטחה ויומן ביקורת שרת (Audit Log)',
-      subtitle: 'סטטוס הגנות Firebase, ניהול איפוס סיסמאות ויומן פעולות בלתי-ניתן למחיקה',
+      title: 'אבטחה ויומן פעולות',
+      subtitle: 'מצב אבטחת המערכת ותיעוד פעולות',
       icon: KeyRound,
       iconBg: 'bg-amber-100 text-amber-700 border-amber-200',
       action: onOpenSecurity
     },
     {
       id: 'quota',
-      title: 'ניטור מכסות שימוש חינמיות (Quota Monitor)',
-      subtitle: 'מעקב חי אחר נפח Firebase Spark, מחוברים, Google Drive (5TB) ו-App Check',
+      title: 'מכסות שימוש ואחסון',
+      subtitle: 'מעקב אחר נפח אחסון, מחוברים ומכסות שימוש',
       icon: Gauge,
       iconBg: 'bg-cyan-100 text-cyan-700 border-cyan-200',
       action: onOpenQuota
@@ -106,7 +106,7 @@ export const AdminToolsModal: React.FC<AdminToolsModalProps> = ({
     {
       id: 'archive',
       title: 'ארכיון מערכות',
-      subtitle: 'צפייה ושחזור של מערכות ותסריטי בדיקה שהועברו לארכיון',
+      subtitle: 'צפייה ושחזור של מערכות בארכיון',
       icon: Archive,
       iconBg: 'bg-orange-100 text-orange-700 border-orange-200',
       badge: archivedCount > 0 ? `${archivedCount} מערכות` : undefined,

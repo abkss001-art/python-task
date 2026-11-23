@@ -265,7 +265,7 @@ export const MobileBottomNav: React.FC<MobileBottomNavProps> = ({
           type="button"
           onClick={onManualSync}
           className="flex flex-col items-center justify-center p-1.5 text-slate-600 dark:text-slate-300 hover:text-indigo-600 dark:hover:text-indigo-400 transition cursor-pointer"
-          title={`סנכרון ענן (${syncStatus.connected ? 'מחובר' : 'לא מקוון'})`}
+          title={`סנכרון (${syncStatus.connected ? 'מחובר' : 'לא מקוון'})`}
         >
           <div className="relative">
             <Cloud className="w-5 h-5 text-slate-600 dark:text-slate-300" />

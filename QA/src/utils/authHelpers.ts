@@ -112,6 +112,6 @@ export function buildWhatsAppInviteMessage(input: {
     `📧 אימייל להתחברות: ${input.email}${shortUser ? ` (אפשר גם להקליד בקיצור: ${shortUser})` : ''}`,
     `🔑 סיסמה זמנית: ${input.password}`,
     ``,
-    `מומלץ לאשר לטלפון לשמור את הסיסמה כדי להיכנס בפעם הבאה עם טביעת אצבע / FaceID.`
+    `מומלץ לשמור את הסיסמה לכניסה מהירה בפעם הבאה.`
   ].join('\n');
 }

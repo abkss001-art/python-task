@@ -162,7 +162,7 @@ export const SystemSelectorHome: React.FC<SystemSelectorHomeProps> = ({
                   <div className="h-12 rounded-xl bg-slate-100 dark:bg-slate-800/60" />
                 </div>
                 <div className="text-[11px] font-semibold text-slate-400 dark:text-slate-500">
-                  טוען מערכות מהענן המאובטח...
+                  טוען מערכות...
                 </div>
               </div>
             ))}
