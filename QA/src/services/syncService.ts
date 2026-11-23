@@ -1,5 +1,10 @@
 import { initializeApp, getApps, deleteApp, FirebaseApp } from 'firebase/app';
-import { initializeAppCheck, ReCaptchaV3Provider } from 'firebase/app-check';
+import {
+  initializeAppCheck,
+  ReCaptchaV3Provider,
+  getToken as getAppCheckToken,
+  AppCheck
+} from 'firebase/app-check';
 import {
   getAuth,
   onAuthStateChanged,
@@ -74,6 +79,7 @@ import {
 import {
   getSavedGoogleDriveUrl,
   isDataUrlImage,
+  registerFirebaseAppCheckTokenProvider,
   registerFirebaseIdTokenProvider,
   saveAutoBackupToGoogleDrive,
   setSavedGoogleDriveSecret,
@@ -222,6 +228,7 @@ class RealtimeSyncService {
   };
 
   private firebaseApp: FirebaseApp | null = null;
+  private firebaseAppCheck: AppCheck | null = null;
   private firebaseAuth: Auth | null = null;
   private firebaseUser: User | null = null;
   private firebaseUserProfile: FirebaseUserProfile | null = null;
@@ -276,6 +283,15 @@ class RealtimeSyncService {
     registerFirebaseIdTokenProvider(async () => {
       try {
         return this.firebaseUser ? await this.firebaseUser.getIdToken() : null;
+      } catch {
+        return null;
+      }
+    });
+    registerFirebaseAppCheckTokenProvider(async () => {
+      try {
+        if (!this.firebaseAppCheck) return null;
+        const res = await getAppCheckToken(this.firebaseAppCheck, false);
+        return res?.token || null;
       } catch {
         return null;
       }
@@ -1217,6 +1233,7 @@ class RealtimeSyncService {
 
     try {
       const sensitiveKeys = [
+        'std_qa_auth_user_v1',
         'std_qa_fallback_cache',
         CHATS_LOCAL_STORAGE_KEY,
         'std_qa_gdrive_webapp_url',
@@ -2329,6 +2346,7 @@ class RealtimeSyncService {
       }
 
       this.firebaseApp = initializeApp(this.buildFirebaseOptions(config));
+      this.firebaseAppCheck = null;
 
       // Firebase App Check (reCAPTCHA v3): blocks use of the Firebase API key outside this app
       if (isValidAppCheckSiteKey(config.appCheckSiteKey)) {
@@ -2336,7 +2354,7 @@ class RealtimeSyncService {
           if (import.meta.env.DEV) {
             (self as any).FIREBASE_APPCHECK_DEBUG_TOKEN = true;
           }
-          initializeAppCheck(this.firebaseApp, {
+          this.firebaseAppCheck = initializeAppCheck(this.firebaseApp, {
             provider: new ReCaptchaV3Provider((config.appCheckSiteKey as string).trim()),
             isTokenAutoRefreshEnabled: true
           });
@@ -2358,27 +2376,29 @@ class RealtimeSyncService {
 
       this.unsubscribeAuthState = onAuthStateChanged(this.firebaseAuth, async (user) => {
         this.firebaseUser = user;
-        this.firebaseAuthInitialized = true;
 
         if (user) {
           const profile = await this.fetchFirebaseUserProfile(user.uid);
           this.firebaseUserProfile = profile;
+          this.firebaseAuthInitialized = true;
           this.updateStatus({
             firebaseUid: user.uid,
             firebaseUserEmail: user.email || undefined
           });
-          if (config.requireFirebaseAuth) {
-            if (profile) {
-              this.attachFirebaseDataListeners(config);
-            }
+          if (config.requireFirebaseAuth && profile) {
+            this.attachFirebaseDataListeners(config);
           }
+          this.notifyAuthListeners();
         } else {
           this.firebaseUserProfile = null;
+          this.firebaseAuthInitialized = true;
           this.updateStatus({
             firebaseUid: undefined,
             firebaseUserEmail: undefined,
             ...(config.requireFirebaseAuth ? { connected: false } : {})
           });
+          // Notify listeners immediately so LoginScreen renders with zero pre-auth flash
+          this.notifyAuthListeners();
           if (config.requireFirebaseAuth) {
             this.detachDataListenersOnly();
             await this.clearLocalSensitiveCaches();
@@ -2386,7 +2406,6 @@ class RealtimeSyncService {
             this.notifyChats();
           }
         }
-        this.notifyAuthListeners();
       });
 
       if (!config.requireFirebaseAuth) {

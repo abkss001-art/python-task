@@ -1,7 +1,6 @@
 import React, { useEffect, useMemo, useState, useRef, useCallback } from 'react';
 import {
   ChatTypingUser,
-  DEFAULT_SYSTEMS,
   StdAuditEntry,
   StdComment,
   StdIssue,
@@ -72,6 +71,7 @@ import {
   Download,
   Smartphone,
   ShieldAlert,
+  ShieldCheck,
   FolderPlus,
   Home,
   ArrowLeft,
@@ -81,17 +81,14 @@ import {
   Flame,
   MessageCircle
 } from 'lucide-react';
-import {
-  computeUserAuthSignature,
-  verifyUserAuthSignature
-} from './utils/securityUtils';
+import { computeUserAuthSignature } from './utils/securityUtils';
 
 const AUTH_STORAGE_KEY = 'std_qa_auth_user_v1';
 const LAST_ACTIVE_SYSTEM_KEY = 'std_qa_last_active_system_v1';
 const SHORTCUT_BANNER_STORAGE_KEY = 'std_qa_dismissed_shortcut_banner_v1';
 
 export function App() {
-  const [systems, setSystems] = useState<string[]>(DEFAULT_SYSTEMS);
+  const [systems, setSystems] = useState<string[]>([]);
   const [archivedSystems, setArchivedSystems] = useState<string[]>([]);
   const [activeSystem, setActiveSystem] = useState<string>(() => {
     try {
@@ -105,42 +102,9 @@ export function App() {
   const [issues, setIssues] = useState<StdIssue[]>([]);
   const [syncStatus, setSyncStatus] = useState<SyncStatusInfo>(syncService.getStatus());
 
-  // Authenticated User State (First Name + Last Name + Role from Password + Tamper-Proof Signature)
-  const [authUser, setAuthUser] = useState<AuthenticatedUser | null>(() => {
-    try {
-      const saved = localStorage.getItem(AUTH_STORAGE_KEY);
-      if (saved) {
-        const parsed = JSON.parse(saved) as AuthenticatedUser;
-        if (
-          parsed &&
-          parsed.firstName &&
-          parsed.fullName &&
-          parsed.role &&
-          parsed.fullName !== 'בודק צוות'
-        ) {
-          if (!parsed.authSignature) {
-            parsed.authSignature = computeUserAuthSignature(parsed);
-            localStorage.setItem(AUTH_STORAGE_KEY, JSON.stringify(parsed));
-            return parsed;
-          }
-          if (verifyUserAuthSignature(parsed)) {
-            return parsed;
-          }
-          // If localStorage was tampered with in DevTools (e.g. changing isAdmin: true), downgrade to non-admin
-          const downgraded: AuthenticatedUser = {
-            ...parsed,
-            isAdmin: false
-          };
-          downgraded.authSignature = computeUserAuthSignature(downgraded);
-          localStorage.setItem(AUTH_STORAGE_KEY, JSON.stringify(downgraded));
-          return downgraded;
-        }
-      }
-    } catch {
-      // ignore
-    }
-    return null;
-  });
+  // Authenticated User State — hydrated strictly from verified Firebase Auth + std_users/{uid} (never pre-hydrated from localStorage)
+  const [authUser, setAuthUser] = useState<AuthenticatedUser | null>(null);
+  const [authReady, setAuthReady] = useState<boolean>(false);
 
   // Dismissible banners state (remembers dismissal per user session until logout)
   const [showShortcutBanner, setShowShortcutBanner] = useState<boolean>(() => {
@@ -302,13 +266,24 @@ export function App() {
   }, []);
 
   useEffect(() => {
+    // Wipe any legacy pre-Firebase auth cache immediately on startup
+    try {
+      localStorage.removeItem(AUTH_STORAGE_KEY);
+    } catch {}
+
     syncService.init();
 
     const unsubFirebaseAuth = syncService.subscribeFirebaseAuth((profile, rawUser, initialized) => {
-      if (!syncService.isFirebaseAuthRequired()) return;
+      if (!syncService.isFirebaseAuthRequired()) {
+        setAuthReady(true);
+        return;
+      }
       if (!initialized) return;
+      setAuthReady(true);
       if (!rawUser || !profile) {
         setAuthUser(null);
+        setSystems([]);
+        setIssues([]);
         try {
           localStorage.removeItem(AUTH_STORAGE_KEY);
         } catch {}
@@ -331,9 +306,6 @@ export function App() {
       };
       syncedUser.authSignature = computeUserAuthSignature(syncedUser);
       setAuthUser(syncedUser);
-      try {
-        localStorage.setItem(AUTH_STORAGE_KEY, JSON.stringify(syncedUser));
-      } catch {}
     });
 
     const unsubState = syncService.subscribeState((state, isRemoteUpdate) => {
@@ -560,10 +532,11 @@ export function App() {
   ]);
 
   const handleLoginSuccess = (user: AuthenticatedUser) => {
+    setAuthReady(true);
     setAuthUser(user);
-    localStorage.setItem(AUTH_STORAGE_KEY, JSON.stringify(user));
     setShowShortcutBanner(true);
     try {
+      localStorage.removeItem(AUTH_STORAGE_KEY);
       localStorage.removeItem(SHORTCUT_BANNER_STORAGE_KEY);
     } catch {}
   };
@@ -644,7 +617,6 @@ export function App() {
         };
         updatedAuth.authSignature = computeUserAuthSignature(updatedAuth);
         setAuthUser(updatedAuth);
-        localStorage.setItem(AUTH_STORAGE_KEY, JSON.stringify(updatedAuth));
         saveRememberedLogin(newName, true);
       }
     }
@@ -1696,6 +1668,31 @@ export function App() {
     );
   };
 
+  // Wait for Firebase Auth server verification before rendering either dashboard or login (prevents any pre-auth localStorage flash)
+  if (!authReady) {
+    return (
+      <div
+        className="min-h-screen flex flex-col items-center justify-center bg-slate-50 dark:bg-slate-950 text-slate-900 dark:text-slate-100 p-6 transition-colors"
+        dir="rtl"
+      >
+        <div className="flex flex-col items-center gap-4 text-center max-w-xs">
+          <div className="w-14 h-14 rounded-2xl bg-indigo-600/15 dark:bg-indigo-500/20 border border-indigo-500/30 flex items-center justify-center shadow-lg shadow-indigo-500/10">
+            <ShieldCheck className="w-7 h-7 text-indigo-600 dark:text-indigo-400 animate-pulse" />
+          </div>
+          <div className="space-y-1">
+            <h1 className="text-xl font-black tracking-tight">צב מן</h1>
+            <p className="text-xs font-medium text-slate-500 dark:text-slate-400">
+              מאמת התחברות מאובטחת מול Firebase...
+            </p>
+          </div>
+          <div className="w-36 h-1.5 rounded-full bg-slate-200 dark:bg-slate-800 overflow-hidden">
+            <div className="h-full w-1/2 rounded-full bg-indigo-600 dark:bg-indigo-400 animate-pulse" />
+          </div>
+        </div>
+      </div>
+    );
+  }
+
   // If user is not logged in yet, show the Login Screen!
   if (!authUser) {
     return (
@@ -1852,6 +1849,7 @@ export function App() {
             systems={visibleSystems}
             archivedSystems={archivedSystems}
             issues={systemIssues}
+            isLoadingCloud={!syncStatus.connected && visibleSystems.length === 0}
             currentUserName={currentUserName}
             userTeamTitle={userTeamTitle}
             isAdmin={isAdmin}

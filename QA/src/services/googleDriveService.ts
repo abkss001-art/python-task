@@ -4,12 +4,22 @@ const GDRIVE_URL_STORAGE_KEY = 'std_qa_gdrive_webapp_url';
 const GDRIVE_SECRET_STORAGE_KEY = 'std_qa_gdrive_api_secret';
 
 let firebaseIdTokenProvider: (() => Promise<string | null>) | null = null;
+let firebaseAppCheckTokenProvider: (() => Promise<string | null>) | null = null;
 
 /**
  * רושם ספק אסימון Firebase ID Token זמני לשליחה אוטומטית ל-Google Apps Script (ללא צורך בסוד קבוע בדפדפן)
  */
 export function registerFirebaseIdTokenProvider(provider: (() => Promise<string | null>) | null) {
   firebaseIdTokenProvider = provider;
+}
+
+/**
+ * רושם ספק אסימון Firebase App Check זמני להעברה ב-X-Firebase-AppCheck בעת אימות מול RTDB/Firestore
+ */
+export function registerFirebaseAppCheckTokenProvider(
+  provider: (() => Promise<string | null>) | null
+) {
+  firebaseAppCheckTokenProvider = provider;
 }
 
 export interface GoogleDriveUploadResult {
@@ -85,11 +95,12 @@ function parseFirestoreDocFields(docJson) {
   };
 }
 
-function verifyFirebaseUserForAction(idToken, action, targetSystem) {
+function verifyFirebaseUserForAction(idToken, action, targetSystem, appCheckToken) {
   var token = String(idToken || "").trim();
   if (!token) {
     return { ok: false, error: "Unauthorized: Missing Firebase ID token" };
   }
+  var cleanAppCheck = String(appCheckToken || "").trim();
 
   var apiKey = getConfigProp("FIREBASE_API_KEY", FIREBASE_API_KEY);
   var dbUrl = getConfigProp("FIREBASE_DB_URL", FIREBASE_DB_URL);
@@ -115,23 +126,31 @@ function verifyFirebaseUserForAction(idToken, action, targetSystem) {
   }
   var uid = String(userObj.localId);
 
-  // 2. אימות פרופיל והרשאות המשתמש ב-std_users/{uid} (באמצעות הטוקן של המשתמש עצמו)
+  // 2. אימות פרופיל והרשאות המשתמש ב-std_users/{uid} (כולל X-Firebase-AppCheck אם פעיל)
   var profile = null;
   if (dbUrl) {
     var cleanDb = dbUrl.replace(/\\/+$/, "");
+    var rtdbOpts = { muteHttpExceptions: true };
+    if (cleanAppCheck) {
+      rtdbOpts.headers = { "X-Firebase-AppCheck": cleanAppCheck };
+    }
     var rtdbRes = UrlFetchApp.fetch(
       cleanDb + "/std_users/" + encodeURIComponent(uid) + ".json?auth=" + encodeURIComponent(token),
-      { muteHttpExceptions: true }
+      rtdbOpts
     );
     if (rtdbRes.getResponseCode() === 200) {
       profile = JSON.parse(rtdbRes.getContentText() || "null");
     }
   } else if (projId) {
+    var fsHeaders = { Authorization: "Bearer " + token };
+    if (cleanAppCheck) {
+      fsHeaders["X-Firebase-AppCheck"] = cleanAppCheck;
+    }
     var fsRes = UrlFetchApp.fetch(
       "https://firestore.googleapis.com/v1/projects/" + encodeURIComponent(projId) +
         "/databases/(default)/documents/std_users/" + encodeURIComponent(uid),
       {
-        headers: { Authorization: "Bearer " + token },
+        headers: fsHeaders,
         muteHttpExceptions: true
       }
     );
@@ -169,7 +188,12 @@ function verifyFirebaseUserForAction(idToken, action, targetSystem) {
 
 function isAuthorizedRequest(body) {
   if (isFirebaseAuthConfigured()) {
-    var fbCheck = verifyFirebaseUserForAction(body.firebaseIdToken, body.action, body.system);
+    var fbCheck = verifyFirebaseUserForAction(
+      body.firebaseIdToken,
+      body.action,
+      body.system,
+      body.firebaseAppCheckToken
+    );
     if (!fbCheck.ok) return fbCheck;
     if (getConfiguredSecret() && !isSecretValid(body.apiSecret)) {
       return { ok: false, error: "Unauthorized: Invalid API secret" };
@@ -347,14 +371,17 @@ export function buildGoogleDriveRequestBody(
   action: 'PING' | 'UPLOAD_IMAGE' | 'SAVE_BACKUP',
   extra: Record<string, unknown> = {},
   explicitSecret?: string,
-  firebaseIdToken?: string | null
+  firebaseIdToken?: string | null,
+  firebaseAppCheckToken?: string | null
 ): Record<string, unknown> {
   const secret = (explicitSecret !== undefined ? explicitSecret : getSavedGoogleDriveSecret()).trim();
   const cleanToken = typeof firebaseIdToken === 'string' ? firebaseIdToken.trim() : '';
+  const cleanAppCheck = typeof firebaseAppCheckToken === 'string' ? firebaseAppCheckToken.trim() : '';
   return {
     action,
     ...(secret ? { apiSecret: secret } : {}),
     ...(cleanToken ? { firebaseIdToken: cleanToken } : {}),
+    ...(cleanAppCheck ? { firebaseAppCheckToken: cleanAppCheck } : {}),
     ...extra
   };
 }
@@ -372,7 +399,15 @@ export async function buildGoogleDriveRequestBodyAsync(
       token = null;
     }
   }
-  return buildGoogleDriveRequestBody(action, extra, explicitSecret, token);
+  let appCheckToken: string | null = null;
+  if (firebaseAppCheckTokenProvider) {
+    try {
+      appCheckToken = await firebaseAppCheckTokenProvider();
+    } catch {
+      appCheckToken = null;
+    }
+  }
+  return buildGoogleDriveRequestBody(action, extra, explicitSecret, token, appCheckToken);
 }
 
 export function isDataUrlImage(str: string): boolean {

@@ -20,6 +20,7 @@ interface SystemSelectorHomeProps {
   systems: string[];
   archivedSystems: string[];
   issues: StdIssue[];
+  isLoadingCloud?: boolean;
   chatUnreadBySystem?: Record<string, number>;
   currentUserName: string;
   userTeamTitle: string;
@@ -37,6 +38,7 @@ export const SystemSelectorHome: React.FC<SystemSelectorHomeProps> = ({
   systems,
   archivedSystems,
   issues,
+  isLoadingCloud = false,
   chatUnreadBySystem = {},
   currentUserName,
   userTeamTitle,
@@ -140,6 +142,32 @@ export const SystemSelectorHome: React.FC<SystemSelectorHomeProps> = ({
 
       {/* Systems Grid */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 sm:gap-5">
+        {isLoadingCloud && systems.length === 0 && (
+          <>
+            {[0, 1, 2].map((idx) => (
+              <div
+                key={`cloud-skeleton-${idx}`}
+                className="bg-white dark:bg-slate-900 rounded-3xl border border-slate-200/90 dark:border-slate-800 p-5 sm:p-6 shadow-xs animate-pulse space-y-4"
+              >
+                <div className="flex items-center gap-3">
+                  <div className="w-12 h-12 rounded-2xl bg-slate-200 dark:bg-slate-800" />
+                  <div className="space-y-2 flex-1">
+                    <div className="h-4 w-32 rounded-lg bg-slate-200 dark:bg-slate-800" />
+                    <div className="h-3 w-24 rounded-lg bg-slate-100 dark:bg-slate-800/70" />
+                  </div>
+                </div>
+                <div className="grid grid-cols-3 gap-2 py-3 border-y border-slate-100 dark:border-slate-800/80">
+                  <div className="h-12 rounded-xl bg-slate-100 dark:bg-slate-800/60" />
+                  <div className="h-12 rounded-xl bg-slate-100 dark:bg-slate-800/60" />
+                  <div className="h-12 rounded-xl bg-slate-100 dark:bg-slate-800/60" />
+                </div>
+                <div className="text-[11px] font-semibold text-slate-400 dark:text-slate-500">
+                  טוען מערכות מהענן המאובטח...
+                </div>
+              </div>
+            ))}
+          </>
+        )}
         {systems.map((sys) => {
           const sysIssues = issues.filter((i) => i.system === sys);
           const totalCount = sysIssues.length;
