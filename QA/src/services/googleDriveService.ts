@@ -1,4 +1,5 @@
 import { sanitizeImageUrl } from '../utils/securityUtils';
+import { GoogleDriveQuotaInfo } from '../types/std';
 
 const GDRIVE_URL_STORAGE_KEY = 'std_qa_gdrive_webapp_url';
 const GDRIVE_SECRET_STORAGE_KEY = 'std_qa_gdrive_api_secret';
@@ -226,6 +227,48 @@ function getOrCreateSystemFolder(mainFolder, systemName) {
   return mainFolder.createFolder(cleanName);
 }
 
+function getTodayDateKey() {
+  var d = new Date();
+  var m = d.getMonth() + 1;
+  var day = d.getDate();
+  return d.getFullYear() + "-" + (m < 10 ? "0" + m : m) + "-" + (day < 10 ? "0" + day : day);
+}
+
+function recordAndGetDriveQuota(incrementOps) {
+  var todayKey = getTodayDateKey();
+  var ops = 0;
+  try {
+    var props = PropertiesService.getScriptProperties();
+    var raw = props.getProperty("TZAVMAN_DAILY_QUOTA");
+    if (raw) {
+      var parsed = JSON.parse(raw);
+      if (parsed && parsed.date === todayKey && typeof parsed.ops === "number") {
+        ops = parsed.ops;
+      }
+    }
+    if (incrementOps) {
+      ops += 1;
+      props.setProperty("TZAVMAN_DAILY_QUOTA", JSON.stringify({ date: todayKey, ops: ops }));
+    }
+  } catch (e) {}
+
+  var usedBytes = null;
+  var limitBytes = null;
+  try {
+    usedBytes = DriveApp.getStorageUsed();
+    limitBytes = DriveApp.getStorageLimit();
+  } catch (e) {}
+
+  return {
+    driveStorageUsedBytes: typeof usedBytes === "number" ? usedBytes : null,
+    driveStorageLimitBytes: typeof limitBytes === "number" ? limitBytes : null,
+    dailyOperations: ops,
+    dailyUrlFetchCalls: ops * 2,
+    dailyUrlFetchLimit: 20000,
+    dateKey: todayKey
+  };
+}
+
 function doGet(e) {
   // אינו חושף מזהי תיקיות או קבצים ללא אימות
   return ContentService.createTextOutput(JSON.stringify({
@@ -251,17 +294,20 @@ function doPost(e) {
 
     var mainFolder = getOrCreateMainFolder();
 
-    // 1. בדיקת חיבור מהירה
+    // 1. בדיקת חיבור מהירה + נתוני נפח ומכסה יומית (למנהל)
     if (body.action === "PING") {
+      var quotaInfo = recordAndGetDriveQuota(true);
       return ContentService.createTextOutput(JSON.stringify({
         ok: true,
         folderName: mainFolder.getName(),
-        folderUrl: mainFolder.getUrl()
+        folderUrl: mainFolder.getUrl(),
+        quota: quotaInfo
       })).setMimeType(ContentService.MimeType.JSON);
     }
 
     // 2. העלאת צילום מסך ושמירתו בתיקיית המערכת ב-Google Drive
     if (body.action === "UPLOAD_IMAGE") {
+      recordAndGetDriveQuota(true);
       var dataUrl = String(body.dataUrl || "");
       var parts = dataUrl.split(",");
       var base64Data = parts.length > 1 ? parts[1] : parts[0];
@@ -290,6 +336,7 @@ function doPost(e) {
 
     // 3. שמירת קובץ גיבוי אוטומטי של מסד הנתונים ב-Google Drive
     if (body.action === "SAVE_BACKUP") {
+      recordAndGetDriveQuota(true);
       var backupName = "tzavman_auto_backup.json";
       var existing = mainFolder.getFilesByName(backupName);
       var content = JSON.stringify(body.payload, null, 2);
@@ -420,7 +467,13 @@ export function isDataUrlImage(str: string): boolean {
 export async function testGoogleDriveConnection(
   scriptUrl: string,
   explicitSecret?: string
-): Promise<{ ok: boolean; folderName?: string; folderUrl?: string; error?: string }> {
+): Promise<{
+  ok: boolean;
+  folderName?: string;
+  folderUrl?: string;
+  quota?: GoogleDriveQuotaInfo;
+  error?: string;
+}> {
   const cleaned = scriptUrl.trim();
   if (!isValidGoogleAppsScriptUrl(cleaned)) {
     return {
@@ -442,10 +495,25 @@ export async function testGoogleDriveConnection(
     }
     const data = await res.json();
     if (data && data.ok) {
+      const q = data.quota;
+      const parsedQuota: GoogleDriveQuotaInfo | undefined =
+        q && typeof q === 'object'
+          ? {
+              driveStorageUsedBytes:
+                typeof q.driveStorageUsedBytes === 'number' ? q.driveStorageUsedBytes : null,
+              driveStorageLimitBytes:
+                typeof q.driveStorageLimitBytes === 'number' ? q.driveStorageLimitBytes : null,
+              dailyOperations: Number(q.dailyOperations) || 0,
+              dailyUrlFetchCalls: Number(q.dailyUrlFetchCalls) || 0,
+              dailyUrlFetchLimit: Number(q.dailyUrlFetchLimit) || 20000,
+              dateKey: typeof q.dateKey === 'string' ? q.dateKey : new Date().toISOString().slice(0, 10)
+            }
+          : undefined;
       return {
         ok: true,
         folderName: data.folderName,
-        folderUrl: data.folderUrl
+        folderUrl: data.folderUrl,
+        ...(parsedQuota ? { quota: parsedQuota } : {})
       };
     }
     return { ok: false, error: data?.error || 'תגובה לא תקינה מהסקריפט' };
@@ -457,6 +525,25 @@ export async function testGoogleDriveConnection(
         'לא ניתן להתחבר לסקריפט. ודא שהגדרת "Who has access: Anyone" בעת הפרסום (Deploy).'
     };
   }
+}
+
+/**
+ * שולף נתוני נפח Google Drive (5TB) ומכסה יומית מ-Apps Script (מנהל בלבד)
+ */
+export async function fetchGoogleDriveQuota(): Promise<{
+  connected: boolean;
+  quota: GoogleDriveQuotaInfo | null;
+  error?: string;
+}> {
+  const scriptUrl = getSavedGoogleDriveUrl();
+  if (!scriptUrl) {
+    return { connected: false, quota: null };
+  }
+  const res = await testGoogleDriveConnection(scriptUrl);
+  if (!res.ok) {
+    return { connected: true, quota: null, error: res.error };
+  }
+  return { connected: true, quota: res.quota || null };
 }
 
 /**

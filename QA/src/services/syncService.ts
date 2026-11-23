@@ -3,6 +3,7 @@ import {
   initializeAppCheck,
   ReCaptchaEnterpriseProvider,
   getToken as getAppCheckToken,
+  onTokenChanged,
   AppCheck
 } from 'firebase/app-check';
 import {
@@ -52,6 +53,7 @@ import {
   DEFAULT_SYSTEMS,
   FirebaseConfigData,
   FirebaseUserProfile,
+  PlatformQuotaSnapshot,
   ServerAuditLogEntry,
   StdIssue,
   StdSeverity,
@@ -77,6 +79,7 @@ import {
   pruneChatMessages
 } from '../utils/chatUtils';
 import {
+  fetchGoogleDriveQuota,
   getSavedGoogleDriveUrl,
   isDataUrlImage,
   registerFirebaseAppCheckTokenProvider,
@@ -229,6 +232,8 @@ class RealtimeSyncService {
 
   private firebaseApp: FirebaseApp | null = null;
   private firebaseAppCheck: AppCheck | null = null;
+  private unsubscribeAppCheckToken: (() => void) | null = null;
+  private lastRecordedAppCheckTokenHash = '';
   private isInitialized = false;
   private firebaseAuth: Auth | null = null;
   private firebaseUser: User | null = null;
@@ -975,6 +980,10 @@ class RealtimeSyncService {
       this.unsubscribeAuthState();
       this.unsubscribeAuthState = null;
     }
+    if (this.unsubscribeAppCheckToken) {
+      this.unsubscribeAppCheckToken();
+      this.unsubscribeAppCheckToken = null;
+    }
     this.hasLoadedInitialChatsFirebase = false;
   }
 
@@ -1417,6 +1426,221 @@ class RealtimeSyncService {
       }
     }
     return entries.sort((a, b) => b.createdAt - a.createdAt);
+  }
+
+  private getCurrentMonthKey(): string {
+    const now = new Date();
+    return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
+  }
+
+  /**
+   * רושם הנפקת טוקן App Check חדש (מסונן לפי Hash כדי שטוקן שמור ב-cache לא ייספר פעמיים)
+   */
+  private async recordAppCheckTokenUsage(token: string): Promise<void> {
+    if (!token || !this.firebaseUser || !this.firebaseUserProfile || !this.activeFirebaseConfig) {
+      return;
+    }
+    const tokenHash = hashString(token);
+    if (!tokenHash || tokenHash === this.lastRecordedAppCheckTokenHash) return;
+    try {
+      const storedHash = localStorage.getItem('tzavman_last_ac_hash');
+      if (storedHash === tokenHash) {
+        this.lastRecordedAppCheckTokenHash = tokenHash;
+        return;
+      }
+      localStorage.setItem('tzavman_last_ac_hash', tokenHash);
+    } catch {
+      // ignore storage errors
+    }
+    this.lastRecordedAppCheckTokenHash = tokenHash;
+
+    const monthKey = this.getCurrentMonthKey();
+    const uid = this.firebaseUser.uid;
+    try {
+      if (this.activeFirebaseConfig.mode === 'firestore' && this.firestore) {
+        const docRef = doc(this.firestore, 'std_usage', `${monthKey}_${uid}`);
+        const snap = await getDoc(docRef).catch(() => null);
+        const prev = snap && snap.exists() ? Number(snap.data()?.appCheckTokens || 0) : 0;
+        await setDoc(docRef, {
+          monthKey,
+          uid,
+          appCheckTokens: Math.min(prev + 1, 100000),
+          updatedAt: Date.now()
+        });
+      } else if (this.rtdb) {
+        const usageRef = ref(this.rtdb, `std_usage/${monthKey}/${uid}`);
+        const snap = await get(usageRef).catch(() => null);
+        const prev = snap && snap.exists() ? Number(snap.val()?.appCheckTokens || 0) : 0;
+        await set(usageRef, {
+          appCheckTokens: Math.min(prev + 1, 100000),
+          updatedAt: Date.now()
+        });
+      }
+    } catch {
+      // ignore background usage write errors
+    }
+  }
+
+  /**
+   * מחשב ושולף תמונת מצב מלאה של מכסות השימוש החינמיות בכל הפלטפורמות (מנהל בלבד)
+   */
+  public async fetchPlatformQuotaSnapshot(): Promise<PlatformQuotaSnapshot> {
+    const encoder = typeof TextEncoder !== 'undefined' ? new TextEncoder() : null;
+    const byteSize = (value: unknown): number => {
+      try {
+        const str = JSON.stringify(value ?? null);
+        return encoder ? encoder.encode(str).length : str.length * 2;
+      } catch {
+        return 0;
+      }
+    };
+
+    const issues = this.currentState.issues || [];
+    const issuesBytes = byteSize(issues);
+    const chatsBytes = byteSize(this.chatsBySystem || {});
+
+    let totalChatsCount = 0;
+    let inlineBase64ImageCount = 0;
+    let inlineBase64Bytes = 0;
+
+    for (const list of Object.values(this.chatsBySystem || {})) {
+      totalChatsCount += list.length;
+      for (const m of list) {
+        for (const sc of m.screenshots || []) {
+          if (isDataUrlImage(sc)) {
+            inlineBase64ImageCount += 1;
+            inlineBase64Bytes += sc.length;
+          }
+        }
+      }
+    }
+
+    const issueCountBySystem = new Map<string, number>();
+    for (const iss of issues) {
+      issueCountBySystem.set(iss.system, (issueCountBySystem.get(iss.system) || 0) + 1);
+      for (const sc of iss.screenshots || []) {
+        if (isDataUrlImage(sc)) {
+          inlineBase64ImageCount += 1;
+          inlineBase64Bytes += sc.length;
+        }
+      }
+      for (const c of iss.comments || []) {
+        if (c.screenshot && isDataUrlImage(c.screenshot)) {
+          inlineBase64ImageCount += 1;
+          inlineBase64Bytes += c.screenshot.length;
+        }
+      }
+    }
+
+    let maxSystemName: string | null = null;
+    let maxSystemIssueCount = 0;
+    for (const [sys, count] of issueCountBySystem.entries()) {
+      if (count > maxSystemIssueCount) {
+        maxSystemIssueCount = count;
+        maxSystemName = sys;
+      }
+    }
+
+    const monthKey = this.getCurrentMonthKey();
+    let registeredUsersCount = (this.currentState.teamMembers || []).filter((m) => m.uid).length;
+    let metaAndUsersBytes = byteSize(this.currentMetaState || { systems: this.currentState.systems, teamMembers: this.currentState.teamMembers });
+    let auditLogBytes = 0;
+    let monthlyAppCheckTokens = 0;
+
+    if (this.activeFirebaseConfig && this.firebaseUser) {
+      try {
+        if (this.activeFirebaseConfig.mode === 'firestore' && this.firestore) {
+          const [usersSnap, auditSnap, usageSnap] = await Promise.all([
+            getDocs(collection(this.firestore, 'std_users')).catch(() => null),
+            getDocs(collection(this.firestore, 'std_audit_log')).catch(() => null),
+            getDocs(collection(this.firestore, 'std_usage')).catch(() => null)
+          ]);
+          if (usersSnap) {
+            registeredUsersCount = usersSnap.size;
+            const uList: unknown[] = [];
+            usersSnap.forEach((d) => uList.push(d.data()));
+            metaAndUsersBytes += byteSize(uList);
+          }
+          if (auditSnap) {
+            const aList: unknown[] = [];
+            auditSnap.forEach((d) => aList.push(d.data()));
+            auditLogBytes = byteSize(aList);
+          }
+          if (usageSnap) {
+            usageSnap.forEach((d) => {
+              const data = d.data();
+              if (data?.monthKey === monthKey) {
+                monthlyAppCheckTokens += Number(data.appCheckTokens || 0);
+              }
+            });
+          }
+        } else if (this.rtdb) {
+          const [usersSnap, auditSnap, usageSnap] = await Promise.all([
+            get(ref(this.rtdb, 'std_users')).catch(() => null),
+            get(ref(this.rtdb, 'std_audit_log')).catch(() => null),
+            get(ref(this.rtdb, `std_usage/${monthKey}`)).catch(() => null)
+          ]);
+          if (usersSnap && usersSnap.exists()) {
+            const val = usersSnap.val() as Record<string, unknown>;
+            registeredUsersCount = Object.keys(val).length;
+            metaAndUsersBytes += byteSize(val);
+          }
+          if (auditSnap && auditSnap.exists()) {
+            auditLogBytes = byteSize(auditSnap.val());
+          }
+          if (usageSnap && usageSnap.exists()) {
+            const val = usageSnap.val() as Record<string, { appCheckTokens?: number }>;
+            for (const item of Object.values(val)) {
+              monthlyAppCheckTokens += Number(item?.appCheckTokens || 0);
+            }
+          }
+        }
+      } catch {
+        // fallback gracefully to in-memory estimates
+      }
+    }
+
+    // If App Check is active in this session and counter wasn't synced yet, try recording current token once
+    if (this.firebaseAppCheck && monthlyAppCheckTokens === 0) {
+      try {
+        const res = await getAppCheckToken(this.firebaseAppCheck, false);
+        if (res?.token) {
+          await this.recordAppCheckTokenUsage(res.token);
+          monthlyAppCheckTokens = 1;
+        }
+      } catch {
+        // ignore
+      }
+    }
+
+    const driveRes = await fetchGoogleDriveQuota();
+    const totalDbBytes = issuesBytes + chatsBytes + metaAndUsersBytes + auditLogBytes;
+
+    return {
+      totalDbBytes,
+      dbLimitBytes: 1024 * 1024 * 1024, // 1 GB Spark RTDB free tier
+      issuesBytes,
+      chatsBytes,
+      metaAndUsersBytes,
+      auditLogBytes,
+      totalIssuesCount: issues.length,
+      totalChatsCount,
+      inlineBase64ImageCount,
+      inlineBase64Bytes,
+      maxSystemName,
+      maxSystemIssueCount,
+      onlineCount: Math.max(this.statusInfo.onlineCount || 1, 1),
+      onlineLimit: 100, // 100 concurrent RTDB Spark limit
+      registeredUsersCount: Math.max(registeredUsersCount, 1),
+      authUsersLimit: 50000, // 50,000 MAU free tier
+      monthlyAppCheckTokens,
+      monthlyAppCheckLimit: 10000, // 10,000 free reCAPTCHA Enterprise assessments / month
+      monthKey,
+      driveConnected: driveRes.connected,
+      driveQuota: driveRes.quota,
+      driveError: driveRes.error,
+      generatedAt: Date.now()
+    };
   }
 
   private clearPartitionListeners() {
@@ -2384,6 +2608,11 @@ class RealtimeSyncService {
             provider: new ReCaptchaEnterpriseProvider((config.appCheckSiteKey as string).trim()),
             isTokenAutoRefreshEnabled: true
           });
+          this.unsubscribeAppCheckToken = onTokenChanged(this.firebaseAppCheck, (tokenRes) => {
+            if (tokenRes?.token) {
+              this.recordAppCheckTokenUsage(tokenRes.token);
+            }
+          });
         } catch (appCheckErr: any) {
           this.updateStatus({
             errorMessage: `App Check לא הופעל: ${appCheckErr?.message || appCheckErr}`
@@ -2413,6 +2642,13 @@ class RealtimeSyncService {
           });
           if (config.requireFirebaseAuth && profile) {
             this.attachFirebaseDataListeners(config);
+            if (this.firebaseAppCheck) {
+              getAppCheckToken(this.firebaseAppCheck, false)
+                .then((res) => {
+                  if (res?.token) this.recordAppCheckTokenUsage(res.token);
+                })
+                .catch(() => {});
+            }
           }
           this.notifyAuthListeners();
         } else {

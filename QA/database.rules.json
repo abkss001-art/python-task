@@ -3,6 +3,7 @@
     ".read": false,
     ".write": false,
     "std_users": {
+      ".read": "auth != null && root.child('std_users/' + auth.uid + '/role').val() === 'admin'",
       "$uid": {
         ".read": "auth != null && (auth.uid === $uid || root.child('std_users/' + auth.uid + '/role').val() === 'admin')",
         ".write": "auth != null && (root.child('std_users/' + auth.uid + '/role').val() === 'admin' || (!root.child('std_users').exists() && auth.uid === $uid && newData.child('role').val() === 'admin'))",
@@ -57,6 +58,16 @@
       "$entryId": {
         ".write": "auth != null && root.child('std_users/' + auth.uid).exists() && !data.exists() && newData.exists()",
         ".validate": "newData.hasChildren(['action', 'actorUid', 'actorName', 'createdAt']) && newData.child('actorUid').val() === auth.uid && newData.child('action').isString() && newData.child('action').val().length <= 300 && newData.child('actorName').isString() && newData.child('actorName').val().length <= 120 && newData.child('createdAt').isNumber()"
+      }
+    },
+    "std_usage": {
+      ".read": "auth != null && root.child('std_users/' + auth.uid + '/role').val() === 'admin'",
+      "$monthKey": {
+        "$uid": {
+          ".read": "auth != null && (auth.uid === $uid || root.child('std_users/' + auth.uid + '/role').val() === 'admin')",
+          ".write": "auth != null && auth.uid === $uid && root.child('std_users/' + auth.uid).exists()",
+          ".validate": "newData.hasChildren(['appCheckTokens', 'updatedAt']) && newData.child('appCheckTokens').isNumber() && newData.child('appCheckTokens').val() >= 0 && newData.child('appCheckTokens').val() <= 100000 && newData.child('updatedAt').isNumber()"
+        }
       }
     },
     "std_presence": {

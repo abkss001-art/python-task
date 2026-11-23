@@ -31,6 +31,7 @@ import { AdminReportModal } from './components/AdminReportModal';
 import { AdminBackupModal } from './components/AdminBackupModal';
 import { AdminTeamModal } from './components/AdminTeamModal';
 import { AdminSecurityModal } from './components/AdminSecurityModal';
+import { AdminQuotaModal } from './components/AdminQuotaModal';
 import { AdminSystemManageModal } from './components/AdminSystemManageModal';
 import { AdminToolsModal } from './components/AdminToolsModal';
 import { SystemSelectorHome } from './components/SystemSelectorHome';
@@ -187,6 +188,7 @@ export function App() {
   const [isAdminBackupOpen, setIsAdminBackupOpen] = useState<boolean>(false);
   const [isTeamModalOpen, setIsTeamModalOpen] = useState<boolean>(false);
   const [isAdminSecurityOpen, setIsAdminSecurityOpen] = useState<boolean>(false);
+  const [isAdminQuotaOpen, setIsAdminQuotaOpen] = useState<boolean>(false);
   const [isAdminToolsOpen, setIsAdminToolsOpen] = useState<boolean>(false);
   const [teamMembers, setTeamMembers] = useState<TeamMember[]>(() => getStoredTeamMembers());
 
@@ -464,6 +466,7 @@ export function App() {
         isAdminBackupOpen ||
         isTeamModalOpen ||
         isAdminSecurityOpen ||
+        isAdminQuotaOpen ||
         isAdminToolsOpen ||
         isChatDrawerOpen ||
         systemToManage
@@ -522,6 +525,7 @@ export function App() {
     isAdminBackupOpen,
     isTeamModalOpen,
     isAdminSecurityOpen,
+    isAdminQuotaOpen,
     isAdminToolsOpen,
     isChatDrawerOpen,
     systemToManage,
@@ -2498,6 +2502,7 @@ export function App() {
           onOpenTeam={() => setIsTeamModalOpen(true)}
           onOpenCloud={() => setIsFirebaseModalOpen(true)}
           onOpenSecurity={() => setIsAdminSecurityOpen(true)}
+          onOpenQuota={() => setIsAdminQuotaOpen(true)}
           onOpenArchive={() => setIsArchiveModalOpen(true)}
           onClose={() => setIsAdminToolsOpen(false)}
         />
@@ -2507,6 +2512,13 @@ export function App() {
       {isAdminSecurityOpen && isAdmin && (
         <AdminSecurityModal
           onClose={() => setIsAdminSecurityOpen(false)}
+        />
+      )}
+
+      {/* Admin Free-Tier Platform Quota Monitor Modal (Admin Only) */}
+      {isAdminQuotaOpen && isAdmin && (
+        <AdminQuotaModal
+          onClose={() => setIsAdminQuotaOpen(false)}
         />
       )}
 

@@ -3,6 +3,7 @@ export const FIREBASE_RTDB_RULES_JSON = `{
     ".read": false,
     ".write": false,
     "std_users": {
+      ".read": "auth != null && root.child('std_users/' + auth.uid + '/role').val() === 'admin'",
       "$uid": {
         ".read": "auth != null && (auth.uid === $uid || root.child('std_users/' + auth.uid + '/role').val() === 'admin')",
         ".write": "auth != null && (root.child('std_users/' + auth.uid + '/role').val() === 'admin' || (!root.child('std_users').exists() && auth.uid === $uid && newData.child('role').val() === 'admin'))",
@@ -59,6 +60,16 @@ export const FIREBASE_RTDB_RULES_JSON = `{
         ".validate": "newData.hasChildren(['action', 'actorUid', 'actorName', 'createdAt']) && newData.child('actorUid').val() === auth.uid && newData.child('action').isString() && newData.child('action').val().length <= 300 && newData.child('actorName').isString() && newData.child('actorName').val().length <= 120 && newData.child('createdAt').isNumber()"
       }
     },
+    "std_usage": {
+      ".read": "auth != null && root.child('std_users/' + auth.uid + '/role').val() === 'admin'",
+      "$monthKey": {
+        "$uid": {
+          ".read": "auth != null && (auth.uid === $uid || root.child('std_users/' + auth.uid + '/role').val() === 'admin')",
+          ".write": "auth != null && auth.uid === $uid && root.child('std_users/' + auth.uid).exists()",
+          ".validate": "newData.hasChildren(['appCheckTokens', 'updatedAt']) && newData.child('appCheckTokens').isNumber() && newData.child('appCheckTokens').val() >= 0 && newData.child('appCheckTokens').val() <= 100000 && newData.child('updatedAt').isNumber()"
+        }
+      }
+    },
     "std_presence": {
       ".read": "auth != null && root.child('std_users/' + auth.uid).exists()",
       "$clientId": {
@@ -107,6 +118,27 @@ service cloud.firestore {
         (systemKey in userProfile().allowedSystemKeys) &&
         userProfile().allowedSystemKeys[systemKey] == true
       );
+    }
+
+    function isOwnUsageDocId(docId) {
+      return isSignedIn() &&
+        docId.matches('^[0-9]{4}-(0[1-9]|1[0-2])_' + request.auth.uid + '$');
+    }
+
+    function isValidUsageDoc(docId, data) {
+      return isOwnUsageDocId(docId) &&
+        data.keys().hasAll(['monthKey', 'uid', 'appCheckTokens', 'updatedAt']) &&
+        data.keys().hasOnly(['monthKey', 'uid', 'appCheckTokens', 'updatedAt']) &&
+        data.uid is string &&
+        data.uid == request.auth.uid &&
+        data.monthKey is string &&
+        data.monthKey.matches('^[0-9]{4}-(0[1-9]|1[0-2])$') &&
+        docId == data.monthKey + '_' + request.auth.uid &&
+        data.appCheckTokens is int &&
+        data.appCheckTokens >= 0 &&
+        data.appCheckTokens <= 100000 &&
+        data.updatedAt is int &&
+        data.updatedAt >= 0;
     }
 
     match /{document=**} {
@@ -159,6 +191,27 @@ service cloud.firestore {
         request.resource.data.actorName.size() <= 120 &&
         request.resource.data.createdAt is int;
       allow update, delete: if false;
+    }
+
+    match /std_usage/{docId} {
+      allow get: if isAdmin() || (
+        hasProfile() && (
+          (resource == null && isOwnUsageDocId(docId)) ||
+          (resource != null && resource.data.uid == request.auth.uid)
+        )
+      );
+      allow list: if isAdmin() || (
+        hasProfile() && resource.data.uid == request.auth.uid
+      );
+      allow create: if hasProfile() &&
+        isValidUsageDoc(docId, request.resource.data);
+      allow update: if hasProfile() &&
+        resource.data.uid == request.auth.uid &&
+        isValidUsageDoc(docId, request.resource.data) &&
+        request.resource.data.uid == resource.data.uid &&
+        request.resource.data.monthKey == resource.data.monthKey &&
+        request.resource.data.appCheckTokens >= resource.data.appCheckTokens;
+      allow delete: if false;
     }
 
     match /std_workspaces/main_workspace {

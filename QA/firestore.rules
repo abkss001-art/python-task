@@ -33,6 +33,27 @@ service cloud.firestore {
       );
     }
 
+    function isOwnUsageDocId(docId) {
+      return isSignedIn() &&
+        docId.matches('^[0-9]{4}-(0[1-9]|1[0-2])_' + request.auth.uid + '$');
+    }
+
+    function isValidUsageDoc(docId, data) {
+      return isOwnUsageDocId(docId) &&
+        data.keys().hasAll(['monthKey', 'uid', 'appCheckTokens', 'updatedAt']) &&
+        data.keys().hasOnly(['monthKey', 'uid', 'appCheckTokens', 'updatedAt']) &&
+        data.uid is string &&
+        data.uid == request.auth.uid &&
+        data.monthKey is string &&
+        data.monthKey.matches('^[0-9]{4}-(0[1-9]|1[0-2])$') &&
+        docId == data.monthKey + '_' + request.auth.uid &&
+        data.appCheckTokens is int &&
+        data.appCheckTokens >= 0 &&
+        data.appCheckTokens <= 100000 &&
+        data.updatedAt is int &&
+        data.updatedAt >= 0;
+    }
+
     // Default deny
     match /{document=**} {
       allow read, write: if false;
@@ -90,6 +111,35 @@ service cloud.firestore {
         request.resource.data.actorName.size() <= 120 &&
         request.resource.data.createdAt is int;
       allow update, delete: if false;
+    }
+
+    // Monthly App Check usage counters (admin read all, users read/increment only their own {YYYY-MM}_{uid} doc, never deletable)
+    // Assumed Data Model for std_usage/{docId}:
+    //   Document ID: {YYYY-MM}_{uid}
+    //   Fields (all required, strict schema):
+    //     - monthKey: string (immutable, matches YYYY-MM with valid month 01-12, must match docId prefix)
+    //     - uid: string (immutable, must equal request.auth.uid and docId suffix)
+    //     - appCheckTokens: int (0..100000, monotonic non-decreasing on update)
+    //     - updatedAt: int (>= 0, Unix epoch ms)
+    match /std_usage/{docId} {
+      allow get: if isAdmin() || (
+        hasProfile() && (
+          (resource == null && isOwnUsageDocId(docId)) ||
+          (resource != null && resource.data.uid == request.auth.uid)
+        )
+      );
+      allow list: if isAdmin() || (
+        hasProfile() && resource.data.uid == request.auth.uid
+      );
+      allow create: if hasProfile() &&
+        isValidUsageDoc(docId, request.resource.data);
+      allow update: if hasProfile() &&
+        resource.data.uid == request.auth.uid &&
+        isValidUsageDoc(docId, request.resource.data) &&
+        request.resource.data.uid == resource.data.uid &&
+        request.resource.data.monthKey == resource.data.monthKey &&
+        request.resource.data.appCheckTokens >= resource.data.appCheckTokens;
+      allow delete: if false;
     }
 
     // Legacy monolithic docs (restricted to admins / unrestricted users for migration)

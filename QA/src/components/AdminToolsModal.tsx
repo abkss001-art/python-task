@@ -7,6 +7,7 @@ import {
   Users,
   Settings,
   KeyRound,
+  Gauge,
   Archive,
   ArrowLeft
 } from 'lucide-react';
@@ -18,6 +19,7 @@ interface AdminToolsModalProps {
   onOpenTeam: () => void;
   onOpenCloud: () => void;
   onOpenSecurity: () => void;
+  onOpenQuota: () => void;
   onOpenArchive: () => void;
   onClose: () => void;
 }
@@ -29,6 +31,7 @@ export const AdminToolsModal: React.FC<AdminToolsModalProps> = ({
   onOpenTeam,
   onOpenCloud,
   onOpenSecurity,
+  onOpenQuota,
   onOpenArchive,
   onClose
 }) => {
@@ -72,6 +75,14 @@ export const AdminToolsModal: React.FC<AdminToolsModalProps> = ({
       icon: KeyRound,
       iconBg: 'bg-amber-100 text-amber-700 border-amber-200',
       action: onOpenSecurity
+    },
+    {
+      id: 'quota',
+      title: 'ניטור מכסות שימוש חינמיות (Quota Monitor)',
+      subtitle: 'מעקב חי אחר נפח Firebase Spark, מחוברים, Google Drive (5TB) ו-App Check',
+      icon: Gauge,
+      iconBg: 'bg-cyan-100 text-cyan-700 border-cyan-200',
+      action: onOpenQuota
     },
     {
       id: 'archive',

@@ -219,3 +219,38 @@ export interface ServerAuditLogEntry {
   target?: string;
   createdAt: number;
 }
+
+export interface GoogleDriveQuotaInfo {
+  driveStorageUsedBytes: number | null;
+  driveStorageLimitBytes: number | null;
+  dailyOperations: number;
+  dailyUrlFetchCalls: number;
+  dailyUrlFetchLimit: number;
+  dateKey: string;
+}
+
+export interface PlatformQuotaSnapshot {
+  totalDbBytes: number;
+  dbLimitBytes: number;
+  issuesBytes: number;
+  chatsBytes: number;
+  metaAndUsersBytes: number;
+  auditLogBytes: number;
+  totalIssuesCount: number;
+  totalChatsCount: number;
+  inlineBase64ImageCount: number;
+  inlineBase64Bytes: number;
+  maxSystemName: string | null;
+  maxSystemIssueCount: number;
+  onlineCount: number;
+  onlineLimit: number;
+  registeredUsersCount: number;
+  authUsersLimit: number;
+  monthlyAppCheckTokens: number;
+  monthlyAppCheckLimit: number;
+  monthKey: string;
+  driveConnected: boolean;
+  driveQuota: GoogleDriveQuotaInfo | null;
+  driveError?: string;
+  generatedAt: number;
+}
