@@ -79,6 +79,19 @@ service cloud.firestore {
       allow read, write: if hasSystemAccess(systemKey);
     }
 
+    // Immutable append-only server Audit Log (admin read only, authenticated append only, never editable/deletable)
+    match /std_audit_log/{entryId} {
+      allow read: if isAdmin();
+      allow create: if hasProfile() &&
+        request.resource.data.actorUid == request.auth.uid &&
+        request.resource.data.action is string &&
+        request.resource.data.action.size() <= 300 &&
+        request.resource.data.actorName is string &&
+        request.resource.data.actorName.size() <= 120 &&
+        request.resource.data.createdAt is int;
+      allow update, delete: if false;
+    }
+
     // Legacy monolithic docs (restricted to admins / unrestricted users for migration)
     match /std_workspaces/main_workspace {
       allow read: if isAllSystems();

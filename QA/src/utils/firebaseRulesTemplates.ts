@@ -46,8 +46,17 @@ export const FIREBASE_RTDB_RULES_JSON = `{
       "$systemKey": {
         ".read": "auth != null && root.child('std_users/' + auth.uid).exists() && (root.child('std_users/' + auth.uid + '/role').val() === 'admin' || root.child('std_users/' + auth.uid + '/allSystems').val() === true || root.child('std_users/' + auth.uid + '/allowedSystemKeys/' + $systemKey).val() === true)",
         "$msgId": {
-          ".write": "auth != null && root.child('std_users/' + auth.uid).exists() && (root.child('std_users/' + auth.uid + '/role').val() === 'admin' || root.child('std_users/' + auth.uid + '/allSystems').val() === true || root.child('std_users/' + auth.uid + '/allowedSystemKeys/' + $systemKey).val() === true) && ((!data.exists() && (!newData.hasChild('authorUid') || newData.child('authorUid').val() === auth.uid)) || data.child('authorUid').val() === auth.uid || root.child('std_users/' + auth.uid + '/role').val() === 'admin' || (!data.child('deletedAt').exists() && newData.child('text').val() === data.child('text').val() && newData.child('author').val() === data.child('author').val() && (!data.hasChild('authorUid') || newData.child('authorUid').val() === data.child('authorUid').val())))"
+          ".write": "auth != null && root.child('std_users/' + auth.uid).exists() && (root.child('std_users/' + auth.uid + '/role').val() === 'admin' || root.child('std_users/' + auth.uid + '/allSystems').val() === true || root.child('std_users/' + auth.uid + '/allowedSystemKeys/' + $systemKey).val() === true) && ((!data.exists() && (!newData.hasChild('authorUid') || newData.child('authorUid').val() === auth.uid)) || data.child('authorUid').val() === auth.uid || root.child('std_users/' + auth.uid + '/role').val() === 'admin' || (!data.child('deletedAt').exists() && newData.child('text').val() === data.child('text').val() && newData.child('author').val() === data.child('author').val() && (!data.hasChild('authorUid') || newData.child('authorUid').val() === data.child('authorUid').val())))",
+          ".validate": "newData.hasChildren(['id', 'system', 'author', 'text', 'createdAt', 'updatedAt']) && newData.child('text').isString() && newData.child('text').val().length <= 4000"
         }
+      }
+    },
+    "std_audit_log": {
+      ".read": "auth != null && root.child('std_users/' + auth.uid + '/role').val() === 'admin'",
+      ".indexOn": ["createdAt"],
+      "$entryId": {
+        ".write": "auth != null && root.child('std_users/' + auth.uid).exists() && !data.exists() && newData.exists()",
+        ".validate": "newData.hasChildren(['action', 'actorUid', 'actorName', 'createdAt']) && newData.child('actorUid').val() === auth.uid && newData.child('action').isString() && newData.child('action').val().length <= 300 && newData.child('actorName').isString() && newData.child('actorName').val().length <= 120 && newData.child('createdAt').isNumber()"
       }
     },
     "std_presence": {
@@ -138,6 +147,18 @@ service cloud.firestore {
 
     match /std_chats/{systemKey} {
       allow read, write: if hasSystemAccess(systemKey);
+    }
+
+    match /std_audit_log/{entryId} {
+      allow read: if isAdmin();
+      allow create: if hasProfile() &&
+        request.resource.data.actorUid == request.auth.uid &&
+        request.resource.data.action is string &&
+        request.resource.data.action.size() <= 300 &&
+        request.resource.data.actorName is string &&
+        request.resource.data.actorName.size() <= 120 &&
+        request.resource.data.createdAt is int;
+      allow update, delete: if false;
     }
 
     match /std_workspaces/main_workspace {

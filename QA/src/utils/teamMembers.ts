@@ -1,5 +1,6 @@
 import { TeamRole } from '../types/std';
-import { getEffectiveSuperAdminName } from './securityUtils';
+
+const DEFAULT_SUPER_ADMIN_NAME = 'שמעון אבקסיס';
 
 export interface TeamMember {
   id: string;
@@ -29,19 +30,21 @@ const TEAM_MEMBERS_STORAGE_KEY = 'tzavman_team_members_v2';
 const REMEMBERED_USER_STORAGE_KEY = 'tzavman_remembered_user_v2';
 
 export function ensureSuperAdminInMembers(members: TeamMember[]): TeamMember[] {
-  const superAdminName = getEffectiveSuperAdminName();
+  const existingSuper = members.find((m) => m.isSuperAdmin);
+  const superAdminName = existingSuper?.fullName?.trim() || DEFAULT_SUPER_ADMIN_NAME;
   const filtered = members.filter(
     (m) =>
       !m.isSuperAdmin &&
       m.fullName.toLowerCase() !== superAdminName.toLowerCase() &&
-      m.fullName.toLowerCase() !== 'שמעון אבקסיס'
+      m.fullName.toLowerCase() !== DEFAULT_SUPER_ADMIN_NAME.toLowerCase()
   );
 
   const superAdminItem: TeamMember = {
-    id: 'tm-super-admin',
+    id: existingSuper?.id || 'tm-super-admin',
     fullName: superAdminName,
     role: 'admin',
-    isSuperAdmin: true
+    isSuperAdmin: true,
+    ...(existingSuper?.uid ? { uid: existingSuper.uid } : {})
   };
 
   return [superAdminItem, ...filtered];

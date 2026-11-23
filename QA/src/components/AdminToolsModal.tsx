@@ -67,8 +67,8 @@ export const AdminToolsModal: React.FC<AdminToolsModalProps> = ({
     },
     {
       id: 'security',
-      title: 'ניהול אבטחה, סיסמאות ומנהל-על',
-      subtitle: 'מוגן בקוד אבטחה ראשי – שינוי קודי כניסה ושם מנהל-העל',
+      title: 'אבטחה ויומן ביקורת שרת (Audit Log)',
+      subtitle: 'סטטוס הגנות Firebase, ניהול איפוס סיסמאות ויומן פעולות בלתי-ניתן למחיקה',
       icon: KeyRound,
       iconBg: 'bg-amber-100 text-amber-700 border-amber-200',
       action: onOpenSecurity

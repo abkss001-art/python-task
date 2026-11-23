@@ -1,178 +1,110 @@
-import React, { useState, useEffect } from 'react';
+import React, { useEffect, useState, useCallback } from 'react';
 import {
   X,
-  ShieldAlert,
-  KeyRound,
-  CheckCircle2,
+  ShieldCheck,
   Lock,
-  Unlock,
+  RefreshCw,
+  ExternalLink,
+  CheckCircle2,
   AlertTriangle,
-  RotateCcw,
-  Save,
+  History,
   UserCheck,
-  Clock
+  Database,
+  HardDrive
 } from 'lucide-react';
-import {
-  verifyMasterSecurityPin,
-  getStoredSecurityConfig,
-  saveStoredSecurityConfig,
-  getEffectiveSuperAdminName,
-  setStoredSuperAdminName,
-  resetSecurityConfigToDefaults,
-  hashAccessCode,
-  getMasterPinLockoutStatus,
-  recordMasterPinAttempt
-} from '../utils/securityUtils';
+import { ServerAuditLogEntry } from '../types/std';
+import { syncService } from '../services/syncService';
+import { getSavedGoogleDriveUrl } from '../services/googleDriveService';
 
 interface AdminSecurityModalProps {
-  onSecurityUpdated: (newSuperAdminName: string) => void;
   onClose: () => void;
 }
 
-export const AdminSecurityModal: React.FC<AdminSecurityModalProps> = ({
-  onSecurityUpdated,
-  onClose
-}) => {
-  const [isUnlocked, setIsUnlocked] = useState(false);
-  const [masterPinInput, setMasterPinInput] = useState('');
-  const [pinError, setPinError] = useState<string | null>(null);
-  const [lockout, setLockout] = useState(() => getMasterPinLockoutStatus());
+const CATEGORY_LABELS: Record<ServerAuditLogEntry['category'], { label: string; cls: string }> = {
+  auth: {
+    label: 'התחברות',
+    cls: 'bg-sky-100 text-sky-800 dark:bg-sky-950/70 dark:text-sky-300 border-sky-200 dark:border-sky-800'
+  },
+  issue: {
+    label: 'תקלות',
+    cls: 'bg-rose-100 text-rose-800 dark:bg-rose-950/70 dark:text-rose-300 border-rose-200 dark:border-rose-800'
+  },
+  team: {
+    label: 'צוות והרשאות',
+    cls: 'bg-violet-100 text-violet-800 dark:bg-violet-950/70 dark:text-violet-300 border-violet-200 dark:border-violet-800'
+  },
+  system: {
+    label: 'מערכות',
+    cls: 'bg-amber-100 text-amber-800 dark:bg-amber-950/70 dark:text-amber-300 border-amber-200 dark:border-amber-800'
+  },
+  backup: {
+    label: 'גיבוי ודרייב',
+    cls: 'bg-emerald-100 text-emerald-800 dark:bg-emerald-950/70 dark:text-emerald-300 border-emerald-200 dark:border-emerald-800'
+  },
+  security: {
+    label: 'אבטחה',
+    cls: 'bg-indigo-100 text-indigo-800 dark:bg-indigo-950/70 dark:text-indigo-300 border-indigo-200 dark:border-indigo-800'
+  }
+};
+
+export const AdminSecurityModal: React.FC<AdminSecurityModalProps> = ({ onClose }) => {
+  const [logs, setLogs] = useState<ServerAuditLogEntry[]>([]);
+  const [isLoading, setIsLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+
+  const fbConfig = syncService.getActiveFirebaseConfig();
+  const hasAppCheck = Boolean(fbConfig?.appCheckSiteKey);
+  const hasDrive = Boolean(getSavedGoogleDriveUrl());
+  const projectId = fbConfig?.projectId || 'tzavman-qa';
+
+  const loadLogs = useCallback(async () => {
+    setIsLoading(true);
+    setError(null);
+    try {
+      const entries = await syncService.fetchRecentAuditLogs(80);
+      setLogs(entries);
+    } catch (err: any) {
+      setError(err?.message || 'לא ניתן לטעון את יומן הביקורת מהשרת.');
+    } finally {
+      setIsLoading(false);
+    }
+  }, []);
 
   useEffect(() => {
-    if (!lockout.isLocked) return;
-    const interval = setInterval(() => {
-      const current = getMasterPinLockoutStatus();
-      setLockout(current);
-      if (!current.isLocked) {
-        setPinError(null);
-      }
-    }, 1000);
-    return () => clearInterval(interval);
-  }, [lockout.isLocked]);
+    loadLogs();
+  }, [loadLogs]);
 
-  // Form fields once unlocked
-  const [superAdminName, setSuperAdminName] = useState(() => getEffectiveSuperAdminName());
-  const [newQaCode, setNewQaCode] = useState('');
-  const [newDevCode, setNewDevCode] = useState('');
-  const [newAdminCode, setNewAdminCode] = useState('');
-  const [statusMessage, setStatusMessage] = useState<{ text: string; isError?: boolean } | null>(null);
-
-  const handleUnlock = (e: React.FormEvent) => {
-    e.preventDefault();
-    setPinError(null);
-
-    const currentLockout = getMasterPinLockoutStatus();
-    if (currentLockout.isLocked) {
-      setPinError(`הגישה נחסמה זמנית עקב ריבוי ניסיונות שגויים. נסה שוב בעוד ${currentLockout.remainingSeconds} שניות.`);
-      setLockout(currentLockout);
-      return;
+  const formatTime = (ts: number) => {
+    try {
+      return new Date(ts).toLocaleString('he-IL', {
+        day: '2-digit',
+        month: '2-digit',
+        year: '2-digit',
+        hour: '2-digit',
+        minute: '2-digit',
+        second: '2-digit'
+      });
+    } catch {
+      return '';
     }
-
-    if (!masterPinInput.trim()) {
-      setPinError('נא להזין קוד אבטחה ראשי.');
-      return;
-    }
-
-    const isValid = verifyMasterSecurityPin(masterPinInput.trim());
-    const nextStatus = recordMasterPinAttempt(isValid);
-    setLockout(nextStatus);
-
-    if (isValid) {
-      setIsUnlocked(true);
-      setMasterPinInput('');
-      setPinError(null);
-    } else {
-      if (nextStatus.isLocked) {
-        setPinError(`קוד אבטחה ראשי שגוי. עקב 5 ניסיונות כושלים הגישה נחסמה ל-${nextStatus.remainingSeconds} שניות.`);
-      } else {
-        setPinError(`קוד אבטחה ראשי שגוי. נותרו עוד ${nextStatus.attemptsLeft} ניסיונות לפני נעילה זמנית.`);
-      }
-    }
-  };
-
-  const handleSaveSecurity = (e: React.FormEvent) => {
-    e.preventDefault();
-    setStatusMessage(null);
-
-    const cleanName = superAdminName.trim();
-    if (!cleanName) {
-      setStatusMessage({ text: 'שם מנהל-העל אינו יכול להיות ריק.', isError: true });
-      return;
-    }
-
-    const currentConfig = getStoredSecurityConfig();
-    const nextConfig = { ...currentConfig };
-
-    nextConfig.superAdminName = cleanName;
-
-    if (newQaCode.trim()) {
-      if (newQaCode.trim().length < 4) {
-        setStatusMessage({ text: 'קוד בודק QA חייב להכיל לפחות 4 תווים.', isError: true });
-        return;
-      }
-      nextConfig.qaHash = hashAccessCode(newQaCode.trim());
-    }
-
-    if (newDevCode.trim()) {
-      if (newDevCode.trim().length < 4) {
-        setStatusMessage({ text: 'קוד מפתח חייב להכיל לפחות 4 תווים.', isError: true });
-        return;
-      }
-      nextConfig.devHash = hashAccessCode(newDevCode.trim());
-    }
-
-    if (newAdminCode.trim()) {
-      if (newAdminCode.trim().length < 4) {
-        setStatusMessage({ text: 'קוד מנהל מערכת חייב להכיל לפחות 4 תווים.', isError: true });
-        return;
-      }
-      nextConfig.adminHash = hashAccessCode(newAdminCode.trim());
-    }
-
-    saveStoredSecurityConfig(nextConfig);
-    setStoredSuperAdminName(cleanName);
-    onSecurityUpdated(cleanName);
-
-    setNewQaCode('');
-    setNewDevCode('');
-    setNewAdminCode('');
-
-    setStatusMessage({ text: 'הגדרות האבטחה וקודי הכניסה נשמרו ועודכנו בהצלחה!' });
-    setTimeout(() => setStatusMessage(null), 4000);
-  };
-
-  const handleResetDefaults = () => {
-    if (!window.confirm('האם אתה בטוח שברצונך לאפס את כל קודי הכניסה לברירת המחדל (QA: 9988, Dev: 1111, Admin: 1108) ולהחזיר את שם מנהל העל ל"שמעון אבקסיס"?')) {
-      return;
-    }
-    resetSecurityConfigToDefaults();
-    setSuperAdminName('שמעון אבקסיס');
-    setNewQaCode('');
-    setNewDevCode('');
-    setNewAdminCode('');
-    onSecurityUpdated('שמעון אבקסיס');
-    setStatusMessage({ text: 'קודי הכניסה ושם מנהל העל אופסו לברירת המחדל.' });
-    setTimeout(() => setStatusMessage(null), 4000);
   };
 
   return (
     <div
-      className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/60 dark:bg-slate-950/80 backdrop-blur-xs p-3 sm:p-4 overflow-y-auto"
+      className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/65 dark:bg-slate-950/80 backdrop-blur-xs p-3 sm:p-4 overflow-y-auto"
       dir="rtl"
     >
-      <div className="bg-white dark:bg-slate-900 rounded-3xl shadow-2xl border border-slate-200 dark:border-slate-800 w-full max-w-lg overflow-hidden my-auto max-h-[92vh] flex flex-col">
-        {/* Modal Header */}
-        <div className="flex items-center justify-between px-6 py-4 bg-gradient-to-r from-slate-950 via-indigo-950 to-slate-900 text-white border-b border-slate-800 shrink-0">
-          <div className="flex items-center gap-2.5">
-            <div className="p-2 rounded-xl bg-amber-500/20 text-amber-400 border border-amber-500/30">
-              <ShieldAlert className="w-5 h-5" />
+      <div className="bg-white dark:bg-slate-900 rounded-2xl shadow-2xl border border-slate-200 dark:border-slate-800 w-full max-w-2xl overflow-hidden my-auto max-h-[92vh] flex flex-col">
+        {/* Header */}
+        <div className="flex items-center justify-between px-6 py-4 bg-gradient-to-l from-slate-900 via-indigo-950 to-slate-900 text-white border-b border-slate-800 shrink-0">
+          <div className="flex items-center gap-3">
+            <div className="p-2 rounded-xl bg-emerald-500/20 text-emerald-300 border border-emerald-400/30">
+              <ShieldCheck className="w-5 h-5" />
             </div>
             <div>
-              <h3 className="text-base font-extrabold flex items-center gap-1.5">
-                <span>ניהול אבטחה, קודי כניסה ומנהל-על</span>
-              </h3>
-              <p className="text-xs text-slate-300 dark:text-slate-400">
-                הגנה רב-שכבתית באמצעות קוד אבטחה ראשי
+              <h3 className="text-base font-extrabold">אבטחת המערכת ויומן ביקורת שרת (Audit Log)</h3>
+              <p className="text-xs text-slate-300">
+                יומן תיעוד בלתי-ניתן למחיקה בצד השרת (`std_audit_log`) ומצב שכבות ההגנה
               </p>
             </div>
           </div>
@@ -185,206 +117,178 @@ export const AdminSecurityModal: React.FC<AdminSecurityModalProps> = ({
           </button>
         </div>
 
-        <div className="p-5 sm:p-6 space-y-4 overflow-y-auto flex-1">
-          {/* Status Message */}
-          {statusMessage && (
+        <div className="p-5 sm:p-6 space-y-5 overflow-y-auto flex-1">
+          {/* Active Security Layers Status */}
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+            <div className="p-3 rounded-xl border border-emerald-200 dark:border-emerald-800/70 bg-emerald-50/70 dark:bg-emerald-950/30 flex items-start gap-2.5">
+              <CheckCircle2 className="w-4 h-4 text-emerald-600 dark:text-emerald-400 shrink-0 mt-0.5" />
+              <div className="text-xs">
+                <div className="font-extrabold text-emerald-950 dark:text-emerald-200">
+                  Firebase Auth + חוקי שרת פעילים
+                </div>
+                <div className="text-[11px] text-emerald-800/90 dark:text-emerald-300/80 mt-0.5">
+                  גישה אנונימית ו-MQTT פומבי הוסרו לצמיתות.
+                </div>
+              </div>
+            </div>
+
+            <div className="p-3 rounded-xl border border-emerald-200 dark:border-emerald-800/70 bg-emerald-50/70 dark:bg-emerald-950/30 flex items-start gap-2.5">
+              <Database className="w-4 h-4 text-emerald-600 dark:text-emerald-400 shrink-0 mt-0.5" />
+              <div className="text-xs">
+                <div className="font-extrabold text-emerald-950 dark:text-emerald-200">
+                  הפרדת מערכות בצד השרת
+                </div>
+                <div className="text-[11px] text-emerald-800/90 dark:text-emerald-300/80 mt-0.5">
+                  משתמשים מוגבלים קוראים רק את `std_systems` המורשים להם.
+                </div>
+              </div>
+            </div>
+
             <div
-              className={`p-3.5 rounded-2xl text-xs font-bold flex items-center gap-2.5 ${
-                statusMessage.isError
-                  ? 'bg-red-50 dark:bg-red-950/60 border border-red-200 dark:border-red-800 text-red-800 dark:text-red-300'
-                  : 'bg-emerald-50 dark:bg-emerald-950/60 border border-emerald-200 dark:border-emerald-800 text-emerald-800 dark:text-emerald-300'
+              className={`p-3 rounded-xl border flex items-start gap-2.5 ${
+                hasDrive
+                  ? 'border-emerald-200 dark:border-emerald-800/70 bg-emerald-50/70 dark:bg-emerald-950/30'
+                  : 'border-amber-200 dark:border-amber-800/70 bg-amber-50/70 dark:bg-amber-950/30'
               }`}
             >
-              {statusMessage.isError ? (
-                <AlertTriangle className="w-4 h-4 text-red-600 dark:text-red-400 shrink-0" />
+              <HardDrive
+                className={`w-4 h-4 shrink-0 mt-0.5 ${
+                  hasDrive
+                    ? 'text-emerald-600 dark:text-emerald-400'
+                    : 'text-amber-600 dark:text-amber-400'
+                }`}
+              />
+              <div className="text-xs">
+                <div className="font-extrabold text-slate-900 dark:text-slate-100">
+                  Google Drive + אימות Firebase Token
+                </div>
+                <div className="text-[11px] text-slate-600 dark:text-slate-300 mt-0.5">
+                  {hasDrive
+                    ? 'מחובר ל-std_private_config ללא סוד משותף בדפדפן.'
+                    : 'טרם הוגדרה כתובת Google Drive במסך הגיבוי.'}
+                </div>
+              </div>
+            </div>
+
+            <div
+              className={`p-3 rounded-xl border flex items-start gap-2.5 ${
+                hasAppCheck
+                  ? 'border-emerald-200 dark:border-emerald-800/70 bg-emerald-50/70 dark:bg-emerald-950/30'
+                  : 'border-amber-200 dark:border-amber-800/70 bg-amber-50/70 dark:bg-amber-950/30'
+              }`}
+            >
+              {hasAppCheck ? (
+                <Lock className="w-4 h-4 text-emerald-600 dark:text-emerald-400 shrink-0 mt-0.5" />
               ) : (
-                <CheckCircle2 className="w-4 h-4 text-emerald-600 dark:text-emerald-400 shrink-0" />
+                <AlertTriangle className="w-4 h-4 text-amber-600 dark:text-amber-400 shrink-0 mt-0.5" />
               )}
-              <span>{statusMessage.text}</span>
+              <div className="text-xs">
+                <div className="font-extrabold text-slate-900 dark:text-slate-100">
+                  Firebase App Check (reCAPTCHA v3)
+                </div>
+                <div className="text-[11px] text-slate-600 dark:text-slate-300 mt-0.5">
+                  {hasAppCheck
+                    ? 'מופעל ופעיל להגנה מפני בוטים.'
+                    : 'אופציונלי — ניתן להוסיף מפתח Site Key בהגדרות Firebase.'}
+                </div>
+              </div>
             </div>
-          )}
+          </div>
 
-          {/* Locked State: Require Master Security PIN */}
-          {!isUnlocked ? (
-            <div className="py-4 space-y-4 text-center">
-              <div className="w-16 h-16 rounded-3xl bg-amber-50 dark:bg-amber-950/50 border border-amber-200 dark:border-amber-800 text-amber-600 dark:text-amber-400 flex items-center justify-center mx-auto shadow-sm">
-                <Lock className="w-8 h-8" />
-              </div>
-
-              <div>
-                <h4 className="text-sm font-black text-slate-900 dark:text-slate-100">אזור מוגן בקוד-על</h4>
-                <p className="text-xs text-slate-600 dark:text-slate-300 mt-1 max-w-xs mx-auto font-medium">
-                  כדי לשנות את קודי הכניסה למערכת או את שם מנהל-העל, נא להזין את קוד האבטחה הראשי שלך:
-                </p>
-              </div>
-
-              <form onSubmit={handleUnlock} className="max-w-xs mx-auto space-y-3">
-                <div className="relative">
-                  <KeyRound className="w-4 h-4 text-slate-400 dark:text-slate-400 absolute right-3.5 top-1/2 -translate-y-1/2 pointer-events-none" />
-                  <input
-                    type="password"
-                    inputMode="numeric"
-                    required
-                    autoFocus
-                    disabled={lockout.isLocked}
-                    value={masterPinInput}
-                    onChange={(e) => {
-                      setMasterPinInput(e.target.value);
-                      setPinError(null);
-                    }}
-                    placeholder={lockout.isLocked ? `נעול (${lockout.remainingSeconds} שניות)` : "הזן קוד אבטחה ראשי..."}
-                    className={`w-full pr-10 pl-4 py-2.5 rounded-xl border text-sm font-mono text-center text-slate-900 dark:text-slate-100 placeholder:text-slate-400 dark:placeholder:text-slate-400 focus:outline-none transition ${
-                      lockout.isLocked
-                        ? 'bg-slate-100 dark:bg-slate-900 border-slate-300 dark:border-slate-700 opacity-60 cursor-not-allowed'
-                        : 'border-slate-300 dark:border-slate-700 bg-slate-50 dark:bg-slate-950 focus:bg-white dark:focus:bg-slate-950 focus:ring-2 focus:ring-amber-500/30 focus:border-amber-500'
-                    }`}
-                  />
-                </div>
-
-                {lockout.isLocked && (
-                  <div className="flex items-center justify-center gap-1.5 p-2 rounded-xl bg-amber-50 dark:bg-amber-950/70 border border-amber-200 dark:border-amber-800 text-amber-800 dark:text-amber-300 text-xs font-bold">
-                    <Clock className="w-4 h-4 text-amber-600 animate-spin" />
-                    <span>נעילה פעילה: שחרור בעוד {lockout.remainingSeconds} שניות</span>
-                  </div>
-                )}
-
-                {pinError && !lockout.isLocked && (
-                  <div className="text-xs font-bold text-red-600 dark:text-red-400 bg-red-50 dark:bg-red-950/70 p-2 rounded-xl border border-red-200 dark:border-red-800">
-                    {pinError}
-                  </div>
-                )}
-
-                <button
-                  type="submit"
-                  disabled={lockout.isLocked}
-                  className={`w-full py-2.5 rounded-xl text-white text-xs font-extrabold flex items-center justify-center gap-2 shadow-sm transition ${
-                    lockout.isLocked
-                      ? 'bg-slate-400 dark:bg-slate-700 cursor-not-allowed opacity-60'
-                      : 'bg-gradient-to-l from-amber-600 to-indigo-600 hover:from-amber-700 hover:to-indigo-700 cursor-pointer'
-                  }`}
-                >
-                  <Unlock className="w-4 h-4" />
-                  <span>אימות קוד אבטחה ופתיחת נעילה</span>
-                </button>
-              </form>
+          {/* Password Management Link */}
+          <div className="flex flex-wrap items-center justify-between gap-2 p-3.5 rounded-xl bg-slate-50 dark:bg-slate-800/60 border border-slate-200 dark:border-slate-700">
+            <div className="flex items-center gap-2 text-xs text-slate-700 dark:text-slate-200">
+              <UserCheck className="w-4 h-4 text-indigo-600 dark:text-indigo-400 shrink-0" />
+              <span>איפוס סיסמאות והשבתת חשבונות מתבצעים מאובטח ב-Firebase Authentication Console:</span>
             </div>
-          ) : (
-            /* Unlocked State: Edit Super Admin & Access Passwords */
-            <form onSubmit={handleSaveSecurity} className="space-y-4">
-              <div className="p-3 rounded-2xl bg-emerald-50 dark:bg-emerald-950/50 border border-emerald-200/80 dark:border-emerald-800/80 text-[11px] font-bold text-emerald-800 dark:text-emerald-300 flex items-center justify-between">
-                <div className="flex items-center gap-2">
-                  <CheckCircle2 className="w-4 h-4 text-emerald-600 dark:text-emerald-400" />
-                  <span>נעילה שוחררה בהצלחה באמצעות קוד האבטחה הראשי</span>
-                </div>
-                <button
-                  type="button"
-                  onClick={() => setIsUnlocked(false)}
-                  className="text-[10px] text-slate-500 dark:text-slate-400 hover:text-slate-800 dark:hover:text-slate-200 underline cursor-pointer"
-                >
-                  נעל מחדש
-                </button>
+            <a
+              href={`https://console.firebase.google.com/project/${encodeURIComponent(projectId)}/authentication/users`}
+              target="_blank"
+              rel="noreferrer"
+              className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-bold transition"
+            >
+              <span>פתח ניהול משתמשים</span>
+              <ExternalLink className="w-3.5 h-3.5" />
+            </a>
+          </div>
+
+          {/* Immutable Server Audit Log */}
+          <div className="space-y-2.5">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <History className="w-4 h-4 text-indigo-600 dark:text-indigo-400" />
+                <h4 className="text-sm font-extrabold text-slate-900 dark:text-slate-100">
+                  יומן ביקורת שרת ({logs.length} פעולות אחרונות)
+                </h4>
               </div>
+              <button
+                type="button"
+                onClick={loadLogs}
+                disabled={isLoading}
+                className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 hover:bg-slate-50 dark:hover:bg-slate-700 text-xs font-bold text-slate-700 dark:text-slate-200 cursor-pointer transition disabled:opacity-50"
+              >
+                <RefreshCw className={`w-3.5 h-3.5 ${isLoading ? 'animate-spin' : ''}`} />
+                <span>רענן יומן</span>
+              </button>
+            </div>
 
-              {/* Super Admin Name */}
-              <div className="p-4 rounded-2xl bg-amber-50/60 dark:bg-amber-950/40 border border-amber-200/90 dark:border-amber-800/60 space-y-2">
-                <label className="block text-xs font-extrabold text-amber-950 dark:text-amber-300 flex items-center gap-1.5">
-                  <UserCheck className="w-4 h-4 text-amber-600 dark:text-amber-400" />
-                  <span>שם מנהל-העל:</span>
-                </label>
-                <input
-                  type="text"
-                  required
-                  value={superAdminName}
-                  onChange={(e) => setSuperAdminName(e.target.value)}
-                  placeholder="הזן שם מנהל-על..."
-                  className="w-full px-3.5 py-2 rounded-xl bg-white dark:bg-slate-950 border border-amber-300 dark:border-amber-700 text-xs font-bold text-slate-900 dark:text-slate-100 placeholder:text-slate-400 dark:placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-amber-500/30"
-                />
-                <p className="text-[11px] text-amber-800/80 dark:text-amber-300 leading-relaxed">
-                  שם זה מוגדר כמנהל הראשי של המערכת ולא ניתן למחיקה.
-                </p>
+            {error && (
+              <div className="p-3 rounded-xl bg-red-50 dark:bg-red-950/60 border border-red-200 dark:border-red-800 text-xs font-semibold text-red-700 dark:text-red-300">
+                {error}
               </div>
+            )}
 
-              {/* Change Passwords Fields */}
-              <div className="space-y-3 pt-1">
-                <div className="text-xs font-extrabold text-slate-800 dark:text-slate-200 flex items-center gap-1.5">
-                  <KeyRound className="w-4 h-4 text-indigo-600 dark:text-indigo-400" />
-                  <span>החלפת קודי כניסה:</span>
+            <div className="rounded-xl border border-slate-200 dark:border-slate-800 divide-y divide-slate-100 dark:divide-slate-800 max-h-72 overflow-y-auto bg-white dark:bg-slate-950">
+              {isLoading ? (
+                <div className="p-6 text-center text-xs text-slate-500">טוען יומן ביקורת מהשרת...</div>
+              ) : logs.length === 0 ? (
+                <div className="p-6 text-center text-xs text-slate-500">
+                  אין עדיין רשומות ביומן הביקורת (`std_audit_log`). פעולות רגישות שיתבצעו מעכשיו יירשמו כאן אוטומטית בלי יכולת מחיקה.
                 </div>
-
-                {/* QA Code */}
-                <div>
-                  <label className="block text-[11px] font-bold text-slate-700 dark:text-slate-300 mb-1">
-                    קוד כניסה לבודק QA
-                  </label>
-                  <input
-                    type="password"
-                    inputMode="numeric"
-                    value={newQaCode}
-                    onChange={(e) => setNewQaCode(e.target.value)}
-                    placeholder="הזן קוד בודק חדש..."
-                    className="w-full px-3.5 py-2 rounded-xl bg-slate-50 dark:bg-slate-950 border border-slate-300 dark:border-slate-700 text-xs font-mono text-slate-900 dark:text-slate-100 placeholder:text-slate-400 dark:placeholder:text-slate-400 focus:bg-white dark:focus:bg-slate-950 focus:outline-none focus:border-indigo-500"
-                  />
-                </div>
-
-                {/* Dev Code */}
-                <div>
-                  <label className="block text-[11px] font-bold text-slate-700 dark:text-slate-300 mb-1">
-                    קוד כניסה לצוות פיתוח
-                  </label>
-                  <input
-                    type="password"
-                    inputMode="numeric"
-                    value={newDevCode}
-                    onChange={(e) => setNewDevCode(e.target.value)}
-                    placeholder="הזן קוד מפתח חדש..."
-                    className="w-full px-3.5 py-2 rounded-xl bg-slate-50 dark:bg-slate-950 border border-slate-300 dark:border-slate-700 text-xs font-mono text-slate-900 dark:text-slate-100 placeholder:text-slate-400 dark:placeholder:text-slate-400 focus:bg-white dark:focus:bg-slate-950 focus:outline-none focus:border-indigo-500"
-                  />
-                </div>
-
-                {/* Admin Code */}
-                <div>
-                  <label className="block text-[11px] font-bold text-slate-700 dark:text-slate-300 mb-1">
-                    קוד כניסה למנהל מערכת
-                  </label>
-                  <input
-                    type="password"
-                    inputMode="numeric"
-                    value={newAdminCode}
-                    onChange={(e) => setNewAdminCode(e.target.value)}
-                    placeholder="הזן קוד מנהל חדש..."
-                    className="w-full px-3.5 py-2 rounded-xl bg-slate-50 dark:bg-slate-950 border border-slate-300 dark:border-slate-700 text-xs font-mono text-slate-900 dark:text-slate-100 placeholder:text-slate-400 dark:placeholder:text-slate-400 focus:bg-white dark:focus:bg-slate-950 focus:outline-none focus:border-indigo-500"
-                  />
-                </div>
-              </div>
-
-              {/* Action Buttons */}
-              <div className="pt-2 flex flex-col sm:flex-row gap-2">
-                <button
-                  type="submit"
-                  className="flex-1 py-2.5 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-extrabold flex items-center justify-center gap-1.5 cursor-pointer shadow-xs transition"
-                >
-                  <Save className="w-4 h-4" />
-                  <span>שמור שינויים</span>
-                </button>
-                <button
-                  type="button"
-                  onClick={handleResetDefaults}
-                  className="py-2.5 px-3 rounded-xl bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-600 dark:text-slate-300 hover:text-red-700 dark:hover:text-red-400 text-xs font-bold flex items-center justify-center gap-1.5 cursor-pointer transition border border-slate-200 dark:border-slate-700"
-                  title="איפוס קודים לברירות מחדל"
-                >
-                  <RotateCcw className="w-3.5 h-3.5" />
-                  <span>שחזר ברירות מחדל</span>
-                </button>
-              </div>
-            </form>
-          )}
+              ) : (
+                logs.map((entry) => {
+                  const badge = CATEGORY_LABELS[entry.category] || CATEGORY_LABELS.security;
+                  return (
+                    <div
+                      key={entry.id}
+                      className="p-3 flex flex-col sm:flex-row sm:items-center justify-between gap-2 text-xs hover:bg-slate-50/70 dark:hover:bg-slate-900/70"
+                    >
+                      <div className="space-y-0.5 min-w-0">
+                        <div className="flex flex-wrap items-center gap-1.5">
+                          <span
+                            className={`px-2 py-0.5 rounded-md border text-[10px] font-extrabold ${badge.cls}`}
+                          >
+                            {badge.label}
+                          </span>
+                          <span className="font-bold text-slate-900 dark:text-slate-100 break-words">
+                            {entry.action}
+                          </span>
+                        </div>
+                        <div className="text-[11px] text-slate-500 dark:text-slate-400 flex flex-wrap items-center gap-2">
+                          <span>מבצע: <strong>{entry.actorName}</strong></span>
+                          {entry.actorEmail && <span dir="ltr" className="font-mono">({entry.actorEmail})</span>}
+                          {entry.target && <span>• יעד: {entry.target}</span>}
+                        </div>
+                      </div>
+                      <span
+                        dir="ltr"
+                        className="text-[11px] font-mono text-slate-400 dark:text-slate-500 shrink-0"
+                      >
+                        {formatTime(entry.createdAt)}
+                      </span>
+                    </div>
+                  );
+                })
+              )}
+            </div>
+          </div>
         </div>
 
-        <div className="flex justify-end px-6 py-3 bg-slate-50 dark:bg-slate-950 border-t border-slate-200 dark:border-slate-800 shrink-0">
+        <div className="px-6 py-3.5 bg-slate-50 dark:bg-slate-950 border-t border-slate-200 dark:border-slate-800 flex justify-end shrink-0">
           <button
             type="button"
             onClick={onClose}
-            className="px-5 py-2 rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-700 dark:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-700 text-xs font-bold cursor-pointer"
+            className="px-5 py-2 rounded-xl bg-slate-900 dark:bg-indigo-600 hover:bg-slate-800 dark:hover:bg-indigo-700 text-white text-xs font-bold cursor-pointer transition"
           >
             סגור
           </button>

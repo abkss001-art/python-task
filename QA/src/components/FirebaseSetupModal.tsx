@@ -9,7 +9,6 @@ import {
   Sparkles,
   AlertCircle,
   Link2,
-  Trash2,
   ShieldCheck,
   Lock
 } from 'lucide-react';
@@ -28,7 +27,6 @@ interface FirebaseSetupModalProps {
   currentConfig: FirebaseConfigData | null;
   syncStatus: SyncStatusInfo;
   onSaveConfig: (config: FirebaseConfigData) => Promise<{ ok: boolean; error?: string }>;
-  onDisconnectFirebase: () => void;
   onClose: () => void;
 }
 
@@ -36,7 +34,6 @@ export const FirebaseSetupModal: React.FC<FirebaseSetupModalProps> = ({
   currentConfig,
   syncStatus,
   onSaveConfig,
-  onDisconnectFirebase,
   onClose
 }) => {
   const [rawSnippet, setRawSnippet] = useState(
@@ -47,12 +44,7 @@ export const FirebaseSetupModal: React.FC<FirebaseSetupModalProps> = ({
   const [dbMode, setDbMode] = useState<'rtdb' | 'firestore'>(
     currentConfig?.mode || 'rtdb'
   );
-  const [requireFirebaseAuth, setRequireFirebaseAuth] = useState<boolean>(
-    Boolean(currentConfig?.requireFirebaseAuth)
-  );
-  const [showRulesPanel, setShowRulesPanel] = useState<boolean>(
-    Boolean(currentConfig?.requireFirebaseAuth)
-  );
+  const [showRulesPanel, setShowRulesPanel] = useState<boolean>(false);
   const [copiedRules, setCopiedRules] = useState(false);
   const [appCheckKey, setAppCheckKey] = useState<string>(currentConfig?.appCheckSiteKey || '');
   const [error, setError] = useState<string | null>(null);
@@ -85,7 +77,7 @@ export const FirebaseSetupModal: React.FC<FirebaseSetupModalProps> = ({
     }
 
     parsed.mode = dbMode;
-    parsed.requireFirebaseAuth = requireFirebaseAuth;
+    parsed.requireFirebaseAuth = true;
     const cleanAppCheck = appCheckKey.trim();
     if (cleanAppCheck && !isValidAppCheckSiteKey(cleanAppCheck)) {
       setError('מפתח ה-reCAPTCHA v3 (App Check) אינו תקין. יש להדביק את ה-Site Key בלבד.');
@@ -107,7 +99,7 @@ export const FirebaseSetupModal: React.FC<FirebaseSetupModalProps> = ({
     const parsed = parseFirebaseSnippet(rawSnippet) || currentConfig;
     if (!parsed) return;
     parsed.mode = dbMode;
-    parsed.requireFirebaseAuth = requireFirebaseAuth;
+    parsed.requireFirebaseAuth = true;
     if (isValidAppCheckSiteKey(appCheckKey)) parsed.appCheckSiteKey = appCheckKey.trim();
     const link = createShareableTeamLink(parsed);
     navigator.clipboard.writeText(link);
@@ -166,26 +158,13 @@ export const FirebaseSetupModal: React.FC<FirebaseSetupModalProps> = ({
                     ? `מחובר לענן Firebase Realtime Database (${syncStatus.projectId})`
                     : syncStatus.mode === 'firebase-firestore' && syncStatus.connected
                     ? `מחובר לענן Firebase Firestore (${syncStatus.projectId})`
-                    : 'פועל כעת על שרת סנכרון חי מובנה (SSE Live Server)'}
+                    : 'ממתין לחיבור מאובטח ל-Firebase'}
                 </div>
                 <div className="text-xs text-slate-600 dark:text-slate-400 mt-0.5">
-                  {syncStatus.mode.startsWith('firebase')
-                    ? 'כל שינוי משודר מיד דרך Firebase לכל המשתמשים המחוברים.'
-                    : 'ניתן להדביק למטה את הגדרות ה-Firebase של הפרויקט שלך כדי לעבור לסנכרון ענן גלובלי.'}
+                  כל שינוי משודר בזמן אמת דרך Firebase בלבד — ערוצי MQTT/Bytebin הפומביים הוסרו לחלוטין מהאפליקציה.
                 </div>
               </div>
             </div>
-
-            {currentConfig && (
-              <button
-                type="button"
-                onClick={onDisconnectFirebase}
-                className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-red-50 dark:bg-red-950/60 hover:bg-red-100 dark:hover:bg-red-900 text-red-700 dark:text-red-300 border border-red-200 dark:border-red-800 text-xs font-medium transition cursor-pointer shrink-0"
-              >
-                <Trash2 className="w-3.5 h-3.5" />
-                <span>נתק Firebase</span>
-              </button>
-            )}
           </div>
 
           {/* Choose Firebase Service Mode */}
@@ -255,29 +234,21 @@ export const FirebaseSetupModal: React.FC<FirebaseSetupModalProps> = ({
             </p>
           </div>
 
-          {/* Phase 2 Server-Side Security Mode */}
+          {/* Phase 2+ Server-Side Security Mode (Permanently Enforced) */}
           <div className="rounded-xl border border-emerald-200 dark:border-emerald-800/70 bg-emerald-50/70 dark:bg-emerald-950/30 p-4 space-y-3">
-            <label className="flex items-start gap-3 cursor-pointer select-none">
-              <input
-                type="checkbox"
-                checked={requireFirebaseAuth}
-                onChange={(e) => {
-                  const next = e.target.checked;
-                  setRequireFirebaseAuth(next);
-                  if (next) setShowRulesPanel(true);
-                }}
-                className="mt-1 w-4 h-4 rounded text-emerald-600 focus:ring-emerald-500 border-slate-300 accent-emerald-600 cursor-pointer"
-              />
+            <div className="flex items-start gap-3">
+              <div className="mt-0.5 p-1.5 rounded-lg bg-emerald-600 text-white shrink-0">
+                <ShieldCheck className="w-4 h-4" />
+              </div>
               <div className="flex-1">
                 <div className="flex items-center gap-2 text-sm font-extrabold text-emerald-950 dark:text-emerald-200">
-                  <ShieldCheck className="w-4 h-4 text-emerald-600 dark:text-emerald-400 shrink-0" />
-                  <span>מצב אבטחה מלא (שלב 2): חובת אימות Firebase Auth + חוקי שרת (Rules)</span>
+                  <span>מצב אבטחה מלא (נעול תמידית): Firebase Auth + חוקי שרת + מחיצות מערכת</span>
                 </div>
                 <p className="text-xs text-emerald-800/90 dark:text-emerald-300/80 mt-0.5 leading-relaxed">
-                  מומלץ בחום לייצור! חוסם גישה אנונימית, מבטל שידור פומבי ב-MQTT/Bytebin, מאמת משתמשים באימייל+סיסמה מול Firebase Auth ואוכף הרשאות מנהל/צוות בצד השרת.
+                  גישה אנונימית ו-MQTT פומבי הוסרו לצמיתות. כל בקשה מאומתת מול Firebase Auth, הרשאות המערכות נאכפות בשרת, ופעולות רגישות מתועדות ביומן ביקורת בלתי-ניתן למחיקה (`std_audit_log`).
                 </p>
               </div>
-            </label>
+            </div>
 
             <div className="pt-2 border-t border-emerald-200/70 dark:border-emerald-800/50 space-y-1.5">
               <label className="block text-xs font-extrabold text-emerald-950 dark:text-emerald-200">

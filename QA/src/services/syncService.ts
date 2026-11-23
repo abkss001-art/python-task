@@ -18,6 +18,9 @@ import {
   get,
   remove,
   onDisconnect,
+  query,
+  orderByChild,
+  limitToLast,
   Database
 } from 'firebase/database';
 import {
@@ -29,9 +32,11 @@ import {
   setDoc,
   getDoc,
   deleteDoc,
+  query as fsQuery,
+  orderBy,
+  limit,
   Firestore
 } from 'firebase/firestore';
-import mqtt, { MqttClient } from 'mqtt';
 import {
   buildProfileAccessFields,
   hashString,
@@ -42,6 +47,7 @@ import {
   DEFAULT_SYSTEMS,
   FirebaseConfigData,
   FirebaseUserProfile,
+  ServerAuditLogEntry,
   StdIssue,
   StdSeverity,
   SyncStatusInfo,
@@ -56,8 +62,6 @@ import {
 } from '../firebaseConfig';
 import {
   clearWorkspaceAndChatsFromIndexedDB,
-  loadChatsFromIndexedDB,
-  loadWorkspaceFromIndexedDB,
   saveChatsToIndexedDB,
   saveWorkspaceToIndexedDB
 } from '../utils/idbStorage';
@@ -68,7 +72,6 @@ import {
   pruneChatMessages
 } from '../utils/chatUtils';
 import {
-  getSavedGoogleDriveSecret,
   getSavedGoogleDriveUrl,
   isDataUrlImage,
   registerFirebaseIdTokenProvider,
@@ -80,12 +83,7 @@ import {
 import {
   decodeProtectedUrl,
   encodeProtectedUrl,
-  sanitizeImageUrl,
-  CustomSecurityConfig,
-  getStoredSecurityConfig,
-  mergeCloudSecurityConfig,
-  encryptSyncPayload,
-  decryptSyncPayload
+  sanitizeImageUrl
 } from '../utils/securityUtils';
 import {
   TeamMember,
@@ -100,13 +98,11 @@ export interface SyncStatePayload {
   deletedSystemIds?: string[];
   issues: StdIssue[];
   teamMembers?: TeamMember[];
-  securityConfig?: CustomSecurityConfig;
   lastUpdatedBy?: string;
   lastAction?: string;
   updatedAt?: number;
   revision?: number;
   clientId?: string;
-  bytebinKey?: string;
   googleDriveUrl?: string;
 }
 
@@ -118,14 +114,6 @@ type ChatListener = (
 ) => void;
 type TypingListener = (typingBySystem: Record<string, ChatTypingUser[]>) => void;
 
-const CLOUD_TOPIC_STATE = 'std_qa_cloud_abkss001_v2/workspace_state';
-const CLOUD_TOPIC_STATE_V3 = 'std_qa_cloud_tzavman_v3/workspace_state';
-const CLOUD_TOPIC_PRESENCE_V4 = 'std_qa_cloud_tzavman_v4/presence/';
-const CLOUD_TOPIC_PING_V4 = 'std_qa_cloud_tzavman_v4/presence_ping';
-const CLOUD_TOPIC_CHAT_EVENT = 'std_qa_cloud_tzavman_v4/chat_event';
-const CLOUD_TOPIC_CHAT_SNAPSHOT = 'std_qa_cloud_tzavman_v4/chat_snapshot';
-const CLOUD_TOPIC_CHAT_TYPING = 'std_qa_cloud_tzavman_v4/chat_typing';
-const CLOUD_TOPIC_CHAT_PING = 'std_qa_cloud_tzavman_v4/chat_ping';
 const CHATS_LOCAL_STORAGE_KEY = 'std_qa_chats_fallback_v1';
 
 function stripUndefinedChatFields(msg: SystemChatMessage): Record<string, any> {
@@ -155,14 +143,6 @@ function stripUndefinedChatFields(msg: SystemChatMessage): Record<string, any> {
   if (msg.deletedAt !== undefined) clean.deletedAt = msg.deletedAt;
   return clean;
 }
-
-const MAX_SAFE_MQTT_BYTES = 210_000; // Safe limit under broker.emqx.io 256KB max packet size
-const BYTEBIN_POST_URL = 'https://bytebin.lucko.me/post';
-const BYTEBIN_GET_BASE = 'https://bytebin.lucko.me/';
-const REGISTRY_OBJECT_URL =
-  'https://api.restful-api.dev/objects/ff808181a09d98f701a162fda3985338';
-
-const AUTO_REFRESH_INTERVAL_MS = 5000; // Time-based auto-refresh every 5 seconds
 
 function getPersistentClientId(): string {
   try {
@@ -214,136 +194,22 @@ export function isSystemAdminAction(actionText: string | undefined): boolean {
   return /מערכת|צוות|אבטחה|ארכיון|שחזור|אתחול|גיבוי|הגדרות/i.test(actionText);
 }
 
-const INITIAL_DEMO_ISSUES: StdIssue[] = [
-  {
-    id: 'std-101',
-    system: 'CARGO',
-    testCaseId: '1',
-    platform: 'IOS',
-    severity: 'גבוהה',
-    subject: 'כפתור אישור משלוח נחתך במסך סיכום הזמנה',
-    description:
-      'בעת גלילה לתחתית מסך סיכום המשלוח במכשיר אייפון 15, כפתור "אשר ושלח" מוסתר חלקית על ידי סרגל הניווט התחתון ולא ניתן ללחוץ עליו במצב אנכי.',
-    status: 'פתוח',
-    screenshots: [],
-    comments: [
-      {
-        id: 'c-1',
-        author: 'דניאל צוות בדיקות',
-        role: 'qa',
-        text: 'שוחזר גם באייפון 14 וגם באייפון 15 Pro בגרסת iOS 17.4.',
-        createdAt: 1700000000000 - 3600000 * 3
-      },
-      {
-        id: 'c-2',
-        author: 'רועי צוות פיתוח',
-        role: 'dev',
-        text: 'בודק את ה-Safe Area padding בתחתית המסך, מעלה תיקון לסביבת הבדיקות בקרוב.',
-        createdAt: 1700000000000 - 3600000
-      }
-    ],
-    createdBy: 'דניאל צוות בדיקות',
-    createdAt: 1700000000000 - 3600000 * 4,
-    updatedAt: 1700000000000 - 3600000
-  },
-  {
-    id: 'std-102',
-    system: 'CARGO',
-    testCaseId: '2',
-    platform: 'מחשב',
-    severity: 'בינונית',
-    subject: 'שגיאת חישוב משקל כולל בעת הוספת מכולה שנייה',
-    description:
-      'כאשר מוסיפים שתי מכולות באותה תעודת משלוח, השדה "משקל כולל (ק"ג)" מציג רק את המשקל של המכולה האחרונה במקום סכום המשקלים.',
-    status: 'בטיפול',
-    screenshots: [],
-    comments: [
-      {
-        id: 'c-3',
-        author: 'מיכל צוות בדיקות',
-        role: 'qa',
-        text: 'שימו לב שזה קורה רק כשמזינים משקל עם נקודה עשרונית.',
-        createdAt: 1700000000000 - 7200000
-      }
-    ],
-    createdBy: 'מיכל צוות בדיקות',
-    createdAt: 1700000000000 - 8600000,
-    updatedAt: 1700000000000 - 7200000
-  },
-  {
-    id: 'std-103',
-    system: 'CARGO',
-    testCaseId: '3',
-    platform: 'אנדרואיד',
-    severity: 'בינונית',
-    subject: 'ייצוא תעודת משלוח ל-PDF מציג גופן הפוך בעברית',
-    description:
-      'בלחיצה על "הורד PDF" במכשיר אנדרואיד, כותרות הטבלה בעברית מודפסות משמאל לימין.',
-    status: 'ניתן לבדוק שוב',
-    screenshots: [],
-    comments: [
-      {
-        id: 'c-4',
-        author: 'רועי צוות פיתוח',
-        role: 'dev',
-        text: 'עודכן הפונט המוטמע ב-PDF ותוקן כיוון ה-RTL. אשמח לבדיקה חוזרת.',
-        createdAt: 1700000000000 - 1800000
-      }
-    ],
-    createdBy: 'דניאל צוות בדיקות',
-    createdAt: 1700000000000 - 14400000,
-    updatedAt: 1700000000000 - 1800000
-  },
-  {
-    id: 'std-201',
-    system: 'נשקי ערד',
-    testCaseId: '1',
-    platform: 'מחשב',
-    severity: 'נמוכה',
-    subject: 'איטיות בטעינת קטלוג דגמים בחיפוש לפי מספר סידורי',
-    description:
-      'חיפוש מספר סידורי מלא בטבלת המלאי לוקח מעל 6 שניות וגורם לקפיאה זמנית של הממשק.',
-    status: 'נבדק תקין',
-    screenshots: [],
-    comments: [
-      {
-        id: 'c-5',
-        author: 'אלון צוות פיתוח',
-        role: 'dev',
-        text: 'נוסף אינדקס לחיפוש מהיר ובוצע Debounce לשדה החיפוש.',
-        createdAt: 1700000000000 - 5400000
-      },
-      {
-        id: 'c-6',
-        author: 'מיכל צוות בדיקות',
-        role: 'qa',
-        text: 'נבדק שוב – התוצאות עולות תוך פחות מ-200ms. תקין!',
-        createdAt: 1700000000000 - 2400000
-      }
-    ],
-    createdBy: 'מיכל צוות בדיקות',
-    createdAt: 1700000000000 - 18000000,
-    updatedAt: 1700000000000 - 2400000
-  }
-];
-
 class RealtimeSyncService {
   private clientId = getPersistentClientId();
   private stateListeners = new Set<StateListener>();
   private statusListeners = new Set<StatusListener>();
 
   private currentState: SyncStatePayload = {
-    systems: DEFAULT_SYSTEMS,
-    issues: INITIAL_DEMO_ISSUES,
-    teamMembers: getStoredTeamMembers(),
-    securityConfig: getStoredSecurityConfig(),
+    systems: [],
+    archivedSystems: [],
+    deletedIssueIds: [],
+    deletedSystemIds: [],
+    issues: [],
+    teamMembers: [],
     revision: 0
   };
 
-  private hasReceivedInitialCloud = false;
-  private hasCheckedInitialRegistry = false;
   private highestSeenRevision = 0;
-  private lastBytebinFetched = '';
   private lastAppliedFingerprint = '';
   private isOffloadingImages = false;
   private uploadedDriveUrlCache = new Map<string, string>();
@@ -351,7 +217,8 @@ class RealtimeSyncService {
   private statusInfo: SyncStatusInfo = {
     mode: 'connecting',
     connected: false,
-    onlineCount: 1
+    onlineCount: 1,
+    requireFirebaseAuth: true
   };
 
   private firebaseApp: FirebaseApp | null = null;
@@ -368,12 +235,6 @@ class RealtimeSyncService {
   private unsubscribePresence: (() => void) | null = null;
   private unsubscribeAuthState: (() => void) | null = null;
   private unsubscribePrivateConfig: (() => void) | null = null;
-  private eventSource: EventSource | null = null;
-  private mqttClient: MqttClient | null = null;
-
-  private activePeers = new Map<string, number>();
-  private heartbeatTimer: ReturnType<typeof setInterval> | null = null;
-  private autoRefreshTimer: ReturnType<typeof setInterval> | null = null;
   private broadcastChannel: BroadcastChannel | null = null;
   private activeFirebaseConfig: FirebaseConfigData | null = null;
 
@@ -388,7 +249,6 @@ class RealtimeSyncService {
   private hasLoadedInitialChatsFirebase = false;
   private isOffloadingChatImages = false;
   private uploadedChatDriveUrlCache = new Map<string, string>();
-  private lastChatBytebinFetched = '';
 
   // Per-System Partitioned State (Phase 3 #2: server-enforced per-system access)
   private partitionIssues = new Map<string, StdIssue[]>();
@@ -404,7 +264,6 @@ class RealtimeSyncService {
     deletedIssueIds: string[];
     deletedSystemIds: string[];
     teamMembers?: TeamMember[];
-    securityConfig?: CustomSecurityConfig;
     partitionVersion?: number;
     revision?: number;
     lastUpdatedBy?: string;
@@ -423,28 +282,21 @@ class RealtimeSyncService {
     });
 
     const initialFbConfig = loadActiveFirebaseConfig();
-    const isStrictFirebaseBoot = Boolean(
-      initialFbConfig && isValidFirebaseConfig(initialFbConfig) && initialFbConfig.requireFirebaseAuth
-    );
-
-    if (isStrictFirebaseBoot) {
-      this.currentState = {
-        systems: [],
-        archivedSystems: [],
-        deletedIssueIds: [],
-        deletedSystemIds: [],
-        issues: [],
-        teamMembers: [],
-        revision: 0
-      };
-      this.chatsBySystem = {};
-    } else {
-      this.loadChatsLocally();
-    }
+    this.currentState = {
+      systems: [],
+      archivedSystems: [],
+      deletedIssueIds: [],
+      deletedSystemIds: [],
+      issues: [],
+      teamMembers: [],
+      revision: 0
+    };
+    this.chatsBySystem = {};
 
     if (typeof BroadcastChannel !== 'undefined') {
       this.broadcastChannel = new BroadcastChannel('std_qa_live_channel');
       this.broadcastChannel.onmessage = (event) => {
+        if (!this.firebaseUser || !this.firebaseUserProfile) return;
         const data = event.data;
         if (data && data.type === 'STATE_UPDATE' && data.payload) {
           const isRemote = data.payload.clientId !== this.clientId;
@@ -478,42 +330,15 @@ class RealtimeSyncService {
       }
     }, 1500);
 
-    if (typeof window !== 'undefined') {
-      const announceOffline = () => {
-        if (this.mqttClient && this.mqttClient.connected) {
-          try {
-            const offMsg = JSON.stringify({
-              online: false,
-              clientId: this.clientId,
-              timestamp: Date.now()
-            });
-            this.mqttClient.publish(`${CLOUD_TOPIC_PRESENCE_V4}${this.clientId}`, offMsg, {
-              qos: 0,
-              retain: false
-            });
-          } catch {
-            // ignore
-          }
-        }
-      };
-      window.addEventListener('beforeunload', announceOffline);
-      window.addEventListener('pagehide', announceOffline);
-
-      // Instant pull from cloud whenever phone screen wakes up or user switches back to tab!
-      document.addEventListener('visibilitychange', () => {
-        if (document.visibilityState === 'visible') {
-          this.pullLatestFromCloud(true);
-        }
-      });
-      window.addEventListener('focus', () => {
-        this.pullLatestFromCloud(true);
-      });
-    }
-
     if (initialFbConfig && isValidFirebaseConfig(initialFbConfig)) {
-      this.connectFirebase(initialFbConfig);
+      this.connectFirebase({ ...initialFbConfig, requireFirebaseAuth: true });
     } else {
-      this.connectBuiltInCloudAndServer();
+      this.updateStatus({
+        mode: 'error',
+        connected: false,
+        requireFirebaseAuth: true,
+        errorMessage: 'הגדרות Firebase חסרות — לא ניתן להתחבר לענן המאובטח.'
+      });
     }
   }
 
@@ -595,28 +420,6 @@ class RealtimeSyncService {
     for (const listener of this.typingListeners) {
       listener(grouped);
     }
-  }
-
-  private loadChatsLocally() {
-    try {
-      const raw = localStorage.getItem(CHATS_LOCAL_STORAGE_KEY);
-      if (raw) {
-        const parsed = JSON.parse(raw);
-        if (parsed && typeof parsed === 'object') {
-          this.chatsBySystem = mergeAllChats(this.chatsBySystem, parsed);
-          this.notifyChats();
-        }
-      }
-    } catch {
-      // ignore
-    }
-
-    loadChatsFromIndexedDB<Record<string, SystemChatMessage[]>>().then((idbChats) => {
-      if (idbChats && typeof idbChats === 'object') {
-        this.chatsBySystem = mergeAllChats(this.chatsBySystem, idbChats);
-        this.notifyChats();
-      }
-    });
   }
 
   private persistChatsLocally(chats: Record<string, SystemChatMessage[]>) {
@@ -722,109 +525,6 @@ class RealtimeSyncService {
         // ignore rtdb error
       }
       return;
-    }
-
-    await this.publishChatEventToMqtt(msg, isNew);
-    await this.publishChatSnapshotToMqtt(this.chatsBySystem);
-  }
-
-  private async publishChatEventToMqtt(msg: SystemChatMessage, isNew: boolean) {
-    if (!this.mqttClient || !this.mqttClient.connected) return;
-    try {
-      const eventObj: Record<string, any> = {
-        message: stripUndefinedChatFields(msg),
-        clientId: this.clientId,
-        isNew,
-        timestamp: Date.now()
-      };
-      let jsonStr = JSON.stringify(eventObj);
-
-      if (jsonStr.length > MAX_SAFE_MQTT_BYTES) {
-        try {
-          const encryptedFull = await encryptSyncPayload(jsonStr);
-          const bRes = await fetch(BYTEBIN_POST_URL, {
-            method: 'POST',
-            headers: { 'Content-Type': 'text/plain;charset=utf-8' },
-            body: encryptedFull
-          });
-          if (bRes.ok) {
-            const bJson = await bRes.json();
-            if (bJson && bJson.key) {
-              eventObj.bytebinKey = String(bJson.key);
-              eventObj.message = {
-                ...eventObj.message,
-                screenshots: (msg.screenshots || []).filter((s) => !isDataUrlImage(s))
-              };
-              jsonStr = JSON.stringify(eventObj);
-            }
-          }
-        } catch {
-          // ignore bytebin error
-        }
-      }
-
-      const encrypted = await encryptSyncPayload(jsonStr);
-      this.mqttClient.publish(CLOUD_TOPIC_CHAT_EVENT, encrypted, {
-        qos: 1,
-        retain: false
-      });
-    } catch {
-      // ignore
-    }
-  }
-
-  private async publishChatSnapshotToMqtt(chats: Record<string, SystemChatMessage[]>) {
-    if (!this.mqttClient || !this.mqttClient.connected) return;
-    try {
-      const payloadObj: Record<string, any> = {
-        chats,
-        updatedAt: Date.now(),
-        clientId: this.clientId
-      };
-      let jsonStr = JSON.stringify(payloadObj);
-      let bytebinKey = '';
-
-      if (jsonStr.length > MAX_SAFE_MQTT_BYTES) {
-        try {
-          const encryptedFull = await encryptSyncPayload(jsonStr);
-          const bRes = await fetch(BYTEBIN_POST_URL, {
-            method: 'POST',
-            headers: { 'Content-Type': 'text/plain;charset=utf-8' },
-            body: encryptedFull
-          });
-          if (bRes.ok) {
-            const bJson = await bRes.json();
-            if (bJson && bJson.key) {
-              bytebinKey = String(bJson.key);
-              this.lastChatBytebinFetched = bytebinKey;
-            }
-          }
-        } catch {
-          // ignore
-        }
-
-        const lightChats: Record<string, SystemChatMessage[]> = {};
-        for (const [sys, list] of Object.entries(chats)) {
-          lightChats[sys] = list.map((m) => ({
-            ...m,
-            screenshots: (m.screenshots || []).filter((s) => !isDataUrlImage(s))
-          }));
-        }
-        jsonStr = JSON.stringify({
-          chats: lightChats,
-          bytebinKey: bytebinKey || undefined,
-          updatedAt: payloadObj.updatedAt,
-          clientId: this.clientId
-        });
-      }
-
-      const encrypted = await encryptSyncPayload(jsonStr);
-      this.mqttClient.publish(CLOUD_TOPIC_CHAT_SNAPSHOT, encrypted, {
-        qos: 1,
-        retain: true
-      });
-    } catch {
-      // ignore
     }
   }
 
@@ -1054,21 +754,10 @@ class RealtimeSyncService {
         } else {
           set(typingRef, null).catch(() => {});
         }
-      } catch {
-        // ignore
-      }
+        } catch {
+          // ignore
+        }
       return;
-    }
-
-    if (this.mqttClient && this.mqttClient.connected) {
-      try {
-        this.mqttClient.publish(CLOUD_TOPIC_CHAT_TYPING, JSON.stringify(payload), {
-          qos: 0,
-          retain: false
-        });
-      } catch {
-        // ignore
-      }
     }
   }
 
@@ -1091,31 +780,19 @@ class RealtimeSyncService {
     ) {
       const oldKey = encodeFirebaseSystemKey(oldSystem);
       const newKey = encodeFirebaseSystemKey(newSystem);
-      if (this.isFirebaseAuthRequired()) {
-        const msgs = pruneChatMessages(next[newSystem] || []).map(stripUndefinedChatFields);
-        setDoc(doc(this.firestore, 'std_chats', newKey), {
-          system: newSystem,
-          messages: msgs,
-          updatedAt: Date.now(),
-          clientId: this.clientId
+      const msgs = pruneChatMessages(next[newSystem] || []).map(stripUndefinedChatFields);
+      setDoc(doc(this.firestore, 'std_chats', newKey), {
+        system: newSystem,
+        messages: msgs,
+        updatedAt: Date.now(),
+        clientId: this.clientId
+      })
+        .then(() => {
+          if (oldKey !== newKey && this.firestore) {
+            return deleteDoc(doc(this.firestore, 'std_chats', oldKey));
+          }
         })
-          .then(() => {
-            if (oldKey !== newKey && this.firestore) {
-              return deleteDoc(doc(this.firestore, 'std_chats', oldKey));
-            }
-          })
-          .catch(() => {});
-      } else {
-        const sanitized: Record<string, Record<string, any>[]> = {};
-        for (const [sys, arr] of Object.entries(next)) {
-          sanitized[sys] = pruneChatMessages(arr).map(stripUndefinedChatFields);
-        }
-        setDoc(doc(this.firestore, 'std_workspaces', 'system_chats'), {
-          chats: sanitized,
-          updatedAt: Date.now(),
-          clientId: this.clientId
-        }).catch(() => {});
-      }
+        .catch(() => {});
       return;
     }
 
@@ -1135,8 +812,6 @@ class RealtimeSyncService {
         .catch(() => {});
       return;
     }
-
-    this.publishChatSnapshotToMqtt(next);
   }
 
   private applyIncomingRemoteChats(
@@ -1178,116 +853,6 @@ class RealtimeSyncService {
     }
   }
 
-  private async handleIncomingChatEvent(rawStr: string) {
-    try {
-      const decrypted = await decryptSyncPayload(rawStr);
-      const parsed = JSON.parse(decrypted);
-      if (!parsed || !parsed.message) return;
-
-      let incomingMsg: SystemChatMessage = parsed.message;
-      const isRemote = Boolean(parsed.clientId && parsed.clientId !== this.clientId);
-
-      if (parsed.bytebinKey && isRemote) {
-        try {
-          const res = await fetch(`${BYTEBIN_GET_BASE}${parsed.bytebinKey}`);
-          if (res.ok) {
-            const body = await res.text();
-            const fullDecrypted = await decryptSyncPayload(body);
-            const fullParsed = JSON.parse(fullDecrypted);
-            if (fullParsed?.message) incomingMsg = fullParsed.message;
-          }
-        } catch {
-          // fallback to light payload
-        }
-      }
-
-      if (!incomingMsg.id || !incomingMsg.system) return;
-      const existingList = this.chatsBySystem[incomingMsg.system] || [];
-      const existedBefore = existingList.some((m) => m.id === incomingMsg.id);
-      const mergedList = mergeSystemChatArrays(existingList, [incomingMsg]);
-
-      this.chatsBySystem = {
-        ...this.chatsBySystem,
-        [incomingMsg.system]: mergedList
-      };
-      this.persistChatsLocally(this.chatsBySystem);
-
-      // Clear sender's typing indicator cleanly upon message delivery
-      if (parsed.clientId) {
-        const typingKey = `${incomingMsg.system}::${parsed.clientId}`;
-        if (this.typingUsers.delete(typingKey)) {
-          this.notifyTyping();
-        }
-      }
-
-      const shouldNotifyNew = isRemote && Boolean(parsed.isNew) && !existedBefore && !incomingMsg.deletedAt;
-      this.notifyChats(shouldNotifyNew ? incomingMsg : undefined);
-    } catch {
-      // ignore malformed chat event
-    }
-  }
-
-  private async handleIncomingChatSnapshot(rawStr: string) {
-    try {
-      const decrypted = await decryptSyncPayload(rawStr);
-      const parsed = JSON.parse(decrypted);
-      if (!parsed || !parsed.chats || typeof parsed.chats !== 'object') return;
-
-      const isRemote = Boolean(parsed.clientId && parsed.clientId !== this.clientId);
-      const prevIds = new Set<string>();
-      for (const list of Object.values(this.chatsBySystem)) {
-        for (const m of list) prevIds.add(m.id);
-      }
-
-      let incomingChats: Record<string, SystemChatMessage[]> = parsed.chats;
-      if (parsed.bytebinKey && parsed.bytebinKey !== this.lastChatBytebinFetched) {
-        this.lastChatBytebinFetched = parsed.bytebinKey;
-        try {
-          const res = await fetch(`${BYTEBIN_GET_BASE}${parsed.bytebinKey}`);
-          if (res.ok) {
-            const body = await res.text();
-            const fullDecrypted = await decryptSyncPayload(body);
-            const fullParsed = JSON.parse(fullDecrypted);
-            if (fullParsed?.chats && typeof fullParsed.chats === 'object') {
-              incomingChats = fullParsed.chats;
-            }
-          }
-        } catch {
-          // ignore
-        }
-      }
-
-      const merged = mergeAllChats(this.chatsBySystem, incomingChats);
-      this.chatsBySystem = merged;
-      this.persistChatsLocally(merged);
-
-      // If peer was missing our local chat messages, re-share snapshot cleanly
-      const ourTotals = this.getChatTotals(this.chatsBySystem);
-      const peerTotals = this.getChatTotals(incomingChats);
-      if (isRemote && ourTotals.totalMessages > peerTotals.totalMessages) {
-        this.publishChatSnapshotToMqtt(merged);
-      }
-
-      // Notify only if a brand-new message arrived within the last 30s (prevents history catchup notification spam)
-      let recentNewMsg: SystemChatMessage | undefined;
-      if (isRemote) {
-        const now = Date.now();
-        for (const list of Object.values(incomingChats)) {
-          for (const m of list) {
-            if (!prevIds.has(m.id) && !m.deletedAt && now - m.createdAt < 30000) {
-              if (!recentNewMsg || m.createdAt > recentNewMsg.createdAt) {
-                recentNewMsg = m;
-              }
-            }
-          }
-        }
-      }
-      this.notifyChats(recentNewMsg);
-    } catch {
-      // ignore malformed chat snapshot
-    }
-  }
-
   private notifyState(isRemoteUpdate: boolean) {
     for (const listener of this.stateListeners) {
       listener(this.currentState, isRemoteUpdate);
@@ -1305,13 +870,6 @@ class RealtimeSyncService {
     if (payload.teamMembers && payload.teamMembers.length > 0) {
       try {
         mergeCloudTeamMembers(payload.teamMembers);
-      } catch {
-        // ignore
-      }
-    }
-    if (payload.securityConfig) {
-      try {
-        mergeCloudSecurityConfig(payload.securityConfig);
       } catch {
         // ignore
       }
@@ -1376,26 +934,6 @@ class RealtimeSyncService {
       this.unsubscribeAuthState = null;
     }
     this.hasLoadedInitialChatsFirebase = false;
-    if (this.eventSource) {
-      this.eventSource.close();
-      this.eventSource = null;
-    }
-    if (this.heartbeatTimer) {
-      clearInterval(this.heartbeatTimer);
-      this.heartbeatTimer = null;
-    }
-    if (this.autoRefreshTimer) {
-      clearInterval(this.autoRefreshTimer);
-      this.autoRefreshTimer = null;
-    }
-    if (this.mqttClient) {
-      try {
-        this.mqttClient.end(true);
-      } catch {
-        // ignore
-      }
-      this.mqttClient = null;
-    }
   }
 
   private buildFirebaseOptions(config: FirebaseConfigData) {
@@ -1519,6 +1057,7 @@ class RealtimeSyncService {
           firebaseUserEmail: cred.user.email || undefined
         });
         this.notifyAuthListeners();
+        this.recordAuditEvent('התחברות מאובטחת למערכת', 'auth');
         return { ok: true, profile };
       }
       this.notifyAuthListeners();
@@ -1640,6 +1179,11 @@ class RealtimeSyncService {
         await set(ref(this.rtdb, `std_users/${newUid}`), stripUndefinedDeep(profile));
       }
 
+      this.recordAuditEvent(
+        `יצירת חשבון Firebase Auth חדש (${role}) עבור ${cleanName}`,
+        'team',
+        cleanEmail
+      );
       return { ok: true, uid: newUid };
     } catch (err: any) {
       const code = String(err?.code || '');
@@ -1658,7 +1202,6 @@ class RealtimeSyncService {
   }
 
   private async clearLocalSensitiveCaches(): Promise<void> {
-    this.hasReceivedInitialCloud = false;
     this.highestSeenRevision = 0;
     this.lastAppliedFingerprint = '';
     this.currentState = {
@@ -1730,9 +1273,107 @@ class RealtimeSyncService {
       } else if (this.rtdb) {
         await set(ref(this.rtdb, 'std_private_config'), payload);
       }
+      this.recordAuditEvent('עדכון הגדרת Google Drive בענן המאובטח', 'backup');
     } catch {
       // ignore if user does not have admin permission on private_config
     }
+  }
+
+  /**
+   * כותב רשומת ביקורת בלתי-ניתנת למחיקה לשרת (std_audit_log) - חוקי האבטחה מאפשרים הוספה בלבד
+   */
+  public async recordAuditEvent(
+    action: string,
+    category: ServerAuditLogEntry['category'] = 'security',
+    target?: string
+  ): Promise<void> {
+    if (!this.activeFirebaseConfig || !this.firebaseUser) return;
+    const cleanAction = String(action || '').trim().slice(0, 300);
+    if (!cleanAction) return;
+    const actorName = (
+      this.firebaseUserProfile?.fullName ||
+      this.firebaseUser.email ||
+      'משתמש'
+    )
+      .trim()
+      .slice(0, 120);
+    const id = `aud-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
+    const entry: ServerAuditLogEntry = {
+      id,
+      action: cleanAction,
+      category,
+      actorUid: this.firebaseUser.uid,
+      actorName,
+      ...(this.firebaseUser.email ? { actorEmail: this.firebaseUser.email } : {}),
+      ...(target ? { target: String(target).slice(0, 120) } : {}),
+      createdAt: Date.now()
+    };
+
+    try {
+      if (this.activeFirebaseConfig.mode === 'firestore' && this.firestore) {
+        await setDoc(doc(this.firestore, 'std_audit_log', id), stripUndefinedDeep(entry));
+      } else if (this.rtdb) {
+        await set(ref(this.rtdb, `std_audit_log/${id}`), stripUndefinedDeep(entry));
+      }
+    } catch {
+      // ignore background audit write errors (never block UI)
+    }
+  }
+
+  /**
+   * שליפת רשומות יומן הביקורת האחרונות מהשרת (קריאה מותרת למנהלים בלבד לפי חוקי השרת)
+   */
+  public async fetchRecentAuditLogs(limitCount = 60): Promise<ServerAuditLogEntry[]> {
+    if (!this.activeFirebaseConfig || !this.firebaseUser) return [];
+    const entries: ServerAuditLogEntry[] = [];
+    if (this.activeFirebaseConfig.mode === 'firestore' && this.firestore) {
+      const q = fsQuery(
+        collection(this.firestore, 'std_audit_log'),
+        orderBy('createdAt', 'desc'),
+        limit(limitCount)
+      );
+      const snap = await getDocs(q);
+      snap.forEach((d) => {
+        const val = d.data() as Partial<ServerAuditLogEntry>;
+        if (val && val.action && val.createdAt) {
+          entries.push({
+            id: val.id || d.id,
+            action: String(val.action),
+            category: val.category || 'security',
+            actorUid: String(val.actorUid || ''),
+            actorName: String(val.actorName || ''),
+            actorEmail: val.actorEmail,
+            target: val.target,
+            createdAt: Number(val.createdAt)
+          });
+        }
+      });
+    } else if (this.rtdb) {
+      const q = query(
+        ref(this.rtdb, 'std_audit_log'),
+        orderByChild('createdAt'),
+        limitToLast(limitCount)
+      );
+      const snap = await get(q);
+      const raw = snap.val() as Record<string, Partial<ServerAuditLogEntry>> | null;
+      if (raw && typeof raw === 'object') {
+        for (const [key, val] of Object.entries(raw)) {
+          if (val && val.action && val.createdAt) {
+            entries.push({
+              id: val.id || key,
+              action: String(val.action),
+              category: val.category || 'security',
+              actorUid: String(val.actorUid || ''),
+              actorName: String(val.actorName || ''),
+              actorEmail: val.actorEmail,
+              target: val.target,
+              createdAt: Number(val.createdAt)
+            });
+          }
+        }
+      }
+    }
+    return entries.sort((a, b) => b.createdAt - a.createdAt);
   }
 
   private clearPartitionListeners() {
@@ -1811,7 +1452,6 @@ class RealtimeSyncService {
       deletedIssueIds: meta.deletedIssueIds,
       deletedSystemIds: meta.deletedSystemIds,
       teamMembers: meta.teamMembers,
-      securityConfig: meta.securityConfig,
       issues: scopedIssues,
       revision: meta.revision || this.highestSeenRevision,
       lastUpdatedBy: meta.lastUpdatedBy,
@@ -1821,7 +1461,6 @@ class RealtimeSyncService {
     });
 
     this.currentState = combined;
-    this.hasReceivedInitialCloud = true;
     this.persistLocally(combined);
     this.notifyState(isRemote);
   }
@@ -1916,6 +1555,11 @@ class RealtimeSyncService {
         } else if (this.rtdb) {
           await remove(ref(this.rtdb, `std_users/${uid}`)).catch(() => {});
         }
+        this.recordAuditEvent(
+          `ביטול הרשאות שרת למשתמש שהוסר: ${existingProfile.fullName}`,
+          'team',
+          existingProfile.email || uid
+        );
       }
     } catch {
       // ignore background profile sync error
@@ -1985,7 +1629,6 @@ class RealtimeSyncService {
           deletedIssueIds: baseState.deletedIssueIds || [],
           deletedSystemIds: baseState.deletedSystemIds || [],
           teamMembers: baseState.teamMembers || getStoredTeamMembers(),
-          securityConfig: baseState.securityConfig || getStoredSecurityConfig(),
           partitionVersion: 2,
           revision: Math.max(baseState.revision || 0, 1),
           lastUpdatedBy: baseState.lastUpdatedBy || 'Admin',
@@ -2057,7 +1700,6 @@ class RealtimeSyncService {
           deletedIssueIds: baseState.deletedIssueIds || [],
           deletedSystemIds: baseState.deletedSystemIds || [],
           teamMembers: baseState.teamMembers || getStoredTeamMembers(),
-          securityConfig: baseState.securityConfig || getStoredSecurityConfig(),
           partitionVersion: 2,
           revision: Math.max(baseState.revision || 0, 1),
           lastUpdatedBy: baseState.lastUpdatedBy || 'Admin',
@@ -2252,7 +1894,6 @@ class RealtimeSyncService {
               deletedIssueIds: Array.isArray(m.deletedIssueIds) ? m.deletedIssueIds : [],
               deletedSystemIds: Array.isArray(m.deletedSystemIds) ? m.deletedSystemIds : [],
               teamMembers: Array.isArray(m.teamMembers) ? m.teamMembers : undefined,
-              securityConfig: m.securityConfig,
               partitionVersion: m.partitionVersion,
               revision: m.revision,
               lastUpdatedBy: m.lastUpdatedBy,
@@ -2435,7 +2076,6 @@ class RealtimeSyncService {
                 : m.teamMembers && typeof m.teamMembers === 'object'
                 ? Object.values(m.teamMembers)
                 : undefined,
-              securityConfig: m.securityConfig,
               partitionVersion: m.partitionVersion,
               revision: m.revision,
               lastUpdatedBy: m.lastUpdatedBy,
@@ -2765,25 +2405,13 @@ class RealtimeSyncService {
     }
   }
 
-  public disconnectFirebaseAndUseLiveServer() {
-    saveFirebaseConfigLocally(null);
-    this.activeFirebaseConfig = null;
-    this.firebaseUser = null;
-    this.firebaseUserProfile = null;
-    this.updateStatus({
-      requireFirebaseAuth: false,
-      firebaseUid: undefined,
-      firebaseUserEmail: undefined
-    });
-    this.notifyAuthListeners();
-    this.connectBuiltInCloudAndServer();
-  }
-
   /**
-   * כפתור "סנכרון חי" או רענון יזום: מושך (Pull) את המצב העדכני ביותר מהענן מבלי לדרוס עם זיכרון מקומי ישן!
+   * כפתור "סנכרון חי" או רענון יזום: מרענן את המאזינים מול Firebase המאובטח
    */
   public requestManualSync() {
-    this.pullLatestFromCloud(true);
+    if (this.activeFirebaseConfig && this.firebaseUser && this.firebaseUserProfile) {
+      this.attachFirebaseDataListeners(this.activeFirebaseConfig);
+    }
   }
 
   /**
@@ -2978,15 +2606,6 @@ class RealtimeSyncService {
 
     const mergedTeamMembers = mergeCloudTeamMembers(chosenTeamMembers);
 
-    const mergedSecurityConfig: CustomSecurityConfig = {
-      ...getStoredSecurityConfig(),
-      ...(localState.securityConfig || {}),
-      ...(incomingState.securityConfig || {})
-    };
-    if (Object.keys(mergedSecurityConfig).length > 0) {
-      mergeCloudSecurityConfig(mergedSecurityConfig);
-    }
-
     return {
       systems: finalSystems,
       archivedSystems: Array.from(archivedSet),
@@ -2994,495 +2613,17 @@ class RealtimeSyncService {
       deletedSystemIds: Array.from(deletedSystemSet),
       issues: mergedIssues,
       teamMembers: mergedTeamMembers,
-      securityConfig: Object.keys(mergedSecurityConfig).length > 0 ? mergedSecurityConfig : undefined,
       lastUpdatedBy: primary.lastUpdatedBy || localState.lastUpdatedBy,
       lastAction: primary.lastAction || localState.lastAction,
       updatedAt: Math.max(incomingState.updatedAt || 0, localState.updatedAt || 0),
       revision: Math.max(incomingState.revision || 0, localState.revision || 0),
       clientId: primary.clientId || this.clientId,
-      bytebinKey: incomingState.bytebinKey || localState.bytebinKey,
       googleDriveUrl:
         incomingState.googleDriveUrl ||
         localState.googleDriveUrl ||
         getSavedGoogleDriveUrl() ||
         undefined
     };
-  }
-
-  /**
-   * משיכה שקטה מהענן (פועלת אוטומטית כל 5 שניות, בעת פתיחת מסך הטלפון, ובלחיצה על "סנכרון חי")
-   */
-  private async pullLatestFromCloud(forceMqttResubscribe = false) {
-    // When Firebase is active (especially in Auth-enforced mode), Firebase real-time listeners handle sync exclusively.
-    // Never fall back to public MQTT / Registry / Bytebin endpoints.
-    if (this.activeFirebaseConfig) {
-      return;
-    }
-
-    if (this.mqttClient && this.mqttClient.connected) {
-      try {
-        if (forceMqttResubscribe || !this.hasReceivedInitialCloud) {
-          this.mqttClient.subscribe(CLOUD_TOPIC_STATE, { qos: 1 });
-        }
-        // Ask all connected peers if anyone has a newer revision or more issues
-        this.mqttClient.publish(
-          CLOUD_TOPIC_PING_V4,
-          JSON.stringify({
-            type: 'STATE_SYNC_CHECK',
-            clientId: this.clientId,
-            revision: this.currentState.revision || 0,
-            issueCount: this.currentState.issues.length,
-            timestamp: Date.now()
-          }),
-          { qos: 0, retain: false }
-        );
-      } catch {
-        // ignore
-      }
-    }
-
-    // Only check the public fallback registry once on initial load if MQTT hasn't delivered yet
-    if (this.hasReceivedInitialCloud || this.hasCheckedInitialRegistry) {
-      return;
-    }
-    this.hasCheckedInitialRegistry = true;
-
-    try {
-      const regRes = await fetch(REGISTRY_OBJECT_URL, { cache: 'no-store' });
-      if (!regRes.ok) return;
-      const regJson = await regRes.json();
-      const regData = regJson?.data;
-      if (!regData || !regData.bytebinKey) return;
-
-      const cloudRev = Number(regData.revision || 0);
-      const localRev = Number(this.currentState.revision || 0);
-
-      if (!this.hasReceivedInitialCloud && cloudRev >= localRev) {
-        const bRes = await fetch(`${BYTEBIN_GET_BASE}${regData.bytebinKey}`, {
-          cache: 'no-store'
-        });
-        if (!bRes.ok) return;
-        const bText = await bRes.text();
-        const decryptedText = await decryptSyncPayload(bText);
-        const fullData = JSON.parse(decryptedText);
-        if (fullData && Array.isArray(fullData.issues)) {
-          this.lastBytebinFetched = regData.bytebinKey;
-          const normalized = this.normalizePayload(fullData);
-          if (cloudRev > (normalized.revision || 0)) {
-            normalized.revision = cloudRev;
-          }
-          this.handleIncomingCloudState(normalized);
-        }
-      }
-    } catch {
-      // ignore network error during initial fallback check
-    }
-  }
-
-  private handleIncomingCloudState(normalized: SyncStatePayload) {
-    const incomingRev = Number(normalized.revision || 0);
-    const localRev = Number(this.currentState.revision || 0);
-    const isFirstLoad = !this.hasReceivedInitialCloud;
-
-    // Always merge using Anti-Wipe Union Merge so no Excel rows or issues can ever be wiped by a stale device!
-    const merged = this.mergeWorkspaceStates(this.currentState, normalized);
-    const mergedFp = this.computeFingerprint(merged);
-
-    this.hasReceivedInitialCloud = true;
-    this.highestSeenRevision = Math.max(
-      this.highestSeenRevision,
-      incomingRev,
-      localRev,
-      merged.revision || 0
-    );
-
-    // If a remote device sent us a stale/partial list that was missing issues we already have (e.g. Excel rows),
-    // heal the cloud immediately by re-publishing the complete merged list!
-    const remoteWasMissingOurIssues =
-      !isFirstLoad &&
-      normalized.clientId &&
-      normalized.clientId !== this.clientId &&
-      merged.issues.length > normalized.issues.length;
-
-    if (remoteWasMissingOurIssues) {
-      const healedRev = this.highestSeenRevision + 1;
-      this.highestSeenRevision = healedRev;
-      merged.revision = healedRev;
-    }
-
-    if (mergedFp === this.lastAppliedFingerprint && !isFirstLoad && !remoteWasMissingOurIssues) {
-      return;
-    }
-    this.lastAppliedFingerprint = this.computeFingerprint(merged);
-
-    const isRemote = Boolean(
-      !isFirstLoad && normalized.clientId && normalized.clientId !== this.clientId
-    );
-
-    this.currentState = merged;
-    this.persistLocally(merged);
-
-    this.updateStatus({
-      mode: 'live-server',
-      connected: true,
-      lastSyncAt: Date.now(),
-      lastEventText:
-        merged.lastAction && !isSystemAdminAction(merged.lastAction)
-          ? `${merged.lastUpdatedBy || 'צוות'}: ${merged.lastAction}`
-          : undefined
-    });
-    this.notifyState(isRemote);
-
-    if (remoteWasMissingOurIssues) {
-      this.publishStateToMqtt(merged);
-    }
-
-    // If payload had heavy screenshots offloaded to bytebinKey, fetch and merge them seamlessly
-    if (normalized.bytebinKey && normalized.bytebinKey !== this.lastBytebinFetched) {
-      this.lastBytebinFetched = normalized.bytebinKey;
-      fetch(`${BYTEBIN_GET_BASE}${normalized.bytebinKey}`)
-        .then((r) => (r.ok ? r.text() : null))
-        .then(async (bodyText) => {
-          if (!bodyText) return;
-          const decrypted = await decryptSyncPayload(bodyText);
-          const fullData = JSON.parse(decrypted);
-          if (fullData && Array.isArray(fullData.issues)) {
-            const fullNorm = this.normalizePayload(fullData);
-            const fullMerged = this.mergeWorkspaceStates(this.currentState, fullNorm);
-            this.lastAppliedFingerprint = this.computeFingerprint(fullMerged);
-            this.currentState = fullMerged;
-            this.persistLocally(fullMerged);
-            this.notifyState(false);
-          }
-        })
-        .catch(() => {});
-    }
-  }
-
-  /**
-   * סנכרון ענן מובנה אוטומטי + רענון מחזורי לפי זמן (כל 5 שניות)
-   */
-  public connectBuiltInCloudAndServer() {
-    this.cleanupConnections();
-    this.hasReceivedInitialCloud = false;
-    this.hasCheckedInitialRegistry = false;
-    this.updateStatus({
-      mode: 'live-server',
-      connected: false,
-      errorMessage: undefined
-    });
-
-    // 1. Load cached state locally for instant display ONLY (NEVER push on page load/refresh!)
-    const cached = localStorage.getItem('std_qa_fallback_cache');
-    if (cached) {
-      try {
-        const parsed = this.normalizePayload(JSON.parse(cached));
-        this.currentState = parsed;
-        this.highestSeenRevision = Math.max(this.highestSeenRevision, parsed.revision || 0);
-        this.notifyState(false);
-      } catch {
-        // ignore
-      }
-    }
-
-    loadWorkspaceFromIndexedDB<SyncStatePayload>().then((idbState) => {
-      if (idbState && Array.isArray(idbState.issues)) {
-        const normIdb = this.normalizePayload(idbState);
-        const mergedLocal = this.mergeWorkspaceStates(this.currentState, normIdb);
-        this.currentState = mergedLocal;
-        this.highestSeenRevision = Math.max(
-          this.highestSeenRevision,
-          mergedLocal.revision || 0
-        );
-        this.notifyState(false);
-      }
-    });
-
-    // 2. Start Time-Based Auto-Refresh every 5 seconds (suspended when tab is hidden to save mobile battery)
-    this.autoRefreshTimer = setInterval(() => {
-      if (typeof document !== 'undefined' && document.visibilityState === 'hidden') {
-        return;
-      }
-      this.pullLatestFromCloud(false);
-    }, AUTO_REFRESH_INTERVAL_MS);
-
-    // 3. Connect to built-in Cloud WebSocket Broker (wss://broker.emqx.io:8084/mqtt)
-    try {
-      const mqttSessionId = `std_qa_${this.clientId}_${Math.random().toString(36).substring(2, 6)}`;
-      const client = mqtt.connect('wss://broker.emqx.io:8084/mqtt', {
-        clientId: mqttSessionId,
-        clean: true,
-        connectTimeout: 8000,
-        reconnectPeriod: 3000,
-        timerVariant: 'native',
-        will: {
-          topic: `${CLOUD_TOPIC_PRESENCE_V4}${this.clientId}`,
-          payload: JSON.stringify({ online: false, clientId: this.clientId, timestamp: Date.now() }),
-          qos: 0,
-          retain: false
-        }
-      });
-
-      this.mqttClient = client;
-
-      const publishPresenceOnline = () => {
-        if (!client.connected) return;
-        const now = Date.now();
-        this.activePeers.set(this.clientId, now);
-        const onMsg = JSON.stringify({ online: true, clientId: this.clientId, timestamp: now });
-        client.publish(`${CLOUD_TOPIC_PRESENCE_V4}${this.clientId}`, onMsg, {
-          qos: 0,
-          retain: false
-        });
-        this.updateStatus({
-          onlineCount: Math.max(1, this.activePeers.size)
-        });
-      };
-
-      client.on('connect', () => {
-        this.updateStatus({
-          mode: 'live-server',
-          connected: true,
-          errorMessage: undefined
-        });
-
-        client.subscribe(CLOUD_TOPIC_STATE, { qos: 1 });
-        client.subscribe(`${CLOUD_TOPIC_PRESENCE_V4}+`, { qos: 0 });
-        client.subscribe(CLOUD_TOPIC_PING_V4, { qos: 0 });
-        client.subscribe(CLOUD_TOPIC_CHAT_EVENT, { qos: 1 });
-        client.subscribe(CLOUD_TOPIC_CHAT_SNAPSHOT, { qos: 1 });
-        client.subscribe(CLOUD_TOPIC_CHAT_TYPING, { qos: 0 });
-        client.subscribe(CLOUD_TOPIC_CHAT_PING, { qos: 0 });
-
-        publishPresenceOnline();
-
-        client.publish(
-          CLOUD_TOPIC_PING_V4,
-          JSON.stringify({
-            type: 'STATE_SYNC_CHECK',
-            clientId: this.clientId,
-            revision: this.currentState.revision || 0,
-            issueCount: this.currentState.issues.length,
-            timestamp: Date.now()
-          }),
-          { qos: 0, retain: false }
-        );
-
-        const chatTotals = this.getChatTotals(this.chatsBySystem);
-        client.publish(
-          CLOUD_TOPIC_CHAT_PING,
-          JSON.stringify({
-            type: 'CHAT_SYNC_CHECK',
-            clientId: this.clientId,
-            totalMessages: chatTotals.totalMessages,
-            latestUpdatedAt: chatTotals.latestUpdatedAt,
-            timestamp: Date.now()
-          }),
-          { qos: 0, retain: false }
-        );
-
-        // Only if this device had an interrupted user save ('std_qa_pending_push' === '1'), complete it now
-        if (localStorage.getItem('std_qa_pending_push') === '1') {
-          this.publishStateToMqtt(this.currentState);
-        }
-      });
-
-      this.heartbeatTimer = setInterval(() => {
-        if (typeof document === 'undefined' || document.visibilityState === 'visible') {
-          publishPresenceOnline();
-        }
-        const nowLocal = Date.now();
-        for (const [id, seenAtLocal] of this.activePeers.entries()) {
-          // If a peer has not sent a heartbeat in 30 seconds, consider them disconnected
-          if (id !== this.clientId && nowLocal - seenAtLocal > 30000) {
-            this.activePeers.delete(id);
-          }
-        }
-        this.updateStatus({
-          onlineCount: Math.max(1, this.activePeers.size)
-        });
-      }, 10000);
-
-      client.on('message', async (topic, message) => {
-        try {
-          const rawStr = message.toString();
-          if (!rawStr) return;
-
-          if (topic === CLOUD_TOPIC_STATE) {
-            const decryptedStr = await decryptSyncPayload(rawStr);
-            const parsed = JSON.parse(decryptedStr);
-            const normalized = this.normalizePayload(parsed);
-            this.handleIncomingCloudState(normalized);
-          } else if (topic === CLOUD_TOPIC_PING_V4) {
-            const data = JSON.parse(rawStr);
-            if (data && data.clientId) {
-              const now = Date.now();
-              // Ignore stale or delayed packets older than 25s
-              if (data.timestamp && Math.abs(now - data.timestamp) > 25000) {
-                return;
-              }
-              if (data.clientId !== this.clientId) {
-                this.activePeers.set(data.clientId, now);
-              }
-              this.activePeers.set(this.clientId, now);
-              this.updateStatus({
-                onlineCount: Math.max(1, this.activePeers.size)
-              });
-              if (data.clientId !== this.clientId) {
-                if (data.type === 'PING') {
-                  publishPresenceOnline();
-                } else if (data.type === 'STATE_SYNC_CHECK') {
-                  publishPresenceOnline();
-                  const peerRev = Number(data.revision || 0);
-                  const peerIssueCount = Number(data.issueCount || 0);
-                  const myRev = Number(this.currentState.revision || 0);
-                  const myIssueCount = this.currentState.issues.length;
-                  // If we have a newer revision OR more non-deleted issues than the peer, broadcast our state!
-                  if (myRev > peerRev || (myRev > 0 && myIssueCount > peerIssueCount)) {
-                    this.publishStateToMqtt(this.currentState);
-                  }
-                }
-              }
-            }
-          } else if (topic.startsWith(CLOUD_TOPIC_PRESENCE_V4)) {
-            const peerId = topic.replace(CLOUD_TOPIC_PRESENCE_V4, '');
-            if (!peerId) return;
-
-            const data = JSON.parse(rawStr);
-            const now = Date.now();
-            // Ignore stale packets
-            if (data && data.timestamp && Math.abs(now - data.timestamp) > 25000) {
-              return;
-            }
-            if (data && data.online) {
-              if (peerId !== this.clientId) {
-                this.activePeers.set(peerId, now);
-              }
-            } else {
-              this.activePeers.delete(peerId);
-            }
-            this.activePeers.set(this.clientId, now);
-            this.updateStatus({
-              onlineCount: Math.max(1, this.activePeers.size)
-            });
-          } else if (topic === CLOUD_TOPIC_CHAT_EVENT) {
-            await this.handleIncomingChatEvent(rawStr);
-          } else if (topic === CLOUD_TOPIC_CHAT_SNAPSHOT) {
-            await this.handleIncomingChatSnapshot(rawStr);
-          } else if (topic === CLOUD_TOPIC_CHAT_PING) {
-            const data = JSON.parse(rawStr);
-            if (data && data.clientId && data.clientId !== this.clientId) {
-              const now = Date.now();
-              if (data.timestamp && Math.abs(now - data.timestamp) > 25000) {
-                return;
-              }
-              const peerTotal = Number(data.totalMessages || 0);
-              const peerLatest = Number(data.latestUpdatedAt || 0);
-              const myTotals = this.getChatTotals(this.chatsBySystem);
-              if (
-                myTotals.totalMessages > peerTotal ||
-                (myTotals.totalMessages > 0 && myTotals.latestUpdatedAt > peerLatest)
-              ) {
-                this.publishChatSnapshotToMqtt(this.chatsBySystem);
-              }
-            }
-          } else if (topic === CLOUD_TOPIC_CHAT_TYPING) {
-            const data = JSON.parse(rawStr);
-            if (
-              data &&
-              data.clientId &&
-              data.clientId !== this.clientId &&
-              data.system &&
-              data.author
-            ) {
-              const now = Date.now();
-              if (data.timestamp && Math.abs(now - data.timestamp) > 15000) {
-                return;
-              }
-              const key = `${data.system}::${data.clientId}`;
-              if (data.isTyping) {
-                this.typingUsers.set(key, {
-                  system: data.system,
-                  author: data.author,
-                  clientId: data.clientId,
-                  updatedAt: now
-                });
-              } else {
-                this.typingUsers.delete(key);
-              }
-              this.notifyTyping();
-            }
-          }
-        } catch {
-          // ignore malformed payload
-        }
-      });
-    } catch {
-      // ignore MQTT errors
-    }
-  }
-
-  private async publishStateToMqtt(payload: SyncStatePayload) {
-    try {
-      const protectedPayload: SyncStatePayload = {
-        ...payload,
-        googleDriveUrl: encodeProtectedUrl(payload.googleDriveUrl)
-      };
-      const fullJsonStr = JSON.stringify(protectedPayload);
-      let bytebinKey = protectedPayload.bytebinKey || '';
-
-      // 1. If payload exceeds MQTT safe packet size (210KB), offload full snapshot to Bytebin
-      if (fullJsonStr.length > MAX_SAFE_MQTT_BYTES) {
-        try {
-          const encryptedFullStr = await encryptSyncPayload(fullJsonStr);
-          const bRes = await fetch(BYTEBIN_POST_URL, {
-            method: 'POST',
-            headers: { 'Content-Type': 'text/plain;charset=utf-8' },
-            body: encryptedFullStr
-          });
-          if (bRes.ok) {
-            const bJson = await bRes.json();
-            if (bJson && bJson.key) {
-              bytebinKey = String(bJson.key);
-              this.lastBytebinFetched = bytebinKey;
-            }
-          }
-        } catch {
-          // ignore bytebin error
-        }
-      }
-
-      // 2. Publish to primary MQTT state channel
-      if (this.mqttClient && this.mqttClient.connected) {
-        let mqttJsonStr = fullJsonStr;
-        if (mqttJsonStr.length > MAX_SAFE_MQTT_BYTES) {
-          const lightPayload: SyncStatePayload = {
-            ...protectedPayload,
-            bytebinKey: bytebinKey || undefined,
-            issues: protectedPayload.issues.map((iss) => ({
-              ...iss,
-              screenshots: (iss.screenshots || []).filter((s) => !isDataUrlImage(s)),
-              comments: (iss.comments || []).map((c) => ({
-                ...c,
-                screenshot:
-                  c.screenshot && !isDataUrlImage(c.screenshot) ? c.screenshot : undefined
-              }))
-            }))
-          };
-          mqttJsonStr = JSON.stringify(lightPayload);
-        }
-
-        const encryptedMqttStr = await encryptSyncPayload(mqttJsonStr);
-        this.mqttClient.publish(CLOUD_TOPIC_STATE, encryptedMqttStr, {
-          qos: 1,
-          retain: true
-        });
-      }
-
-      localStorage.removeItem('std_qa_pending_push');
-    } catch {
-      // ignore
-    }
   }
 
   private normalizePayload(raw: any): SyncStatePayload {
@@ -3601,11 +2742,6 @@ class RealtimeSyncService {
       teamMembers = Object.values(raw.teamMembers);
     }
 
-    let securityConfig: CustomSecurityConfig | undefined = undefined;
-    if (raw?.securityConfig && typeof raw.securityConfig === 'object') {
-      securityConfig = raw.securityConfig;
-    }
-
     return {
       systems,
       archivedSystems,
@@ -3613,13 +2749,11 @@ class RealtimeSyncService {
       deletedSystemIds,
       issues,
       teamMembers,
-      securityConfig,
       lastUpdatedBy: raw?.lastUpdatedBy,
       lastAction: raw?.lastAction,
       updatedAt: raw?.updatedAt,
       revision: Number(raw?.revision || 0),
       clientId: raw?.clientId,
-      bytebinKey: raw?.bytebinKey,
       googleDriveUrl: decodedDriveUrl || getSavedGoogleDriveUrl() || undefined
     };
   }
@@ -3777,8 +2911,6 @@ class RealtimeSyncService {
               clientId: this.clientId
             });
           }
-        } else if (!isAuthEnforced) {
-          await this.publishStateToMqtt(drivePayload);
         }
       }
 
@@ -3806,7 +2938,6 @@ class RealtimeSyncService {
       deletedSystemIds?: string[];
       issues: StdIssue[];
       teamMembers?: TeamMember[];
-      securityConfig?: CustomSecurityConfig;
       replaceAll?: boolean;
     },
     actionSummary?: string,
@@ -3820,10 +2951,6 @@ class RealtimeSyncService {
       nextState.teamMembers ||
       this.currentState.teamMembers ||
       getStoredTeamMembers();
-    const effectiveSecurityConfig =
-      nextState.securityConfig ||
-      this.currentState.securityConfig ||
-      getStoredSecurityConfig();
 
     const effectiveAction =
       actionSummary !== undefined ? actionSummary : this.currentState.lastAction;
@@ -3839,15 +2966,12 @@ class RealtimeSyncService {
         nextState.deletedSystemIds ?? this.currentState.deletedSystemIds ?? [],
       issues: nextState.issues,
       teamMembers: effectiveTeamMembers,
-      securityConfig: effectiveSecurityConfig,
       lastUpdatedBy: effectiveActor,
       lastAction: effectiveAction,
       updatedAt: Date.now(),
       revision: nextRevision,
       clientId: this.clientId,
-      googleDriveUrl: this.isFirebaseAuthRequired()
-        ? undefined
-        : getSavedGoogleDriveUrl() || undefined
+      googleDriveUrl: undefined
     };
 
     // Apply Anti-Wipe Union Merge unless Admin explicitly requested a full backup replacement
@@ -3858,15 +2982,19 @@ class RealtimeSyncService {
     if (nextState.teamMembers) {
       payload.teamMembers = nextState.teamMembers;
     }
-    if (nextState.securityConfig) {
-      payload.securityConfig = nextState.securityConfig;
-    }
 
     payload.revision = nextRevision;
     payload.lastUpdatedBy = effectiveActor;
     payload.lastAction = effectiveAction;
     payload.updatedAt = Date.now();
     payload.clientId = this.clientId;
+
+    if (nextState.replaceAll) {
+      this.recordAuditEvent(
+        actionSummary || `שחזור/החלפת מסד נתונים (${payload.issues.length} תקלות)`,
+        'backup'
+      );
+    }
 
     try {
       localStorage.setItem('std_qa_pending_push', '1');
@@ -3875,7 +3003,6 @@ class RealtimeSyncService {
     }
 
     this.currentState = payload;
-    this.hasReceivedInitialCloud = true;
     this.lastAppliedFingerprint = this.computeFingerprint(payload);
     this.notifyState(false);
     this.persistLocally(payload);
@@ -3934,7 +3061,6 @@ class RealtimeSyncService {
               deletedIssueIds: payload.deletedIssueIds || [],
               deletedSystemIds: payload.deletedSystemIds || [],
               teamMembers: payload.teamMembers,
-              securityConfig: payload.securityConfig,
               partitionVersion: 2,
               revision: payload.revision,
               updatedAt: payload.updatedAt,
@@ -4006,7 +3132,6 @@ class RealtimeSyncService {
               deletedIssueIds: payload.deletedIssueIds || [],
               deletedSystemIds: payload.deletedSystemIds || [],
               teamMembers: payload.teamMembers,
-              securityConfig: payload.securityConfig,
               partitionVersion: 2,
               revision: payload.revision,
               updatedAt: payload.updatedAt,
@@ -4038,29 +3163,7 @@ class RealtimeSyncService {
       return;
     }
 
-    // Never downgrade to unauthenticated public MQTT/Bytebin if strict Firebase Auth mode is enabled
-    if (isAuthEnforced) {
-      return;
-    }
-
-    // 3. Publish immediately to MQTT
-    await this.publishStateToMqtt(payload);
-
-    // 4. If Google Drive (5TB) is connected, offload any new Base64 screenshots safely and update Drive backup
-    if (getSavedGoogleDriveUrl()) {
-      this.offloadNewImagesToGoogleDriveInBackground();
-    }
-
-    // 5. Also push to local server if running locally
-    try {
-      await fetch('/api/std-state', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(payload)
-      });
-    } catch {
-      // ignore on static hosting
-    }
+    // Strict Firebase-only mode: never publish to public MQTT/Bytebin or unauthenticated local endpoints
   }
 }
 

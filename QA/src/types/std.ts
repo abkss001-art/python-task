@@ -208,3 +208,14 @@ export const STATUS_CONFIG: Record<
     solidBg: 'bg-emerald-600 text-white'
   }
 };
+
+export interface ServerAuditLogEntry {
+  id: string;
+  action: string;
+  category: 'auth' | 'issue' | 'team' | 'system' | 'backup' | 'security';
+  actorUid: string;
+  actorName: string;
+  actorEmail?: string;
+  target?: string;
+  createdAt: number;
+}

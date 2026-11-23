@@ -234,11 +234,11 @@ function productionCspPlugin(): Plugin {
   const cspValue = [
     "default-src 'self'",
     "script-src 'self' https://www.google.com/recaptcha/ https://www.gstatic.com/recaptcha/",
-    "worker-src 'self' blob:",
+    "worker-src 'self'",
     "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com",
     "font-src 'self' https://fonts.gstatic.com data:",
     "img-src 'self' data: blob: https://drive.google.com https://*.googleusercontent.com https://firebasestorage.googleapis.com",
-    "connect-src 'self' wss://broker.emqx.io:8084 wss://broker.emqx.io:* https://bytebin.lucko.me https://api.restful-api.dev https://script.google.com https://script.googleusercontent.com https://*.firebaseio.com wss://*.firebaseio.com https://*.firebasedatabase.app wss://*.firebasedatabase.app https://firestore.googleapis.com https://*.googleapis.com https://www.google.com/recaptcha/",
+    "connect-src 'self' https://script.google.com https://script.googleusercontent.com https://*.firebaseio.com wss://*.firebaseio.com https://*.firebasedatabase.app wss://*.firebasedatabase.app https://firestore.googleapis.com https://*.googleapis.com https://www.google.com/recaptcha/",
     "frame-src https://www.google.com/recaptcha/ https://recaptcha.google.com",
     "object-src 'none'",
     "base-uri 'self'",
@@ -266,8 +266,7 @@ export default defineConfig({
       output: {
         manualChunks: {
           'vendor-react': ['react', 'react-dom'],
-          'vendor-firebase': ['firebase/app', 'firebase/database', 'firebase/firestore'],
-          'vendor-mqtt': ['mqtt'],
+          'vendor-firebase': ['firebase/app', 'firebase/auth', 'firebase/app-check', 'firebase/database', 'firebase/firestore'],
           'vendor-icons': ['lucide-react']
         }
       }

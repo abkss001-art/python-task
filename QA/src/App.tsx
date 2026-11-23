@@ -83,10 +83,7 @@ import {
 } from 'lucide-react';
 import {
   computeUserAuthSignature,
-  isAdminAccessCode,
-  verifyUserAuthSignature,
-  getStoredSecurityConfig,
-  mergeCloudSecurityConfig
+  verifyUserAuthSignature
 } from './utils/securityUtils';
 
 const AUTH_STORAGE_KEY = 'std_qa_auth_user_v1';
@@ -410,14 +407,6 @@ export function App() {
           // ignore
         }
       }
-
-      if (state.securityConfig) {
-        try {
-          mergeCloudSecurityConfig(state.securityConfig);
-        } catch {
-          // ignore
-        }
-      }
     });
 
     const unsubStatus = syncService.subscribeStatus((status) => {
@@ -672,8 +661,7 @@ export function App() {
         systems,
         archivedSystems,
         issues: nextIssues,
-        teamMembers: updated,
-        securityConfig: getStoredSecurityConfig()
+        teamMembers: updated
       },
       toastText,
       currentUserName
@@ -690,35 +678,6 @@ export function App() {
     if (syncService.getCurrentFirebaseUser()) {
       syncService.signOutFirebase().catch(() => {});
     }
-  };
-
-  const handleSecurityUpdated = (newSuperAdminName: string) => {
-    const updatedMembers = getStoredTeamMembers();
-    setTeamMembers(updatedMembers);
-    const secConfig = getStoredSecurityConfig();
-    if (authUser && (authUser.isAdmin || authUser.fullName === newSuperAdminName)) {
-      const parts = newSuperAdminName.split(/\s+/);
-      const updatedUser: AuthenticatedUser = {
-        ...authUser,
-        fullName: newSuperAdminName,
-        firstName: parts[0] || newSuperAdminName,
-        lastName: parts.slice(1).join(' ') || ''
-      };
-      updatedUser.authSignature = computeUserAuthSignature(updatedUser);
-      setAuthUser(updatedUser);
-      localStorage.setItem(AUTH_STORAGE_KEY, JSON.stringify(updatedUser));
-    }
-    syncService.pushStateToCloud(
-      {
-        systems,
-        archivedSystems,
-        issues,
-        teamMembers: updatedMembers,
-        securityConfig: secConfig
-      },
-      undefined,
-      newSuperAdminName
-    );
   };
 
   const updateNotifPref = (patch: Partial<NotificationPreferences>) => {
@@ -932,6 +891,7 @@ export function App() {
       handleSelectSystem('HOME');
     }
     setSystemToRemove(null);
+    syncService.recordAuditEvent(`מחיקת מערכת לצמיתות: ${sysToDelete}`, 'system', sysToDelete);
     syncService.pushStateToCloud(
       {
         systems: nextSystems,
@@ -1345,6 +1305,11 @@ export function App() {
     const nextIssues = issues.filter((i) => i.id !== issueToDelete.id);
     const prevDeleted = syncService.getState().deletedIssueIds || [];
     const nextDeleted = Array.from(new Set([...prevDeleted, issueToDelete.id]));
+    syncService.recordAuditEvent(
+      `מחיקת תסריט #${issueToDelete.testCaseId} (${issueToDelete.system})`,
+      'issue',
+      issueToDelete.system
+    );
     syncService.pushStateToCloud(
       { systems, archivedSystems, deletedIssueIds: nextDeleted, issues: nextIssues },
       `מחיקת תסריט #${issueToDelete.testCaseId}`,
@@ -1739,10 +1704,6 @@ export function App() {
           onLoginSuccess={handleLoginSuccess}
           onInstallAndNotify={handleInstallAndNotify}
           notificationsEnabled={notificationsEnabled}
-          teamMembers={teamMembers}
-          firebaseAuthEnabled={Boolean(
-            syncStatus.requireFirebaseAuth || syncService.isFirebaseAuthRequired()
-          )}
           onFirebaseEmailLogin={(email, password) =>
             syncService.signInWithFirebaseEmail(email, password)
           }
@@ -2544,10 +2505,9 @@ export function App() {
         />
       )}
 
-      {/* Admin Security, Master Key & Passcodes Management Modal (Admin Only) */}
+      {/* Admin Security & Immutable Server Audit Log Modal (Admin Only) */}
       {isAdminSecurityOpen && isAdmin && (
         <AdminSecurityModal
-          onSecurityUpdated={handleSecurityUpdated}
           onClose={() => setIsAdminSecurityOpen(false)}
         />
       )}
@@ -2558,10 +2518,6 @@ export function App() {
           currentConfig={syncService.getActiveFirebaseConfig()}
           syncStatus={syncStatus}
           onSaveConfig={(cfg) => syncService.connectFirebase(cfg)}
-          onDisconnectFirebase={() => {
-            syncService.disconnectFirebaseAndUseLiveServer();
-            setIsFirebaseModalOpen(false);
-          }}
           onClose={() => setIsFirebaseModalOpen(false)}
         />
       )}
