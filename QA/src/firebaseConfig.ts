@@ -18,7 +18,7 @@ export const HARDCODED_FIREBASE_CONFIG: Partial<FirebaseConfigData> = {
   requireFirebaseAuth: import.meta.env.VITE_FIREBASE_REQUIRE_AUTH !== 'false',
   appCheckSiteKey:
     import.meta.env.VITE_FIREBASE_APPCHECK_SITE_KEY ||
-    '6Lc0-y4uAAAAAK06XUhGmjcPzityKZIH-mJbPSim'
+    '6Ld6DS8uAAAAAJpvS0uOfVDq9EWiEqFpsCixsifo'
 };
 
 export function isValidAppCheckSiteKey(key: string | undefined | null): boolean {
