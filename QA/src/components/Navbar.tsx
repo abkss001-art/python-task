@@ -43,6 +43,7 @@ interface NavbarProps {
   onOpenTeamModal?: () => void;
   onOpenSecurityModal?: () => void;
   onOpenAdminToolsModal?: () => void;
+  pendingJoinRequestsCount?: number;
   onManualSync?: () => void;
   issues: StdIssue[];
   syncStatus: SyncStatusInfo;
@@ -146,6 +147,7 @@ export const Navbar: React.FC<NavbarProps> = ({
   onOpenTeamModal,
   onOpenSecurityModal,
   onOpenAdminToolsModal,
+  pendingJoinRequestsCount = 0,
   onManualSync,
   issues,
   syncStatus,
@@ -337,8 +339,17 @@ export const Navbar: React.FC<NavbarProps> = ({
                 >
                   <MoreHorizontal className="w-4 h-4 text-indigo-600 dark:text-indigo-400" />
                   <span>כלי מנהל</span>
-                  {archivedSystems.length > 0 && (
-                    <span className="w-2 h-2 rounded-full bg-amber-500" title="יש מערכות בארכיון" />
+                  {pendingJoinRequestsCount > 0 ? (
+                    <span
+                      className="px-1.5 py-0.2 rounded-full bg-rose-500 text-white text-[10px] font-black animate-pulse"
+                      title={`${pendingJoinRequestsCount} בקשות הצטרפות ממתינות לאישור`}
+                    >
+                      {pendingJoinRequestsCount}
+                    </span>
+                  ) : (
+                    archivedSystems.length > 0 && (
+                      <span className="w-2 h-2 rounded-full bg-amber-500" title="יש מערכות בארכיון" />
+                    )
                   )}
                 </button>
               )}

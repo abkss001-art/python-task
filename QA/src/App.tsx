@@ -1,6 +1,7 @@
 import React, { useEffect, useMemo, useState, useRef, useCallback } from 'react';
 import {
   ChatTypingUser,
+  JoinRequest,
   StdAuditEntry,
   StdComment,
   StdIssue,
@@ -32,10 +33,15 @@ import { AdminBackupModal } from './components/AdminBackupModal';
 import { AdminTeamModal } from './components/AdminTeamModal';
 import { AdminSecurityModal } from './components/AdminSecurityModal';
 import { AdminQuotaModal } from './components/AdminQuotaModal';
+import {
+  AdminJoinRequestsModal,
+  PendingUndoRejection
+} from './components/AdminJoinRequestsModal';
 import { AdminSystemManageModal } from './components/AdminSystemManageModal';
 import { AdminToolsModal } from './components/AdminToolsModal';
 import { SystemSelectorHome } from './components/SystemSelectorHome';
 import { LoginScreen, AuthenticatedUser } from './components/LoginScreen';
+import { PendingApprovalScreen } from './components/PendingApprovalScreen';
 import {
   TeamMember,
   getStoredTeamMembers,
@@ -80,7 +86,10 @@ import {
   ChevronDown,
   Check,
   Flame,
-  MessageCircle
+  MessageCircle,
+  UserPlus,
+  Undo2,
+  Clock
 } from 'lucide-react';
 import { computeUserAuthSignature } from './utils/securityUtils';
 
@@ -105,6 +114,18 @@ export function App() {
 
   // Authenticated User State — hydrated strictly from verified Firebase Auth + std_users/{uid} (never pre-hydrated from localStorage)
   const [authUser, setAuthUser] = useState<AuthenticatedUser | null>(null);
+  const [waitingFirebaseUser, setWaitingFirebaseUser] = useState<{
+    uid: string;
+    email: string;
+  } | null>(null);
+  const [ownJoinRequest, setOwnJoinRequest] = useState<JoinRequest | null>(() =>
+    syncService.getOwnJoinRequest()
+  );
+  const [adminJoinRequests, setAdminJoinRequests] = useState<JoinRequest[]>(() =>
+    syncService.getAdminJoinRequests()
+  );
+  const [pendingUndoRejections, setPendingUndoRejections] = useState<PendingUndoRejection[]>([]);
+  const undoRejectionTimersRef = useRef<Record<string, number>>({});
   const [authReady, setAuthReady] = useState<boolean>(false);
 
   // Dismissible banners state (remembers dismissal per user session until logout)
@@ -189,6 +210,7 @@ export function App() {
   const [isTeamModalOpen, setIsTeamModalOpen] = useState<boolean>(false);
   const [isAdminSecurityOpen, setIsAdminSecurityOpen] = useState<boolean>(false);
   const [isAdminQuotaOpen, setIsAdminQuotaOpen] = useState<boolean>(false);
+  const [isJoinRequestsModalOpen, setIsJoinRequestsModalOpen] = useState<boolean>(false);
   const [isAdminToolsOpen, setIsAdminToolsOpen] = useState<boolean>(false);
   const [teamMembers, setTeamMembers] = useState<TeamMember[]>(() => getStoredTeamMembers());
 
@@ -282,7 +304,8 @@ export function App() {
       }
       if (!initialized) return;
       setAuthReady(true);
-      if (!rawUser || !profile) {
+      if (!rawUser) {
+        setWaitingFirebaseUser(null);
         setAuthUser(null);
         setSystems([]);
         setIssues([]);
@@ -291,6 +314,18 @@ export function App() {
         } catch {}
         return;
       }
+      if (!profile) {
+        // Signed in to Firebase Auth but not yet approved in std_users -> Waiting Room Home Page (0 data access!)
+        setWaitingFirebaseUser({ uid: rawUser.uid, email: rawUser.email || '' });
+        setAuthUser(null);
+        setSystems([]);
+        setIssues([]);
+        try {
+          localStorage.removeItem(AUTH_STORAGE_KEY);
+        } catch {}
+        return;
+      }
+      setWaitingFirebaseUser(null);
       const parts = profile.fullName.trim().split(/\s+/);
       const isServerAdmin = profile.role === 'admin';
       const syncedUser: AuthenticatedUser = {
@@ -308,6 +343,47 @@ export function App() {
       };
       syncedUser.authSignature = computeUserAuthSignature(syncedUser);
       setAuthUser(syncedUser);
+    });
+
+    const unsubOwnJoinRequest = syncService.subscribeOwnJoinRequest((req) => {
+      setOwnJoinRequest(req);
+    });
+
+    const unsubRealtimeApproval = syncService.subscribeRealtimeApproval((approvedProfile) => {
+      const roleHe =
+        approvedProfile.role === 'admin'
+          ? 'מנהל מערכת'
+          : approvedProfile.role === 'dev'
+          ? 'מפתח (צוות פיתוח)'
+          : 'בודק תוכנה (צוות QA)';
+      setLiveToast(`🎉 אושרת למערכת ע״י המנהל בתור ${roleHe}! ברוך הבא לצב מן!`);
+      setTimeout(() => setLiveToast(null), 7000);
+      const activePrefs = loadNotificationPreferences();
+      if (getNotificationPermissionState() === 'granted' || activePrefs.enabled) {
+        sendSystemNotification(
+          '🎉 אושרת למערכת "צב מן"!',
+          `אושרת ע״י המנהל בתור ${roleHe}. סביבת העבודה פתוחה עבורך עכשיו!`,
+          activePrefs.soundEnabled
+        );
+      }
+    });
+
+    const unsubAdminJoinRequests = syncService.subscribeAdminJoinRequests((list, newlyArrived) => {
+      setAdminJoinRequests(list);
+      if (newlyArrived) {
+        setLiveToast(
+          `🔔 בקשת הצטרפות חדשה מ-${newlyArrived.fullName} (ניסיון ${newlyArrived.attemptNumber}/3) — ממתין לאישור מנהל!`
+        );
+        setTimeout(() => setLiveToast(null), 6500);
+        const activePrefs = loadNotificationPreferences();
+        if (activePrefs.enabled || getNotificationPermissionState() === 'granted') {
+          sendSystemNotification(
+            '🔔 בקשת הצטרפות חדשה ב"צב מן"',
+            `${newlyArrived.fullName} (${newlyArrived.email}) מבקש אישור כניסה למערכת — בחר תפקיד בודק QA או מפתח.`,
+            activePrefs.soundEnabled
+          );
+        }
+      }
     });
 
     const unsubState = syncService.subscribeState((state, isRemoteUpdate) => {
@@ -443,6 +519,9 @@ export function App() {
 
     return () => {
       unsubFirebaseAuth();
+      unsubOwnJoinRequest();
+      unsubRealtimeApproval();
+      unsubAdminJoinRequests();
       unsubState();
       unsubStatus();
       unsubChat();
@@ -467,6 +546,7 @@ export function App() {
         isTeamModalOpen ||
         isAdminSecurityOpen ||
         isAdminQuotaOpen ||
+        isJoinRequestsModalOpen ||
         isAdminToolsOpen ||
         isChatDrawerOpen ||
         systemToManage
@@ -526,6 +606,7 @@ export function App() {
     isTeamModalOpen,
     isAdminSecurityOpen,
     isAdminQuotaOpen,
+    isJoinRequestsModalOpen,
     isAdminToolsOpen,
     isChatDrawerOpen,
     systemToManage,
@@ -645,6 +726,13 @@ export function App() {
   };
 
   const handleLogoutUser = () => {
+    Object.values(undoRejectionTimersRef.current).forEach((timerId) => window.clearTimeout(timerId));
+    undoRejectionTimersRef.current = {};
+    setPendingUndoRejections([]);
+    setWaitingFirebaseUser(null);
+    setOwnJoinRequest(null);
+    setAdminJoinRequests([]);
+    setIsJoinRequestsModalOpen(false);
     setAuthUser(null);
     setShowShortcutBanner(true);
     try {
@@ -655,6 +743,132 @@ export function App() {
       syncService.signOutFirebase().catch(() => {});
     }
   };
+
+  // Live 1-second tick for any active 10-second Undo rejection timers
+  useEffect(() => {
+    if (pendingUndoRejections.length === 0) return;
+    const intervalId = window.setInterval(() => {
+      const now = Date.now();
+      setPendingUndoRejections((prev) =>
+        prev.map((item) => ({
+          ...item,
+          secondsLeft: Math.max(0, Math.ceil((item.expiresAt - now) / 1000))
+        }))
+      );
+    }, 300);
+    return () => window.clearInterval(intervalId);
+  }, [pendingUndoRejections.length]);
+
+  useEffect(() => {
+    return () => {
+      Object.values(undoRejectionTimersRef.current).forEach((timerId) =>
+        window.clearTimeout(timerId)
+      );
+      undoRejectionTimersRef.current = {};
+    };
+  }, []);
+
+  const handleApproveJoinRequest = async (
+    req: JoinRequest,
+    role: 'qa' | 'dev',
+    allowedSystems?: string[]
+  ): Promise<{ ok: boolean; error?: string }> => {
+    const res = await syncService.approveJoinRequest(req, role, allowedSystems);
+    if (!res.ok) return res;
+
+    // Automatically add/update approved member inside workspace teamMembers so they appear in Team Management & Chat @mentions
+    const cleanName = req.fullName.trim();
+    const scopedSystems =
+      Array.isArray(allowedSystems) && allowedSystems.length > 0 ? allowedSystems : undefined;
+    const existingIdx = teamMembers.findIndex(
+      (m) =>
+        (m.uid && m.uid === req.uid) ||
+        m.fullName.trim().toLowerCase() === cleanName.toLowerCase()
+    );
+    let nextMembers: TeamMember[];
+    if (existingIdx >= 0) {
+      nextMembers = teamMembers.map((m, idx) =>
+        idx === existingIdx
+          ? {
+              ...m,
+              fullName: cleanName,
+              role,
+              uid: req.uid,
+              allowedSystems: scopedSystems
+            }
+          : m
+      );
+    } else {
+      nextMembers = [
+        ...teamMembers,
+        {
+          id: `tm-${Date.now()}-${Math.random().toString(36).substring(2, 5)}`,
+          fullName: cleanName,
+          role,
+          uid: req.uid,
+          allowedSystems: scopedSystems
+        }
+      ];
+    }
+    handleSaveTeamMembers(nextMembers);
+    const roleHe = role === 'dev' ? 'מפתח (Dev)' : 'בודק תוכנה (QA)';
+    setLiveToast(`✅ ${cleanName} אושר/ה בהצלחה כ-${roleHe}!`);
+    setTimeout(() => setLiveToast(null), 4500);
+    return { ok: true };
+  };
+
+  // Protection #3: Hold rejection for 10 seconds locally before committing to Firebase so accidental clicks can be undone cleanly!
+  const handleQueueRejectJoinRequest = (req: JoinRequest, reason: string) => {
+    if (undoRejectionTimersRef.current[req.uid]) {
+      window.clearTimeout(undoRejectionTimersRef.current[req.uid]);
+    }
+    const UNDO_WINDOW_MS = 10_000;
+    const expiresAt = Date.now() + UNDO_WINDOW_MS;
+    setPendingUndoRejections((prev) => [
+      ...prev.filter((item) => item.request.uid !== req.uid),
+      { request: req, reason, expiresAt, secondsLeft: 10 }
+    ]);
+
+    const timerId = window.setTimeout(async () => {
+      delete undoRejectionTimersRef.current[req.uid];
+      setPendingUndoRejections((prev) => prev.filter((item) => item.request.uid !== req.uid));
+      const res = await syncService.rejectJoinRequest(req, reason);
+      if (res.ok) {
+        setLiveToast(
+          res.nextStatus === 'blocked'
+            ? `🚫 החשבון של ${req.fullName} נחסם לאחר 3 דחיות.`
+            : `❌ הבקשה של ${req.fullName} נדחתה (ניסיון ${res.nextRejectCount}/3).`
+        );
+      } else {
+        setLiveToast(res.error || `שגיאה בדחיית הבקשה של ${req.fullName}`);
+      }
+      setTimeout(() => setLiveToast(null), 5000);
+    }, UNDO_WINDOW_MS);
+
+    undoRejectionTimersRef.current[req.uid] = timerId;
+  };
+
+  const handleUndoRejectJoinRequest = (uid: string) => {
+    const timerId = undoRejectionTimersRef.current[uid];
+    if (timerId) {
+      window.clearTimeout(timerId);
+      delete undoRejectionTimersRef.current[uid];
+    }
+    const found = pendingUndoRejections.find((item) => item.request.uid === uid);
+    setPendingUndoRejections((prev) => prev.filter((item) => item.request.uid !== uid));
+    setLiveToast(
+      found
+        ? `↩️ הדחייה של ${found.request.fullName} בוטלה — הבקשה חזרה לממתינות!`
+        : '↩️ הדחייה בוטלה בהצלחה!'
+    );
+    setTimeout(() => setLiveToast(null), 4000);
+  };
+
+  const pendingJoinRequests = useMemo(
+    () => adminJoinRequests.filter((r) => r.status === 'pending'),
+    [adminJoinRequests]
+  );
+  const pendingJoinRequestsCount = pendingJoinRequests.length;
 
   const updateNotifPref = (patch: Partial<NotificationPreferences>) => {
     setNotifPrefs((prev) => {
@@ -1697,7 +1911,39 @@ export function App() {
     );
   }
 
-  // If user is not logged in yet, show the Login Screen!
+  // If user is authenticated in Firebase Auth but not yet approved in std_users -> Waiting Room Home Page (0 workspace data!)
+  if (!authUser && waitingFirebaseUser) {
+    return (
+      <>
+        <PendingApprovalScreen
+          firebaseEmail={waitingFirebaseUser.email}
+          joinRequest={ownJoinRequest}
+          notificationsEnabled={notificationsEnabled}
+          onEnableNotifications={async () => {
+            const granted = await requestAppNotificationPermission();
+            setNotificationsEnabled(granted);
+            if (granted) {
+              updateNotifPref({ enabled: true });
+            } else {
+              setIsInstallModalOpen(true);
+            }
+          }}
+          onResubmitJoinRequest={(fullName) =>
+            syncService.submitOrResubmitOwnJoinRequest(fullName)
+          }
+          onBootstrapAdminProfile={(fullName) =>
+            syncService.bootstrapInitialAdminProfile(fullName)
+          }
+          onLogout={handleLogoutUser}
+          theme={theme}
+          onToggleTheme={toggleTheme}
+        />
+        {renderInstallModal()}
+      </>
+    );
+  }
+
+  // If user is not logged in yet, show the Login / Self-Registration Screen!
   if (!authUser) {
     return (
       <>
@@ -1708,6 +1954,10 @@ export function App() {
           onFirebaseEmailLogin={(email, password) =>
             syncService.signInWithFirebaseEmail(email, password)
           }
+          onRegisterJoinRequest={(fullName, email, password) =>
+            syncService.registerAndSubmitJoinRequest(fullName, email, password)
+          }
+          onSendPasswordReset={(email) => syncService.sendFirebasePasswordReset(email)}
           onBootstrapAdminProfile={(fullName) =>
             syncService.bootstrapInitialAdminProfile(fullName)
           }
@@ -1744,6 +1994,7 @@ export function App() {
         onOpenAdminToolsModal={() => {
           if (isAdmin) setIsAdminToolsOpen(true);
         }}
+        pendingJoinRequestsCount={isAdmin ? pendingJoinRequestsCount : 0}
         onManualSync={() => {
           syncService.requestManualSync();
           setLiveToast('🔄 מושך נתונים עדכניים מהענן...');
@@ -1778,8 +2029,72 @@ export function App() {
         </div>
       )}
 
+      {/* Protection #3: Global 10-Second Undo Rejection Bar (stays visible even after closing the modal!) */}
+      {isAdmin && pendingUndoRejections.length > 0 && (
+        <div className="fixed bottom-20 md:bottom-5 right-4 left-4 sm:left-auto sm:max-w-md z-55 space-y-2">
+          {pendingUndoRejections.map((item) => (
+            <div
+              key={item.request.uid}
+              className="flex items-center justify-between gap-3 px-4 py-3 rounded-2xl bg-amber-950 text-amber-50 border-2 border-amber-400 shadow-2xl animate-in fade-in slide-in-from-bottom-2"
+            >
+              <div className="flex items-center gap-2.5 min-w-0">
+                <Clock className="w-5 h-5 text-amber-400 animate-pulse shrink-0" />
+                <div className="min-w-0">
+                  <div className="text-xs sm:text-sm font-black truncate">
+                    דוחה את {item.request.fullName} בעוד{' '}
+                    <span className="font-mono text-amber-300">{item.secondsLeft}</span> שניות...
+                  </div>
+                  <div className="text-[11px] text-amber-200/90">
+                    עדיין לא נשמר בשרת • לחץ לביטול מיידי
+                  </div>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => handleUndoRejectJoinRequest(item.request.uid)}
+                className="px-3.5 py-2 rounded-xl bg-amber-400 hover:bg-amber-300 text-slate-950 text-xs font-black flex items-center gap-1.5 cursor-pointer shrink-0 transition shadow"
+              >
+                <Undo2 className="w-3.5 h-3.5" />
+                <span>בטל דחייה</span>
+              </button>
+            </div>
+          ))}
+        </div>
+      )}
+
       {/* Main Content Area */}
       <main className="flex-1 max-w-7xl w-full mx-auto px-3 sm:px-6 py-4 sm:py-6 pb-24 md:pb-8">
+        {/* Live Admin Banner for Pending Self-Registration Join Requests */}
+        {isAdmin && pendingJoinRequestsCount > 0 && (
+          <div className="flex flex-wrap items-center justify-between gap-3 mb-4 px-4 py-3 rounded-2xl bg-gradient-to-l from-rose-50 via-amber-50/70 to-indigo-50 dark:from-rose-950/60 dark:via-slate-900 dark:to-indigo-950/50 border-2 border-rose-300 dark:border-rose-800 shadow-sm">
+            <div className="flex items-center gap-3 min-w-0">
+              <div className="w-9 h-9 rounded-xl bg-rose-600 text-white flex items-center justify-center shadow shrink-0 animate-pulse">
+                <UserPlus className="w-5 h-5" />
+              </div>
+              <div className="min-w-0">
+                <div className="text-xs sm:text-sm font-black text-rose-950 dark:text-rose-100">
+                  {pendingJoinRequestsCount === 1
+                    ? `בקשת הצטרפות חדשה ממתינה לאישור: ${pendingJoinRequests[0].fullName}`
+                    : `ממתינות ${pendingJoinRequestsCount} בקשות הצטרפות חדשות לאישור מנהל`}
+                </div>
+                <p className="text-[11px] text-rose-800 dark:text-rose-300 font-medium truncate">
+                  {pendingJoinRequests
+                    .slice(0, 3)
+                    .map((r) => `${r.fullName} (${r.email})`)
+                    .join(' • ')}
+                </p>
+              </div>
+            </div>
+            <button
+              type="button"
+              onClick={() => setIsJoinRequestsModalOpen(true)}
+              className="px-4 py-2 rounded-xl bg-rose-600 hover:bg-rose-700 text-white text-xs font-extrabold flex items-center gap-1.5 shadow-md shadow-rose-600/20 cursor-pointer transition shrink-0"
+            >
+              <UserPlus className="w-4 h-4" />
+              <span>פתח לאישור / דחייה</span>
+            </button>
+          </div>
+        )}
         {/* Archived System Notice Banner if Admin is viewing an archived system */}
         {isAdmin && archivedSystems.includes(activeSystem) && (
           <div className="flex flex-wrap items-center justify-between gap-2 mb-4 px-4 py-3 rounded-2xl bg-amber-50 dark:bg-amber-950/40 border border-amber-300 dark:border-amber-800 text-amber-900 dark:text-amber-200 text-xs sm:text-sm">
@@ -2488,8 +2803,25 @@ export function App() {
         <AdminTeamModal
           systems={systems}
           teamMembers={teamMembers}
+          pendingJoinRequestsCount={pendingJoinRequestsCount}
+          onOpenJoinRequests={() => setIsJoinRequestsModalOpen(true)}
           onSaveTeamMembers={handleSaveTeamMembers}
           onClose={() => setIsTeamModalOpen(false)}
+        />
+      )}
+
+      {/* Admin Join Requests Approval & Safe Rejection Modal (Admin Only) */}
+      {isJoinRequestsModalOpen && isAdmin && (
+        <AdminJoinRequestsModal
+          requests={adminJoinRequests}
+          systems={systems}
+          pendingUndoRejections={pendingUndoRejections}
+          onApproveRequest={handleApproveJoinRequest}
+          onQueueRejectRequest={handleQueueRejectJoinRequest}
+          onUndoRejectRequest={handleUndoRejectJoinRequest}
+          onUnblockRequest={(req) => syncService.unblockAndResetJoinRequest(req)}
+          onDeleteRequest={(uid) => syncService.deleteJoinRequest(uid)}
+          onClose={() => setIsJoinRequestsModalOpen(false)}
         />
       )}
 
@@ -2497,9 +2829,11 @@ export function App() {
       {isAdminToolsOpen && isAdmin && (
         <AdminToolsModal
           archivedCount={archivedSystems.length}
+          pendingJoinRequestsCount={pendingJoinRequestsCount}
           onOpenReport={() => setIsAdminReportOpen(true)}
           onOpenBackup={() => setIsAdminBackupOpen(true)}
           onOpenTeam={() => setIsTeamModalOpen(true)}
+          onOpenJoinRequests={() => setIsJoinRequestsModalOpen(true)}
           onOpenCloud={() => setIsFirebaseModalOpen(true)}
           onOpenSecurity={() => setIsAdminSecurityOpen(true)}
           onOpenQuota={() => setIsAdminQuotaOpen(true)}

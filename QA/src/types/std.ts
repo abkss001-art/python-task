@@ -254,3 +254,23 @@ export interface PlatformQuotaSnapshot {
   driveError?: string;
   generatedAt: number;
 }
+
+export type JoinRequestStatus = 'pending' | 'approved' | 'rejected' | 'blocked';
+
+export interface JoinRequest {
+  uid: string;
+  fullName: string;
+  email: string;
+  status: JoinRequestStatus;
+  rejectCount: number;
+  attemptNumber: number;
+  requestedAt: number;
+  updatedAt: number;
+  rejectionReason?: string;
+  rejectedAt?: number;
+  rejectedBy?: string;
+  approvedRole?: 'qa' | 'dev';
+  approvedSystems?: string[];
+  approvedAt?: number;
+  approvedBy?: string;
+}

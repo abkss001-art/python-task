@@ -54,6 +54,100 @@ service cloud.firestore {
         data.updatedAt >= 0;
     }
 
+    function isValidOptionalString(data, field, maxLen) {
+      return !(field in data) ||
+        (data[field] is string && data[field].size() <= maxLen);
+    }
+
+    function isValidOptionalNonNegativeInt(data, field) {
+      return !(field in data) ||
+        (data[field] is int && data[field] >= 0);
+    }
+
+    function isValidApprovedSystems(data) {
+      return !('approvedSystems' in data) || (
+        data.approvedSystems is list &&
+        data.approvedSystems.size() <= 100 &&
+        (data.approvedSystems.size() == 0 || (
+          data.approvedSystems[0] is string &&
+          data.approvedSystems[0].size() <= 120 &&
+          data.approvedSystems[data.approvedSystems.size() - 1] is string &&
+          data.approvedSystems[data.approvedSystems.size() - 1].size() <= 120
+        ))
+      );
+    }
+
+    function isValidJoinRequest(uid, data) {
+      return data.keys().hasAll([
+          'uid',
+          'fullName',
+          'email',
+          'status',
+          'rejectCount',
+          'attemptNumber',
+          'requestedAt',
+          'updatedAt'
+        ]) &&
+        data.keys().hasOnly([
+          'uid',
+          'fullName',
+          'email',
+          'status',
+          'rejectCount',
+          'attemptNumber',
+          'requestedAt',
+          'updatedAt',
+          'rejectionReason',
+          'rejectedAt',
+          'rejectedBy',
+          'approvedRole',
+          'approvedSystems',
+          'approvedAt',
+          'approvedBy'
+        ]) &&
+        data.uid is string &&
+        data.uid == uid &&
+        data.uid.size() >= 1 &&
+        data.uid.size() <= 128 &&
+        data.fullName is string &&
+        data.fullName.trim().size() >= 2 &&
+        data.fullName.size() <= 120 &&
+        data.email is string &&
+        data.email.size() >= 1 &&
+        data.email.size() <= 160 &&
+        data.email.matches('^[^[:space:]@]+@[^[:space:]@]+[.][^[:space:]@]+$') &&
+        data.status is string &&
+        data.status in ['pending', 'approved', 'rejected', 'blocked'] &&
+        data.rejectCount is int &&
+        data.rejectCount >= 0 &&
+        data.rejectCount <= 3 &&
+        data.attemptNumber is int &&
+        data.attemptNumber >= 1 &&
+        data.attemptNumber <= 3 &&
+        data.requestedAt is int &&
+        data.requestedAt >= 0 &&
+        data.updatedAt is int &&
+        data.updatedAt >= 0 &&
+        isValidOptionalString(data, 'rejectionReason', 300) &&
+        isValidOptionalNonNegativeInt(data, 'rejectedAt') &&
+        isValidOptionalString(data, 'rejectedBy', 120) &&
+        (!('approvedRole' in data) || (data.approvedRole is string && data.approvedRole in ['qa', 'dev'])) &&
+        isValidApprovedSystems(data) &&
+        isValidOptionalNonNegativeInt(data, 'approvedAt') &&
+        isValidOptionalString(data, 'approvedBy', 120);
+    }
+
+    function matchesAuthEmailIfPresent(email) {
+      return !('email' in request.auth.token) ||
+        !(request.auth.token.email is string) ||
+        email.lower() == request.auth.token.email.lower();
+    }
+
+    function isJoinRequestFieldAbsentOrUnchanged(field) {
+      return !(field in request.resource.data) ||
+        (field in resource.data && request.resource.data[field] == resource.data[field]);
+    }
+
     // Default deny
     match /{document=**} {
       allow read, write: if false;
@@ -140,6 +234,91 @@ service cloud.firestore {
         request.resource.data.monthKey == resource.data.monthKey &&
         request.resource.data.appCheckTokens >= resource.data.appCheckTokens;
       allow delete: if false;
+    }
+
+    // Self-registration waiting room with server-enforced 3-attempt anti-spam cap
+    // Assumed Data Model for std_join_requests/{uid}:
+    //   Document ID: {uid} (applicant Firebase Auth UID)
+    //   Required base fields (8):
+    //     - uid: string (immutable, 1..128 chars, must equal {uid})
+    //     - fullName: string (trimmed >= 2 chars, total <= 120 chars)
+    //     - email: string (1..160 chars, valid email format, matches Auth token email on user writes)
+    //     - status: string ('pending' | 'approved' | 'rejected' | 'blocked')
+    //     - rejectCount: int (0..3, immutable for applicant, admin-managed)
+    //     - attemptNumber: int (1..3, must be 1 on create and resource.rejectCount + 1 on retry)
+    //     - requestedAt: int (>= 0, Unix epoch ms)
+    //     - updatedAt: int (>= 0, Unix epoch ms)
+    //   Optional admin-only fields (7):
+    //     - rejectionReason: string (<= 300 chars)
+    //     - rejectedAt: int (>= 0, Unix epoch ms)
+    //     - rejectedBy: string (<= 120 chars)
+    //     - approvedRole: string ('qa' | 'dev')
+    //     - approvedSystems: list<string> (<= 100 items, element length <= 120 chars)
+    //     - approvedAt: int (>= 0, Unix epoch ms)
+    //     - approvedBy: string (<= 120 chars)
+    match /std_join_requests/{uid} {
+      allow get: if (isSignedIn() && request.auth.uid == uid) || isAdmin();
+      allow list: if isAdmin();
+      allow create: if (
+        isAdmin() &&
+        isValidJoinRequest(uid, request.resource.data)
+      ) || (
+        isSignedIn() &&
+        !hasProfile() &&
+        request.auth.uid == uid &&
+        isValidJoinRequest(uid, request.resource.data) &&
+        request.resource.data.keys().hasOnly([
+          'uid',
+          'fullName',
+          'email',
+          'status',
+          'rejectCount',
+          'attemptNumber',
+          'requestedAt',
+          'updatedAt'
+        ]) &&
+        request.resource.data.uid == request.auth.uid &&
+        matchesAuthEmailIfPresent(request.resource.data.email) &&
+        request.resource.data.status == 'pending' &&
+        request.resource.data.rejectCount == 0 &&
+        request.resource.data.attemptNumber == 1
+      );
+      allow update: if (
+        isAdmin() &&
+        isValidJoinRequest(uid, request.resource.data) &&
+        (!('uid' in resource.data) || request.resource.data.uid == resource.data.uid)
+      ) || (
+        isSignedIn() &&
+        !hasProfile() &&
+        request.auth.uid == uid &&
+        isValidJoinRequest(uid, request.resource.data) &&
+        ('uid' in resource.data) &&
+        resource.data.uid == request.auth.uid &&
+        request.resource.data.uid == resource.data.uid &&
+        matchesAuthEmailIfPresent(request.resource.data.email) &&
+        ('email' in resource.data) &&
+        resource.data.email is string &&
+        request.resource.data.email.lower() == resource.data.email.lower() &&
+        ('status' in resource.data) &&
+        resource.data.status == 'rejected' &&
+        ('rejectCount' in resource.data) &&
+        resource.data.rejectCount is int &&
+        resource.data.rejectCount >= 0 &&
+        resource.data.rejectCount < 3 &&
+        request.resource.data.status == 'pending' &&
+        request.resource.data.rejectCount == resource.data.rejectCount &&
+        request.resource.data.attemptNumber == resource.data.rejectCount + 1 &&
+        !request.resource.data.keys().hasAny([
+          'approvedRole',
+          'approvedSystems',
+          'approvedAt',
+          'approvedBy'
+        ]) &&
+        isJoinRequestFieldAbsentOrUnchanged('rejectionReason') &&
+        isJoinRequestFieldAbsentOrUnchanged('rejectedAt') &&
+        isJoinRequestFieldAbsentOrUnchanged('rejectedBy')
+      );
+      allow delete: if isAdmin();
     }
 
     // Legacy monolithic docs (restricted to admins / unrestricted users for migration)

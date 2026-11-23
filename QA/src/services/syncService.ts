@@ -11,6 +11,7 @@ import {
   onAuthStateChanged,
   signInWithEmailAndPassword,
   createUserWithEmailAndPassword,
+  sendPasswordResetEmail,
   signOut,
   Auth,
   User
@@ -53,6 +54,7 @@ import {
   DEFAULT_SYSTEMS,
   FirebaseConfigData,
   FirebaseUserProfile,
+  JoinRequest,
   PlatformQuotaSnapshot,
   ServerAuditLogEntry,
   StdIssue,
@@ -61,6 +63,10 @@ import {
   SystemChatMessage,
   TeamRole
 } from '../types/std';
+import {
+  MAX_JOIN_REJECTIONS,
+  normalizeLoginEmail
+} from '../utils/authHelpers';
 import {
   isValidAppCheckSiteKey,
   isValidFirebaseConfig,
@@ -248,6 +254,18 @@ class RealtimeSyncService {
   private unsubscribePresence: (() => void) | null = null;
   private unsubscribeAuthState: (() => void) | null = null;
   private unsubscribePrivateConfig: (() => void) | null = null;
+  private unsubscribeOwnJoinRequest: (() => void) | null = null;
+  private unsubscribeOwnProfileWatcher: (() => void) | null = null;
+  private unsubscribeAdminJoinRequests: (() => void) | null = null;
+  private pendingJoinRequest: JoinRequest | null = null;
+  private pendingJoinRequestListeners = new Set<(req: JoinRequest | null) => void>();
+  private adminJoinRequests: JoinRequest[] = [];
+  private adminJoinRequestsListeners = new Set<
+    (requests: JoinRequest[], newlyArrived?: JoinRequest) => void
+  >();
+  private seenPendingJoinRequestKeys = new Set<string>();
+  private hasLoadedInitialJoinRequests = false;
+  private realtimeApprovalListeners = new Set<(profile: FirebaseUserProfile) => void>();
   private broadcastChannel: BroadcastChannel | null = null;
   private activeFirebaseConfig: FirebaseConfigData | null = null;
 
@@ -984,6 +1002,14 @@ class RealtimeSyncService {
       this.unsubscribeAppCheckToken();
       this.unsubscribeAppCheckToken = null;
     }
+    this.detachWaitingRoomListeners();
+    if (this.unsubscribeAdminJoinRequests) {
+      this.unsubscribeAdminJoinRequests();
+      this.unsubscribeAdminJoinRequests = null;
+    }
+    this.adminJoinRequests = [];
+    this.seenPendingJoinRequestKeys.clear();
+    this.hasLoadedInitialJoinRequests = false;
     this.hasLoadedInitialChatsFirebase = false;
   }
 
@@ -1088,18 +1114,26 @@ class RealtimeSyncService {
   ): Promise<{
     ok: boolean;
     profile?: FirebaseUserProfile;
+    pendingApproval?: boolean;
+    pendingJoinRequest?: JoinRequest | null;
+    needsJoinOrBootstrap?: boolean;
     needsProfileBootstrap?: boolean;
     error?: string;
   }> {
     if (!this.firebaseAuth) {
       return { ok: false, error: 'Firebase Auth לא מאותחל בהגדרות הענן.' };
     }
+    const { email: normalizedEmail } = normalizeLoginEmail(email);
+    if (!normalizedEmail) {
+      return { ok: false, error: 'נא להזין כתובת אימייל או שם משתמש.' };
+    }
     try {
-      const cred = await signInWithEmailAndPassword(this.firebaseAuth, email.trim(), password);
+      const cred = await signInWithEmailAndPassword(this.firebaseAuth, normalizedEmail, password);
       this.firebaseUser = cred.user;
       const profile = await this.fetchFirebaseUserProfile(cred.user.uid);
       if (profile) {
         this.firebaseUserProfile = profile;
+        this.detachWaitingRoomListeners();
         if (this.activeFirebaseConfig) {
           this.attachFirebaseDataListeners(this.activeFirebaseConfig);
         }
@@ -1111,12 +1145,30 @@ class RealtimeSyncService {
         this.recordAuditEvent('התחברות מאובטחת למערכת', 'auth');
         return { ok: true, profile };
       }
+
+      // User has a Firebase Auth account but is not yet approved in std_users
+      const existingReq = await this.fetchOwnJoinRequest(cred.user.uid);
+      this.pendingJoinRequest = existingReq;
+      this.attachWaitingRoomListeners(cred.user.uid);
+      this.updateStatus({
+        firebaseUid: cred.user.uid,
+        firebaseUserEmail: cred.user.email || undefined
+      });
+      this.notifyPendingJoinRequestListeners();
       this.notifyAuthListeners();
-      return { ok: true, needsProfileBootstrap: true };
+      return {
+        ok: true,
+        pendingApproval: true,
+        pendingJoinRequest: existingReq,
+        needsJoinOrBootstrap: !existingReq
+      };
     } catch (err: any) {
       const code = String(err?.code || '');
       if (code === 'auth/invalid-credential' || code === 'auth/wrong-password' || code === 'auth/user-not-found') {
-        return { ok: false, error: 'אימייל או סיסמה שגויים ב-Firebase Auth.' };
+        return { ok: false, error: 'אימייל / שם משתמש או סיסמה שגויים.' };
+      }
+      if (code === 'auth/invalid-email') {
+        return { ok: false, error: 'כתובת האימייל אינה תקינה.' };
       }
       if (code === 'auth/too-many-requests') {
         return { ok: false, error: 'יותר מדי ניסיונות כושלים. נסה שוב בעוד מספר דקות.' };
@@ -1125,6 +1177,635 @@ class RealtimeSyncService {
         return { ok: false, error: 'חשבון זה הושבת על ידי המנהל ב-Firebase Console.' };
       }
       return { ok: false, error: err?.message || 'שגיאת התחברות ל-Firebase Auth' };
+    }
+  }
+
+  public async sendFirebasePasswordReset(
+    rawEmailOrUsername: string
+  ): Promise<{ ok: boolean; normalizedEmail?: string; error?: string }> {
+    if (!this.firebaseAuth) {
+      return { ok: false, error: 'Firebase Auth לא מאותחל.' };
+    }
+    const { email } = normalizeLoginEmail(rawEmailOrUsername);
+    if (!email || !email.includes('@')) {
+      return { ok: false, error: 'נא להזין תחילה כתובת אימייל או שם משתמש לאיפוס סיסמה.' };
+    }
+    try {
+      await sendPasswordResetEmail(this.firebaseAuth, email);
+      return { ok: true, normalizedEmail: email };
+    } catch (err: any) {
+      const code = String(err?.code || '');
+      if (code === 'auth/user-not-found') {
+        return { ok: false, error: 'לא נמצא חשבון רשום עבור כתובת אימייל זו.' };
+      }
+      if (code === 'auth/invalid-email') {
+        return { ok: false, error: 'כתובת האימייל אינה תקינה.' };
+      }
+      if (code === 'auth/too-many-requests') {
+        return { ok: false, error: 'נשלחו יותר מדי בקשות איפוס. נסה שוב בעוד מספר דקות.' };
+      }
+      return { ok: false, error: err?.message || 'שגיאה בשליחת מייל איפוס סיסמה.' };
+    }
+  }
+
+  private detachWaitingRoomListeners(preservePendingRequest = false) {
+    if (this.unsubscribeOwnJoinRequest) {
+      this.unsubscribeOwnJoinRequest();
+      this.unsubscribeOwnJoinRequest = null;
+    }
+    if (this.unsubscribeOwnProfileWatcher) {
+      this.unsubscribeOwnProfileWatcher();
+      this.unsubscribeOwnProfileWatcher = null;
+    }
+    if (!preservePendingRequest) {
+      this.pendingJoinRequest = null;
+    }
+  }
+
+  private notifyPendingJoinRequestListeners() {
+    for (const l of this.pendingJoinRequestListeners) {
+      l(this.pendingJoinRequest);
+    }
+  }
+
+  private notifyAdminJoinRequests(newlyArrived?: JoinRequest) {
+    const snapshot = [...this.adminJoinRequests];
+    for (const l of this.adminJoinRequestsListeners) {
+      l(snapshot, newlyArrived);
+    }
+  }
+
+  public subscribeOwnJoinRequest(listener: (req: JoinRequest | null) => void): () => void {
+    this.pendingJoinRequestListeners.add(listener);
+    listener(this.pendingJoinRequest);
+    return () => {
+      this.pendingJoinRequestListeners.delete(listener);
+    };
+  }
+
+  public subscribeRealtimeApproval(listener: (profile: FirebaseUserProfile) => void): () => void {
+    this.realtimeApprovalListeners.add(listener);
+    return () => {
+      this.realtimeApprovalListeners.delete(listener);
+    };
+  }
+
+  public subscribeAdminJoinRequests(
+    listener: (requests: JoinRequest[], newlyArrived?: JoinRequest) => void
+  ): () => void {
+    this.adminJoinRequestsListeners.add(listener);
+    listener([...this.adminJoinRequests]);
+    return () => {
+      this.adminJoinRequestsListeners.delete(listener);
+    };
+  }
+
+  public getAdminJoinRequests(): JoinRequest[] {
+    return [...this.adminJoinRequests];
+  }
+
+  public getOwnJoinRequest(): JoinRequest | null {
+    return this.pendingJoinRequest;
+  }
+
+  private normalizeJoinRequestRecord(uid: string, raw: any): JoinRequest | null {
+    if (!raw || typeof raw !== 'object' || !raw.fullName || !raw.status) return null;
+    const rejectCount = Math.max(0, Math.min(MAX_JOIN_REJECTIONS, Number(raw.rejectCount || 0)));
+    const attemptNumber = Math.max(1, Math.min(MAX_JOIN_REJECTIONS, Number(raw.attemptNumber || 1)));
+    const rawStatus = String(raw.status);
+    const status: JoinRequest['status'] =
+      rawStatus === 'approved' || rawStatus === 'rejected' || rawStatus === 'blocked'
+        ? rawStatus
+        : 'pending';
+    return {
+      uid: String(raw.uid || uid),
+      fullName: String(raw.fullName).trim(),
+      email: String(raw.email || '').trim(),
+      status: rejectCount >= MAX_JOIN_REJECTIONS && status !== 'approved' ? 'blocked' : status,
+      rejectCount,
+      attemptNumber,
+      requestedAt: Number(raw.requestedAt || Date.now()),
+      updatedAt: Number(raw.updatedAt || Date.now()),
+      ...(raw.rejectionReason ? { rejectionReason: String(raw.rejectionReason) } : {}),
+      ...(raw.rejectedAt ? { rejectedAt: Number(raw.rejectedAt) } : {}),
+      ...(raw.rejectedBy ? { rejectedBy: String(raw.rejectedBy) } : {}),
+      ...(raw.approvedRole === 'qa' || raw.approvedRole === 'dev'
+        ? { approvedRole: raw.approvedRole }
+        : {}),
+      ...(Array.isArray(raw.approvedSystems) ? { approvedSystems: raw.approvedSystems } : {}),
+      ...(raw.approvedAt ? { approvedAt: Number(raw.approvedAt) } : {}),
+      ...(raw.approvedBy ? { approvedBy: String(raw.approvedBy) } : {})
+    };
+  }
+
+  private async fetchOwnJoinRequest(uid: string): Promise<JoinRequest | null> {
+    if (!uid || !this.activeFirebaseConfig) return null;
+    try {
+      if (this.activeFirebaseConfig.mode === 'firestore' && this.firestore) {
+        const snap = await getDoc(doc(this.firestore, 'std_join_requests', uid));
+        if (!snap.exists()) return null;
+        return this.normalizeJoinRequestRecord(uid, snap.data());
+      }
+      if (this.rtdb) {
+        const snap = await get(ref(this.rtdb, `std_join_requests/${uid}`));
+        if (!snap.exists()) return null;
+        return this.normalizeJoinRequestRecord(uid, snap.val());
+      }
+    } catch {
+      // ignore
+    }
+    return null;
+  }
+
+  /**
+   * מאזין בזמן אמת לסטטוס בקשת ההצטרפות של המשתמש הממתין ולרגע שהמנהל מאשר אותו ב-std_users/{uid}
+   */
+  private attachWaitingRoomListeners(uid: string) {
+    this.detachWaitingRoomListeners(true);
+    const config = this.activeFirebaseConfig;
+    if (!config || !uid) return;
+
+    const handleRealtimeApprovedProfile = (data: Partial<FirebaseUserProfile> | null | undefined) => {
+      if (!data?.fullName || !data?.role) return;
+      const access = buildProfileAccessFields(data.role, data.allowedSystems);
+      const approvedProfile: FirebaseUserProfile = {
+        uid,
+        email: data.email || this.firebaseUser?.email || undefined,
+        fullName: String(data.fullName).trim(),
+        role: data.role,
+        ...access,
+        isSuperAdmin: Boolean(data.isSuperAdmin),
+        updatedAt: data.updatedAt
+      };
+      this.firebaseUserProfile = approvedProfile;
+      this.detachWaitingRoomListeners();
+      this.attachFirebaseDataListeners(config);
+      this.notifyAuthListeners();
+      this.recordAuditEvent('כניסה אוטומטית למערכת מיד לאחר אישור מנהל', 'auth');
+      for (const listener of this.realtimeApprovalListeners) {
+        listener(approvedProfile);
+      }
+    };
+
+    if (config.mode === 'firestore' && this.firestore) {
+      this.unsubscribeOwnJoinRequest = onSnapshot(
+        doc(this.firestore, 'std_join_requests', uid),
+        (snap) => {
+          this.pendingJoinRequest = snap.exists()
+            ? this.normalizeJoinRequestRecord(uid, snap.data())
+            : null;
+          this.notifyPendingJoinRequestListeners();
+        },
+        () => {}
+      );
+      this.unsubscribeOwnProfileWatcher = onSnapshot(
+        doc(this.firestore, 'std_users', uid),
+        (snap) => {
+          if (snap.exists()) {
+            handleRealtimeApprovedProfile(snap.data() as Partial<FirebaseUserProfile>);
+          }
+        },
+        () => {}
+      );
+    } else if (this.rtdb) {
+      this.unsubscribeOwnJoinRequest = onValue(
+        ref(this.rtdb, `std_join_requests/${uid}`),
+        (snap) => {
+          this.pendingJoinRequest = snap.exists()
+            ? this.normalizeJoinRequestRecord(uid, snap.val())
+            : null;
+          this.notifyPendingJoinRequestListeners();
+        },
+        () => {}
+      );
+      this.unsubscribeOwnProfileWatcher = onValue(
+        ref(this.rtdb, `std_users/${uid}`),
+        (snap) => {
+          if (snap.exists()) {
+            handleRealtimeApprovedProfile(snap.val() as Partial<FirebaseUserProfile>);
+          }
+        },
+        () => {}
+      );
+    }
+  }
+
+  private attachAdminJoinRequestsListener(config: FirebaseConfigData) {
+    if (this.unsubscribeAdminJoinRequests) {
+      this.unsubscribeAdminJoinRequests();
+      this.unsubscribeAdminJoinRequests = null;
+    }
+    if (this.firebaseUserProfile?.role !== 'admin') return;
+
+    const processList = (list: JoinRequest[]) => {
+      const sorted = list.sort((a, b) => (b.updatedAt || b.requestedAt) - (a.updatedAt || a.requestedAt));
+      let newlyArrived: JoinRequest | undefined;
+      for (const req of sorted) {
+        if (req.status === 'pending') {
+          const key = `${req.uid}:${req.attemptNumber}:${req.requestedAt}`;
+          if (!this.seenPendingJoinRequestKeys.has(key)) {
+            this.seenPendingJoinRequestKeys.add(key);
+            if (this.hasLoadedInitialJoinRequests && !newlyArrived) {
+              newlyArrived = req;
+            }
+          }
+        }
+      }
+      this.hasLoadedInitialJoinRequests = true;
+      this.adminJoinRequests = sorted;
+      this.notifyAdminJoinRequests(newlyArrived);
+    };
+
+    if (config.mode === 'firestore' && this.firestore) {
+      this.unsubscribeAdminJoinRequests = onSnapshot(
+        collection(this.firestore, 'std_join_requests'),
+        (snap) => {
+          const list: JoinRequest[] = [];
+          snap.forEach((d) => {
+            const parsed = this.normalizeJoinRequestRecord(d.id, d.data());
+            if (parsed) list.push(parsed);
+          });
+          processList(list);
+        },
+        () => {}
+      );
+    } else if (this.rtdb) {
+      this.unsubscribeAdminJoinRequests = onValue(
+        ref(this.rtdb, 'std_join_requests'),
+        (snap) => {
+          const raw = snap.val() as Record<string, any> | null;
+          const list: JoinRequest[] = [];
+          if (raw && typeof raw === 'object') {
+            for (const [uid, val] of Object.entries(raw)) {
+              const parsed = this.normalizeJoinRequestRecord(uid, val);
+              if (parsed) list.push(parsed);
+            }
+          }
+          processList(list);
+        },
+        () => {}
+      );
+    }
+  }
+
+  /**
+   * הרשמה עצמאית של חבר צוות חדש + שליחת בקשת הצטרפות לחדר ההמתנה (אפס גישה לנתונים עד אישור מנהל)
+   */
+  public async registerAndSubmitJoinRequest(
+    fullName: string,
+    rawEmailOrUsername: string,
+    password: string
+  ): Promise<{
+    ok: boolean;
+    request?: JoinRequest;
+    profile?: FirebaseUserProfile;
+    alreadyApproved?: boolean;
+    error?: string;
+  }> {
+    if (!this.firebaseAuth || !this.activeFirebaseConfig) {
+      return { ok: false, error: 'Firebase Auth לא מאותחל בהגדרות הענן.' };
+    }
+    const cleanName = fullName.trim().slice(0, 120);
+    const { email: normalizedEmail } = normalizeLoginEmail(rawEmailOrUsername);
+    if (cleanName.length < 2) {
+      return { ok: false, error: 'נא להזין שם מלא (לפחות 2 תווים).' };
+    }
+    if (!normalizedEmail || !normalizedEmail.includes('@')) {
+      return { ok: false, error: 'נא להזין כתובת אימייל או שם משתמש תקין.' };
+    }
+    if (!password || password.length < 6) {
+      return { ok: false, error: 'הסיסמה חייבת להכיל לפחות 6 תווים.' };
+    }
+
+    let signedInUser: User | null = null;
+    try {
+      const cred = await createUserWithEmailAndPassword(this.firebaseAuth, normalizedEmail, password);
+      signedInUser = cred.user;
+    } catch (err: any) {
+      const code = String(err?.code || '');
+      if (code === 'auth/email-already-in-use') {
+        // Attempt sign-in so returning waiting/rejected users enter their server-enforced Waiting Room
+        try {
+          const cred = await signInWithEmailAndPassword(this.firebaseAuth, normalizedEmail, password);
+          signedInUser = cred.user;
+        } catch {
+          return {
+            ok: false,
+            error: 'כתובת אימייל זו כבר רשומה עם סיסמה אחרת. עבור ללשונית "התחברות" או לחץ "שכחתי סיסמה".'
+          };
+        }
+      } else if (code === 'auth/weak-password') {
+        return { ok: false, error: 'הסיסמה חלשה מדי — יש לבחור לפחות 6 תווים.' };
+      } else if (code === 'auth/invalid-email') {
+        return { ok: false, error: 'כתובת האימייל אינה תקינה.' };
+      } else if (code === 'auth/too-many-requests') {
+        return { ok: false, error: 'יותר מדי ניסיונות כרגע. נסה שוב בעוד מספר דקות.' };
+      } else {
+        return { ok: false, error: err?.message || 'שגיאה ביצירת החשבון.' };
+      }
+    }
+
+    if (!signedInUser) {
+      return { ok: false, error: 'לא ניתן היה להשלים את יצירת החשבון.' };
+    }
+
+    this.firebaseUser = signedInUser;
+    const existingProfile = await this.fetchFirebaseUserProfile(signedInUser.uid);
+    if (existingProfile) {
+      this.firebaseUserProfile = existingProfile;
+      this.detachWaitingRoomListeners();
+      this.attachFirebaseDataListeners(this.activeFirebaseConfig);
+      this.notifyAuthListeners();
+      this.recordAuditEvent('התחברות מאובטחת למערכת', 'auth');
+      return { ok: true, profile: existingProfile, alreadyApproved: true };
+    }
+
+    const existingReq = await this.fetchOwnJoinRequest(signedInUser.uid);
+    if (existingReq) {
+      this.pendingJoinRequest = existingReq;
+      this.attachWaitingRoomListeners(signedInUser.uid);
+      this.notifyPendingJoinRequestListeners();
+      this.notifyAuthListeners();
+      return { ok: true, request: existingReq };
+    }
+
+    const now = Date.now();
+    const newReq: JoinRequest = {
+      uid: signedInUser.uid,
+      fullName: cleanName,
+      email: signedInUser.email || normalizedEmail,
+      status: 'pending',
+      rejectCount: 0,
+      attemptNumber: 1,
+      requestedAt: now,
+      updatedAt: now
+    };
+
+    try {
+      if (this.activeFirebaseConfig.mode === 'firestore' && this.firestore) {
+        await setDoc(doc(this.firestore, 'std_join_requests', signedInUser.uid), stripUndefinedDeep(newReq));
+      } else if (this.rtdb) {
+        await set(ref(this.rtdb, `std_join_requests/${signedInUser.uid}`), stripUndefinedDeep(newReq));
+      }
+      this.pendingJoinRequest = newReq;
+      this.attachWaitingRoomListeners(signedInUser.uid);
+      this.notifyPendingJoinRequestListeners();
+      this.notifyAuthListeners();
+      return { ok: true, request: newReq };
+    } catch (err: any) {
+      return {
+        ok: false,
+        error: err?.message || 'החשבון נוצר אך שליחת בקשת ההצטרפות לשרת נכשלה. נסה להתחבר שוב.'
+      };
+    }
+  }
+
+  /**
+   * שליחת בקשת הצטרפות ראשונה או חוזרת למשתמש שכבר מחובר ל-Firebase Auth ונמצא בחדר ההמתנה
+   */
+  public async submitOrResubmitOwnJoinRequest(
+    fullNameInput?: string
+  ): Promise<{ ok: boolean; request?: JoinRequest; error?: string }> {
+    if (!this.firebaseUser || !this.activeFirebaseConfig) {
+      return { ok: false, error: 'אין משתמש מחובר.' };
+    }
+    const uid = this.firebaseUser.uid;
+    const existing = await this.fetchOwnJoinRequest(uid);
+    const now = Date.now();
+
+    if (existing) {
+      if (existing.status === 'blocked' || existing.rejectCount >= MAX_JOIN_REJECTIONS) {
+        return {
+          ok: false,
+          error: 'החשבון שלך נחסם לאחר 3 דחיות. יש לפנות ישירות למנהל המערכת.'
+        };
+      }
+      if (existing.status !== 'rejected') {
+        return { ok: true, request: existing };
+      }
+
+      const cleanName = (fullNameInput || existing.fullName || '').trim().slice(0, 120);
+      if (cleanName.length < 2) {
+        return { ok: false, error: 'נא להזין שם מלא תקין (לפחות 2 תווים).' };
+      }
+
+      const retryReq: JoinRequest = {
+        uid,
+        fullName: cleanName,
+        email: existing.email || this.firebaseUser.email || '',
+        status: 'pending',
+        rejectCount: existing.rejectCount,
+        attemptNumber: Math.min(existing.rejectCount + 1, MAX_JOIN_REJECTIONS),
+        requestedAt: now,
+        updatedAt: now,
+        ...(existing.rejectionReason ? { rejectionReason: existing.rejectionReason } : {}),
+        ...(existing.rejectedAt ? { rejectedAt: existing.rejectedAt } : {}),
+        ...(existing.rejectedBy ? { rejectedBy: existing.rejectedBy } : {})
+      };
+
+      try {
+        if (this.activeFirebaseConfig.mode === 'firestore' && this.firestore) {
+          await setDoc(doc(this.firestore, 'std_join_requests', uid), stripUndefinedDeep(retryReq));
+        } else if (this.rtdb) {
+          await set(ref(this.rtdb, `std_join_requests/${uid}`), stripUndefinedDeep(retryReq));
+        }
+        this.pendingJoinRequest = retryReq;
+        this.notifyPendingJoinRequestListeners();
+        return { ok: true, request: retryReq };
+      } catch (err: any) {
+        return { ok: false, error: err?.message || 'לא ניתן היה לשלוח בקשה מחדש.' };
+      }
+    }
+
+    // No join request yet for an authenticated unapproved account
+    const cleanName = (fullNameInput || '').trim().slice(0, 120);
+    if (cleanName.length < 2) {
+      return { ok: false, error: 'נא להזין שם מלא תקין (לפחות 2 תווים).' };
+    }
+    const freshReq: JoinRequest = {
+      uid,
+      fullName: cleanName,
+      email: this.firebaseUser.email || '',
+      status: 'pending',
+      rejectCount: 0,
+      attemptNumber: 1,
+      requestedAt: now,
+      updatedAt: now
+    };
+    try {
+      if (this.activeFirebaseConfig.mode === 'firestore' && this.firestore) {
+        await setDoc(doc(this.firestore, 'std_join_requests', uid), stripUndefinedDeep(freshReq));
+      } else if (this.rtdb) {
+        await set(ref(this.rtdb, `std_join_requests/${uid}`), stripUndefinedDeep(freshReq));
+      }
+      this.pendingJoinRequest = freshReq;
+      this.attachWaitingRoomListeners(uid);
+      this.notifyPendingJoinRequestListeners();
+      return { ok: true, request: freshReq };
+    } catch (err: any) {
+      return { ok: false, error: err?.message || 'שליחת הבקשה למנהל נכשלה.' };
+    }
+  }
+
+  /**
+   * אישור בקשת הצטרפות ע"י מנהל (מאפשר אך ורק 'qa' או 'dev' — לעולם לא 'admin'!)
+   */
+  public async approveJoinRequest(
+    req: JoinRequest,
+    role: 'qa' | 'dev',
+    allowedSystems?: string[]
+  ): Promise<{ ok: boolean; error?: string }> {
+    if (!this.activeFirebaseConfig || this.firebaseUserProfile?.role !== 'admin') {
+      return { ok: false, error: 'פעולה זו מותרת למנהל מערכת בלבד.' };
+    }
+    if (role !== 'qa' && role !== 'dev') {
+      return { ok: false, error: 'ניתן לאשר בקשת הצטרפות כבודק תוכנה (QA) או מפתח (Dev) בלבד.' };
+    }
+
+    const now = Date.now();
+    const adminName = this.firebaseUserProfile.fullName || 'מנהל מערכת';
+    const scopedSystems =
+      Array.isArray(allowedSystems) && allowedSystems.length > 0 ? allowedSystems : undefined;
+    const accessFields = buildProfileAccessFields(role, scopedSystems);
+    const newProfile: FirebaseUserProfile = {
+      uid: req.uid,
+      email: req.email,
+      fullName: req.fullName.trim(),
+      role,
+      ...accessFields,
+      isSuperAdmin: false,
+      updatedAt: now
+    };
+
+    const updatedReq: JoinRequest = {
+      ...req,
+      status: 'approved',
+      approvedRole: role,
+      ...(scopedSystems ? { approvedSystems: scopedSystems } : {}),
+      approvedAt: now,
+      approvedBy: adminName,
+      updatedAt: now
+    };
+
+    try {
+      if (this.activeFirebaseConfig.mode === 'firestore' && this.firestore) {
+        await setDoc(doc(this.firestore, 'std_users', req.uid), stripUndefinedDeep(newProfile));
+        await setDoc(doc(this.firestore, 'std_join_requests', req.uid), stripUndefinedDeep(updatedReq));
+      } else if (this.rtdb) {
+        await set(ref(this.rtdb, `std_users/${req.uid}`), stripUndefinedDeep(newProfile));
+        await set(ref(this.rtdb, `std_join_requests/${req.uid}`), stripUndefinedDeep(updatedReq));
+      }
+      const roleHe = role === 'dev' ? 'מפתח (Dev)' : 'בודק תוכנה (QA)';
+      this.recordAuditEvent(
+        `אישור בקשת הצטרפות (${roleHe}): ${req.fullName}`,
+        'team',
+        req.email
+      );
+      return { ok: true };
+    } catch (err: any) {
+      return { ok: false, error: err?.message || 'שגיאה באישור הבקשה מול השרת.' };
+    }
+  }
+
+  /**
+   * דחיית בקשת הצטרפות ע"י מנהל עם סיבה אופציונלית + ספירת 3 ניסיונות בצד השרת
+   */
+  public async rejectJoinRequest(
+    req: JoinRequest,
+    reason?: string
+  ): Promise<{
+    ok: boolean;
+    nextStatus?: 'rejected' | 'blocked';
+    nextRejectCount?: number;
+    error?: string;
+  }> {
+    if (!this.activeFirebaseConfig || this.firebaseUserProfile?.role !== 'admin') {
+      return { ok: false, error: 'פעולה זו מותרת למנהל מערכת בלבד.' };
+    }
+    const now = Date.now();
+    const adminName = this.firebaseUserProfile.fullName || 'מנהל מערכת';
+    const nextRejectCount = Math.min((req.rejectCount || 0) + 1, MAX_JOIN_REJECTIONS);
+    const nextStatus: 'rejected' | 'blocked' =
+      nextRejectCount >= MAX_JOIN_REJECTIONS ? 'blocked' : 'rejected';
+    const cleanReason = String(reason || '').trim().slice(0, 300);
+
+    const updatedReq: JoinRequest = {
+      uid: req.uid,
+      fullName: req.fullName,
+      email: req.email,
+      status: nextStatus,
+      rejectCount: nextRejectCount,
+      attemptNumber: req.attemptNumber || nextRejectCount,
+      requestedAt: req.requestedAt || now,
+      updatedAt: now,
+      ...(cleanReason ? { rejectionReason: cleanReason } : {}),
+      rejectedAt: now,
+      rejectedBy: adminName
+    };
+
+    try {
+      if (this.activeFirebaseConfig.mode === 'firestore' && this.firestore) {
+        await setDoc(doc(this.firestore, 'std_join_requests', req.uid), stripUndefinedDeep(updatedReq));
+      } else if (this.rtdb) {
+        await set(ref(this.rtdb, `std_join_requests/${req.uid}`), stripUndefinedDeep(updatedReq));
+      }
+      this.recordAuditEvent(
+        nextStatus === 'blocked'
+          ? `חסימת בקשת הצטרפות לאחר 3 דחיות: ${req.fullName}${cleanReason ? ` (${cleanReason})` : ''}`
+          : `דחיית בקשת הצטרפות (${nextRejectCount}/3): ${req.fullName}${cleanReason ? ` (${cleanReason})` : ''}`,
+        'team',
+        req.email
+      );
+      return { ok: true, nextStatus, nextRejectCount };
+    } catch (err: any) {
+      return { ok: false, error: err?.message || 'שגיאה בדחיית הבקשה מול השרת.' };
+    }
+  }
+
+  /**
+   * שחרור חסימה ואיפוס מונה הדחיות ע"י מנהל בלבד
+   */
+  public async unblockAndResetJoinRequest(req: JoinRequest): Promise<{ ok: boolean; error?: string }> {
+    if (!this.activeFirebaseConfig || this.firebaseUserProfile?.role !== 'admin') {
+      return { ok: false, error: 'פעולה זו מותרת למנהל מערכת בלבד.' };
+    }
+    const now = Date.now();
+    const resetReq: JoinRequest = {
+      uid: req.uid,
+      fullName: req.fullName,
+      email: req.email,
+      status: 'pending',
+      rejectCount: 0,
+      attemptNumber: 1,
+      requestedAt: now,
+      updatedAt: now
+    };
+    try {
+      if (this.activeFirebaseConfig.mode === 'firestore' && this.firestore) {
+        await setDoc(doc(this.firestore, 'std_join_requests', req.uid), stripUndefinedDeep(resetReq));
+      } else if (this.rtdb) {
+        await set(ref(this.rtdb, `std_join_requests/${req.uid}`), stripUndefinedDeep(resetReq));
+      }
+      this.recordAuditEvent(`שחרור חסימה ואיפוס ניסיונות הצטרפות: ${req.fullName}`, 'team', req.email);
+      return { ok: true };
+    } catch (err: any) {
+      return { ok: false, error: err?.message || 'שגיאה בשחרור החסימה.' };
+    }
+  }
+
+  public async deleteJoinRequest(uid: string): Promise<{ ok: boolean; error?: string }> {
+    if (!this.activeFirebaseConfig || this.firebaseUserProfile?.role !== 'admin') {
+      return { ok: false, error: 'פעולה זו מותרת למנהל מערכת בלבד.' };
+    }
+    try {
+      if (this.activeFirebaseConfig.mode === 'firestore' && this.firestore) {
+        await deleteDoc(doc(this.firestore, 'std_join_requests', uid));
+      } else if (this.rtdb) {
+        await remove(ref(this.rtdb, `std_join_requests/${uid}`));
+      }
+      return { ok: true };
+    } catch (err: any) {
+      return { ok: false, error: err?.message || 'שגיאה במחיקת הבקשה.' };
     }
   }
 
@@ -1181,14 +1862,14 @@ class RealtimeSyncService {
     fullName: string,
     role: TeamRole,
     allowedSystems?: string[]
-  ): Promise<{ ok: boolean; uid?: string; error?: string }> {
+  ): Promise<{ ok: boolean; uid?: string; normalizedEmail?: string; error?: string }> {
     if (!this.activeFirebaseConfig) {
       return { ok: false, error: 'Firebase אינו מחובר.' };
     }
-    const cleanEmail = email.trim();
+    const { email: cleanEmail } = normalizeLoginEmail(email);
     const cleanName = fullName.trim();
     if (!cleanEmail || !password || password.length < 6 || !cleanName) {
-      return { ok: false, error: 'נא להזין אימייל תקין, שם מלא וסיסמה של לפחות 6 תווים.' };
+      return { ok: false, error: 'נא להזין אימייל או שם משתמש תקין, שם מלא וסיסמה של לפחות 6 תווים.' };
     }
 
     // Use a secondary temporary app so creating the team member account does NOT log out the Admin!
@@ -1235,7 +1916,7 @@ class RealtimeSyncService {
         'team',
         cleanEmail
       );
-      return { ok: true, uid: newUid };
+      return { ok: true, uid: newUid, normalizedEmail: cleanEmail };
     } catch (err: any) {
       const code = String(err?.code || '');
       if (code === 'auth/email-already-in-use') {
@@ -1290,6 +1971,7 @@ class RealtimeSyncService {
     this.firebaseUserProfile = null;
     this.firebaseUser = null;
     this.detachDataListenersOnly();
+    this.detachWaitingRoomListeners();
     this.partitionIssues.clear();
     this.lastPushedPartitionHashes.clear();
     this.currentMetaState = null;
@@ -1301,6 +1983,7 @@ class RealtimeSyncService {
     }
     this.notifyState(false);
     this.notifyChats();
+    this.notifyPendingJoinRequestListeners();
     this.updateStatus({
       connected: false,
       firebaseUid: undefined,
@@ -2133,6 +2816,11 @@ class RealtimeSyncService {
       this.unsubscribePrivateConfig();
       this.unsubscribePrivateConfig = null;
     }
+    if (this.unsubscribeAdminJoinRequests) {
+      this.unsubscribeAdminJoinRequests();
+      this.unsubscribeAdminJoinRequests = null;
+    }
+    this.adminJoinRequests = [];
     this.hasLoadedInitialChatsFirebase = false;
   }
 
@@ -2140,6 +2828,10 @@ class RealtimeSyncService {
     this.detachDataListenersOnly();
     const useFirestore = config.mode === 'firestore';
     const isEnforced = Boolean(config.requireFirebaseAuth);
+
+    if (isEnforced && this.firebaseUserProfile?.role === 'admin') {
+      this.attachAdminJoinRequestsListener(config);
+    }
 
     if (useFirestore && this.firestore) {
       if (isEnforced) {
@@ -2635,6 +3327,13 @@ class RealtimeSyncService {
         if (user) {
           const profile = await this.fetchFirebaseUserProfile(user.uid);
           this.firebaseUserProfile = profile;
+          if (!profile && config.requireFirebaseAuth) {
+            this.pendingJoinRequest = await this.fetchOwnJoinRequest(user.uid);
+            this.attachWaitingRoomListeners(user.uid);
+            this.notifyPendingJoinRequestListeners();
+          } else {
+            this.detachWaitingRoomListeners();
+          }
           this.firebaseAuthInitialized = true;
           this.updateStatus({
             firebaseUid: user.uid,
@@ -2653,6 +3352,8 @@ class RealtimeSyncService {
           this.notifyAuthListeners();
         } else {
           this.firebaseUserProfile = null;
+          this.detachWaitingRoomListeners();
+          this.notifyPendingJoinRequestListeners();
           this.firebaseAuthInitialized = true;
           this.updateStatus({
             firebaseUid: undefined,

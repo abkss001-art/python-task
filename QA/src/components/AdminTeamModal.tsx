@@ -16,15 +16,21 @@ import {
   AlertTriangle,
   RotateCcw,
   Mail,
-  KeyRound
+  KeyRound,
+  Copy,
+  Share2,
+  BellRing
 } from 'lucide-react';
 import { TeamMember } from '../utils/teamMembers';
 import { TeamRole } from '../types/std';
 import { syncService } from '../services/syncService';
+import { buildWhatsAppInviteMessage, normalizeLoginEmail } from '../utils/authHelpers';
 
 interface AdminTeamModalProps {
   systems: string[];
   teamMembers: TeamMember[];
+  pendingJoinRequestsCount?: number;
+  onOpenJoinRequests?: () => void;
   onSaveTeamMembers: (
     members: TeamMember[],
     renameInfo?: { oldName: string; newName: string }
@@ -35,6 +41,8 @@ interface AdminTeamModalProps {
 export const AdminTeamModal: React.FC<AdminTeamModalProps> = ({
   systems,
   teamMembers,
+  pendingJoinRequestsCount = 0,
+  onOpenJoinRequests,
   onSaveTeamMembers,
   onClose
 }) => {
@@ -54,7 +62,16 @@ export const AdminTeamModal: React.FC<AdminTeamModalProps> = ({
   const [newAuthPassword, setNewAuthPassword] = useState('');
   const [isProvisioningAuth, setIsProvisioningAuth] = useState(false);
   const [statusMsg, setStatusMsg] = useState<string | null>(null);
+  const [inviteMessageToShare, setInviteMessageToShare] = useState<{
+    fullName: string;
+    text: string;
+    copied: boolean;
+  } | null>(null);
   const isFirebaseAuthActive = syncService.isFirebaseAuthRequired();
+  const normalizedNewAuthPreview = useMemo(
+    () => normalizeLoginEmail(newAuthEmail),
+    [newAuthEmail]
+  );
 
   // Filters state: role filter + system filter
   const [roleFilter, setRoleFilter] = useState<'ALL' | 'dev' | 'qa' | 'admin'>('ALL');
@@ -144,6 +161,17 @@ export const AdminTeamModal: React.FC<AdminTeamModalProps> = ({
         return;
       }
       provisionedUid = provRes.uid;
+      const inviteEmail = provRes.normalizedEmail || normalizeLoginEmail(cleanEmail).email;
+      setInviteMessageToShare({
+        fullName: cleanName,
+        text: buildWhatsAppInviteMessage({
+          fullName: cleanName,
+          email: inviteEmail,
+          password: newAuthPassword,
+          role: newRole
+        }),
+        copied: false
+      });
     }
 
     const newMember: TeamMember = {
@@ -232,6 +260,17 @@ export const AdminTeamModal: React.FC<AdminTeamModalProps> = ({
         return;
       }
       linkedUid = provRes.uid;
+      const inviteEmail = provRes.normalizedEmail || normalizeLoginEmail(cleanEditEmail).email;
+      setInviteMessageToShare({
+        fullName: cleanName,
+        text: buildWhatsAppInviteMessage({
+          fullName: cleanName,
+          email: inviteEmail,
+          password: editingAuthPassword,
+          role: editingRole
+        }),
+        copied: false
+      });
     }
 
     const nextMembers = members.map((m) => {
@@ -320,6 +359,82 @@ export const AdminTeamModal: React.FC<AdminTeamModalProps> = ({
         </div>
 
         <div className="p-5 sm:p-6 space-y-4 overflow-y-auto flex-1">
+          {pendingJoinRequestsCount > 0 && onOpenJoinRequests && (
+            <div className="p-3.5 rounded-2xl bg-rose-50 dark:bg-rose-950/50 border border-rose-200 dark:border-rose-800 flex items-center justify-between gap-3">
+              <div className="flex items-center gap-2 text-xs font-extrabold text-rose-900 dark:text-rose-200">
+                <BellRing className="w-4 h-4 text-rose-600 animate-bounce shrink-0" />
+                <span>
+                  ממתינות {pendingJoinRequestsCount} בקשות הצטרפות חדשות מעובדים שמחכים לאישור שלך!
+                </span>
+              </div>
+              <button
+                type="button"
+                onClick={() => {
+                  onClose();
+                  onOpenJoinRequests();
+                }}
+                className="px-3 py-1.5 rounded-xl bg-rose-600 hover:bg-rose-700 text-white text-xs font-bold shrink-0 cursor-pointer transition"
+              >
+                פתח בקשות
+              </button>
+            </div>
+          )}
+
+          {inviteMessageToShare && (
+            <div className="p-4 rounded-2xl bg-emerald-50 dark:bg-emerald-950/40 border border-emerald-300 dark:border-emerald-800 space-y-2.5 animate-in fade-in">
+              <div className="flex items-center justify-between gap-2">
+                <div className="text-xs font-extrabold text-emerald-900 dark:text-emerald-200 flex items-center gap-1.5">
+                  <Share2 className="w-4 h-4 text-emerald-600 shrink-0" />
+                  <span>הזמנה מוכנה לשליחה בוואטסאפ עבור {inviteMessageToShare.fullName}:</span>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setInviteMessageToShare(null)}
+                  className="text-emerald-700 dark:text-emerald-300 hover:text-emerald-950 p-1 cursor-pointer"
+                >
+                  <X className="w-3.5 h-3.5" />
+                </button>
+              </div>
+              <pre className="p-2.5 rounded-xl bg-white dark:bg-slate-950 border border-emerald-200 dark:border-emerald-900 text-[11px] font-sans whitespace-pre-wrap text-slate-800 dark:text-slate-200 leading-relaxed">
+                {inviteMessageToShare.text}
+              </pre>
+              <div className="flex flex-wrap items-center gap-2">
+                <button
+                  type="button"
+                  onClick={async () => {
+                    try {
+                      await navigator.clipboard.writeText(inviteMessageToShare.text);
+                      setInviteMessageToShare((prev) => (prev ? { ...prev, copied: true } : null));
+                    } catch {
+                      // ignore
+                    }
+                  }}
+                  className="px-3.5 py-1.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-extrabold flex items-center gap-1.5 cursor-pointer transition shadow-xs"
+                >
+                  {inviteMessageToShare.copied ? (
+                    <Check className="w-3.5 h-3.5" />
+                  ) : (
+                    <Copy className="w-3.5 h-3.5" />
+                  )}
+                  <span>
+                    {inviteMessageToShare.copied
+                      ? 'הועתק! הדבק בוואטסאפ'
+                      : 'העתק הזמנה לוואטסאפ'}
+                  </span>
+                </button>
+                <a
+                  href={`https://wa.me/?text=${encodeURIComponent(inviteMessageToShare.text)}`}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="px-3.5 py-1.5 rounded-xl bg-white dark:bg-slate-900 hover:bg-emerald-100 dark:hover:bg-slate-800 text-emerald-800 dark:text-emerald-300 border border-emerald-300 dark:border-emerald-700 text-xs font-bold flex items-center gap-1.5 transition"
+                >
+                  <Share2 className="w-3.5 h-3.5" />
+                  <span>פתח בוואטסאפ</span>
+                </a>
+              </div>
+            </div>
+          )}
+
           {statusMsg && (
             <div className="p-3 rounded-xl bg-indigo-50 dark:bg-indigo-950/70 border border-indigo-200 dark:border-indigo-800 text-xs font-bold text-indigo-800 dark:text-indigo-300 flex items-center gap-2 animate-in fade-in">
               <CheckCircle2 className="w-4 h-4 text-indigo-600 dark:text-indigo-400 shrink-0" />
@@ -500,11 +615,12 @@ export const AdminTeamModal: React.FC<AdminTeamModalProps> = ({
                   <div className="relative">
                     <Mail className="w-3.5 h-3.5 text-slate-400 absolute right-3 top-1/2 -translate-y-1/2 pointer-events-none" />
                     <input
-                      type="email"
+                      type="text"
+                      inputMode="email"
                       dir="ltr"
                       value={newAuthEmail}
                       onChange={(e) => setNewAuthEmail(e.target.value)}
-                      placeholder="member@company.com"
+                      placeholder="david או member@gmail.com"
                       className="w-full pr-9 pl-3 py-1.5 rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-900 text-xs text-left"
                     />
                   </div>
@@ -521,6 +637,14 @@ export const AdminTeamModal: React.FC<AdminTeamModalProps> = ({
                     />
                   </div>
                 </div>
+                {normalizedNewAuthPreview.usedDefaultDomain && normalizedNewAuthPreview.email && (
+                  <p className="text-[10px] text-emerald-800 dark:text-emerald-300 font-semibold">
+                    ייווצר חשבון אוטומטית עבור:{' '}
+                    <span className="font-mono font-bold" dir="ltr">
+                      {normalizedNewAuthPreview.email}
+                    </span>
+                  </p>
+                )}
               </div>
             )}
           </form>
@@ -875,11 +999,12 @@ export const AdminTeamModal: React.FC<AdminTeamModalProps> = ({
                                 </div>
                                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
                                   <input
-                                    type="email"
+                                    type="text"
+                                    inputMode="email"
                                     dir="ltr"
                                     value={editingAuthEmail}
                                     onChange={(e) => setEditingAuthEmail(e.target.value)}
-                                    placeholder="name@company.com"
+                                    placeholder="david או name@gmail.com"
                                     className="px-3 py-1.5 rounded-lg bg-white dark:bg-slate-950 border border-emerald-300 dark:border-emerald-800 text-xs font-mono text-left text-slate-900 dark:text-slate-100"
                                   />
                                   <input

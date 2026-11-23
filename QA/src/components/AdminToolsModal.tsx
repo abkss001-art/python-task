@@ -9,14 +9,17 @@ import {
   KeyRound,
   Gauge,
   Archive,
-  ArrowLeft
+  ArrowLeft,
+  UserPlus
 } from 'lucide-react';
 
 interface AdminToolsModalProps {
   archivedCount: number;
+  pendingJoinRequestsCount?: number;
   onOpenReport: () => void;
   onOpenBackup: () => void;
   onOpenTeam: () => void;
+  onOpenJoinRequests: () => void;
   onOpenCloud: () => void;
   onOpenSecurity: () => void;
   onOpenQuota: () => void;
@@ -26,9 +29,11 @@ interface AdminToolsModalProps {
 
 export const AdminToolsModal: React.FC<AdminToolsModalProps> = ({
   archivedCount,
+  pendingJoinRequestsCount = 0,
   onOpenReport,
   onOpenBackup,
   onOpenTeam,
+  onOpenJoinRequests,
   onOpenCloud,
   onOpenSecurity,
   onOpenQuota,
@@ -36,6 +41,20 @@ export const AdminToolsModal: React.FC<AdminToolsModalProps> = ({
   onClose
 }) => {
   const tools = [
+    {
+      id: 'join-requests',
+      title: 'בקשות הצטרפות ואישור משתמשים',
+      subtitle: 'אישור מהיר של עובדים חדשים כבודקי QA או מפתחים, הקצאת מערכות ושחרור חסימות',
+      icon: UserPlus,
+      iconBg:
+        pendingJoinRequestsCount > 0
+          ? 'bg-rose-100 text-rose-700 border-rose-300'
+          : 'bg-teal-100 text-teal-700 border-teal-200',
+      badge:
+        pendingJoinRequestsCount > 0 ? `${pendingJoinRequestsCount} ממתינות לאישור` : undefined,
+      badgeUrgent: pendingJoinRequestsCount > 0,
+      action: onOpenJoinRequests
+    },
     {
       id: 'report',
       title: 'דוח התקדמות מנהלים',
@@ -155,7 +174,13 @@ export const AdminToolsModal: React.FC<AdminToolsModalProps> = ({
                         {tool.title}
                       </span>
                       {tool.badge && (
-                        <span className="px-2 py-0.5 rounded-md text-[10px] font-bold bg-amber-100 dark:bg-amber-950 text-amber-800 dark:text-amber-300 border border-amber-300 dark:border-amber-800 shrink-0">
+                        <span
+                          className={`px-2 py-0.5 rounded-md text-[10px] font-bold border shrink-0 ${
+                            (tool as { badgeUrgent?: boolean }).badgeUrgent
+                              ? 'bg-rose-500 text-white border-rose-600 animate-pulse'
+                              : 'bg-amber-100 dark:bg-amber-950 text-amber-800 dark:text-amber-300 border-amber-300 dark:border-amber-800'
+                          }`}
+                        >
                           {tool.badge}
                         </span>
                       )}
