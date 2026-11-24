@@ -25,7 +25,8 @@ import {
   MoreHorizontal,
   Sun,
   Moon,
-  Home
+  Home,
+  Bot
 } from 'lucide-react';
 import { StdIssue, SyncStatusInfo, TeamRole } from '../types/std';
 
@@ -43,6 +44,7 @@ interface NavbarProps {
   onOpenTeamModal?: () => void;
   onOpenSecurityModal?: () => void;
   onOpenAdminToolsModal?: () => void;
+  onOpenMcpModal?: () => void;
   pendingJoinRequestsCount?: number;
   onManualSync?: () => void;
   issues: StdIssue[];
@@ -147,6 +149,7 @@ export const Navbar: React.FC<NavbarProps> = ({
   onOpenTeamModal,
   onOpenSecurityModal,
   onOpenAdminToolsModal,
+  onOpenMcpModal,
   pendingJoinRequestsCount = 0,
   onManualSync,
   issues,
@@ -326,6 +329,19 @@ export const Navbar: React.FC<NavbarProps> = ({
                   <Download className="w-3.5 h-3.5 text-indigo-600" />
                   <BellRing className="w-3.5 h-3.5 text-amber-600 animate-bounce" />
                   <span>הורד אפליקציה + התראות</span>
+                </button>
+              )}
+
+              {/* AI Agent (MCP) Self-Service Button — Visible to ALL logged-in users (QA, Dev, Admin) */}
+              {onOpenMcpModal && (
+                <button
+                  type="button"
+                  onClick={onOpenMcpModal}
+                  className="flex items-center gap-1.5 px-2.5 sm:px-3 py-1.5 rounded-xl border border-indigo-200 dark:border-indigo-800 bg-indigo-50/90 dark:bg-indigo-950/60 hover:bg-indigo-100 dark:hover:bg-indigo-900/70 hover:border-indigo-400 text-indigo-800 dark:text-indigo-200 text-[11px] sm:text-xs font-extrabold transition cursor-pointer shrink-0 shadow-2xs"
+                  title="חבר את Antigravity או Claude לחשבון שלך (MCP)"
+                >
+                  <Bot className="w-3.5 h-3.5 text-indigo-600 dark:text-indigo-400 shrink-0" />
+                  <span>סוכן AI</span>
                 </button>
               )}
 

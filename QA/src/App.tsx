@@ -39,6 +39,8 @@ import {
 } from './components/AdminJoinRequestsModal';
 import { AdminSystemManageModal } from './components/AdminSystemManageModal';
 import { AdminToolsModal } from './components/AdminToolsModal';
+import { McpConnectModal } from './components/McpConnectModal';
+import { AdminMcpModal } from './components/AdminMcpModal';
 import { SystemSelectorHome } from './components/SystemSelectorHome';
 import { LoginScreen, AuthenticatedUser } from './components/LoginScreen';
 import { PendingApprovalScreen } from './components/PendingApprovalScreen';
@@ -242,6 +244,8 @@ export function App() {
   const [isAdminToolsOpen, setIsAdminToolsOpen] = useState<boolean>(false);
   const [adminToolsInitialView, setAdminToolsInitialView] = useState<'main' | 'dev'>('main');
   const [isDevVaultUnlocked, setIsDevVaultUnlocked] = useState<boolean>(false);
+  const [isMcpModalOpen, setIsMcpModalOpen] = useState<boolean>(false);
+  const [isAdminMcpOpen, setIsAdminMcpOpen] = useState<boolean>(false);
   const [joinRequestsReturnTo, setJoinRequestsReturnTo] = useState<'tools' | 'team' | null>(null);
   const [archiveReturnToTools, setArchiveReturnToTools] = useState<boolean>(false);
   const [teamMembers, setTeamMembers] = useState<TeamMember[]>(() => getStoredTeamMembers());
@@ -583,6 +587,8 @@ export function App() {
         isAdminQuotaOpen ||
         isJoinRequestsModalOpen ||
         isAdminToolsOpen ||
+        isMcpModalOpen ||
+        isAdminMcpOpen ||
         isChatDrawerOpen ||
         systemToManage
       ) {
@@ -643,6 +649,8 @@ export function App() {
     isAdminQuotaOpen,
     isJoinRequestsModalOpen,
     isAdminToolsOpen,
+    isMcpModalOpen,
+    isAdminMcpOpen,
     isChatDrawerOpen,
     systemToManage,
     activeSystem,
@@ -770,6 +778,8 @@ export function App() {
     setIsJoinRequestsModalOpen(false);
     setIsAdminToolsOpen(false);
     setIsDevVaultUnlocked(false);
+    setIsMcpModalOpen(false);
+    setIsAdminMcpOpen(false);
     setJoinRequestsReturnTo(null);
     setArchiveReturnToTools(false);
     setAuthUser(null);
@@ -2125,6 +2135,7 @@ export function App() {
             setIsAdminToolsOpen(true);
           }
         }}
+        onOpenMcpModal={() => setIsMcpModalOpen(true)}
         pendingJoinRequestsCount={isAdmin ? pendingJoinRequestsCount : 0}
         onManualSync={() => {
           syncService.requestManualSync();
@@ -3052,7 +3063,43 @@ export function App() {
             setArchiveReturnToTools(true);
             setIsArchiveModalOpen(true);
           }}
+          onOpenMcpAdmin={() => setIsAdminMcpOpen(true)}
           onClose={() => setIsAdminToolsOpen(false)}
+        />
+      )}
+
+      {/* Self-Service AI Agent (MCP) Connection Modal (All Approved Users: QA, Dev, Admin) */}
+      {isMcpModalOpen && authUser && (
+        <McpConnectModal
+          currentUserName={currentUserName}
+          currentUserRole={currentUserRole}
+          isAdmin={isAdmin}
+          allowedSystems={userAllowedSystems || undefined}
+          onOpenAdminMcpSetup={
+            isAdmin
+              ? () => {
+                  if (isDevVaultUnlocked) {
+                    setIsAdminMcpOpen(true);
+                  } else {
+                    setAdminToolsInitialView('dev');
+                    setIsAdminToolsOpen(true);
+                  }
+                }
+              : undefined
+          }
+          onClose={() => setIsMcpModalOpen(false)}
+        />
+      )}
+
+      {/* Admin MCP Integration Configuration Modal (Developer Vault Only) */}
+      {isAdminMcpOpen && isAdmin && isDevVaultUnlocked && (
+        <AdminMcpModal
+          onBack={() => {
+            setIsAdminMcpOpen(false);
+            setAdminToolsInitialView('dev');
+            setIsAdminToolsOpen(true);
+          }}
+          onClose={() => setIsAdminMcpOpen(false)}
         />
       )}
 

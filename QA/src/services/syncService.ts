@@ -75,6 +75,10 @@ import {
   normalizeLoginEmail
 } from '../utils/authHelpers';
 import {
+  encodeMcpPersonalToken,
+  isValidAppCheckDebugToken
+} from '../utils/mcpTokenUtils';
+import {
   isValidAppCheckSiteKey,
   isValidFirebaseConfig,
   loadActiveFirebaseConfig,
@@ -284,6 +288,11 @@ class RealtimeSyncService {
   private hasForcedWebSockets = false;
   private isRebuildingFirebaseApp = false;
   private hasAutoRebuiltFirebaseApp = false;
+  private mcpAppCheckDebugToken = '';
+  private mcpBridgeEnabled = true;
+  private mcpBridgeListeners = new Set<
+    (info: { configured: boolean; enabled: boolean }) => void
+  >();
 
   // Dedicated Per-System Group Chat State & Sync
   private chatsBySystem: Record<string, SystemChatMessage[]> = {};
@@ -351,6 +360,9 @@ class RealtimeSyncService {
       revision: 0
     };
     this.chatsBySystem = {};
+    this.mcpAppCheckDebugToken = '';
+    this.mcpBridgeEnabled = true;
+    this.notifyMcpBridgeListeners();
 
     if (typeof BroadcastChannel !== 'undefined') {
       this.broadcastChannel = new BroadcastChannel('std_qa_live_channel');
@@ -1256,13 +1268,11 @@ class RealtimeSyncService {
       const privatePromise = this.fetchRtdbNodeWithFallback<{
         googleDriveUrl?: string;
         apiSecret?: string;
+        mcpAppCheckToken?: string;
+        mcpEnabled?: boolean;
       }>('std_private_config', 0).then((pRes) => {
         if (pRes.ok && pRes.value) {
-          const decodedUrl = decodeProtectedUrl(pRes.value.googleDriveUrl);
-          if (decodedUrl) setSavedGoogleDriveUrl(decodedUrl);
-          if (typeof pRes.value.apiSecret === 'string') {
-            setSavedGoogleDriveSecret(pRes.value.apiSecret);
-          }
+          this.applyPrivateConfigSnapshot(pRes.value);
         }
       });
 
@@ -1373,8 +1383,12 @@ class RealtimeSyncService {
       const controller = typeof AbortController !== 'undefined' ? new AbortController() : null;
       const abortTimer = controller ? setTimeout(() => controller.abort(), 4000) : null;
       try {
+        const encodedNodePath = nodePath
+          .split('/')
+          .map((seg) => encodeURIComponent(seg))
+          .join('/');
         const res = await fetch(
-          `${dbUrl}/${nodePath}.json?auth=${encodeURIComponent(idToken)}`,
+          `${dbUrl}/${encodedNodePath}.json?auth=${encodeURIComponent(idToken)}`,
           {
             method: 'GET',
             headers: acToken ? { 'X-Firebase-AppCheck': acToken } : undefined,
@@ -2401,6 +2415,9 @@ class RealtimeSyncService {
       revision: 0
     };
     this.chatsBySystem = {};
+    this.mcpAppCheckDebugToken = '';
+    this.mcpBridgeEnabled = true;
+    this.notifyMcpBridgeListeners();
 
     try {
       const sensitiveKeys = [
@@ -2450,6 +2467,180 @@ class RealtimeSyncService {
     this.notifyAuthListeners();
   }
 
+  private applyPrivateConfigSnapshot(pData: {
+    googleDriveUrl?: string;
+    apiSecret?: string;
+    mcpAppCheckToken?: string;
+    mcpEnabled?: boolean;
+  } | null) {
+    if (!pData) return;
+    const decodedUrl = decodeProtectedUrl(pData.googleDriveUrl);
+    if (decodedUrl) setSavedGoogleDriveUrl(decodedUrl);
+    if (typeof pData.apiSecret === 'string') setSavedGoogleDriveSecret(pData.apiSecret);
+    if (typeof pData.mcpAppCheckToken === 'string') {
+      this.mcpAppCheckDebugToken = pData.mcpAppCheckToken.trim();
+    }
+    if (typeof pData.mcpEnabled === 'boolean') {
+      this.mcpBridgeEnabled = pData.mcpEnabled;
+    }
+    this.notifyMcpBridgeListeners();
+  }
+
+  private notifyMcpBridgeListeners() {
+    const info = this.getMcpBridgeStatus();
+    for (const listener of this.mcpBridgeListeners) {
+      listener(info);
+    }
+  }
+
+  public getMcpBridgeStatus(): { configured: boolean; enabled: boolean } {
+    return {
+      configured: isValidAppCheckDebugToken(this.mcpAppCheckDebugToken),
+      enabled: this.mcpBridgeEnabled !== false
+    };
+  }
+
+  public subscribeMcpBridgeStatus(
+    listener: (info: { configured: boolean; enabled: boolean }) => void
+  ): () => void {
+    this.mcpBridgeListeners.add(listener);
+    listener(this.getMcpBridgeStatus());
+    return () => {
+      this.mcpBridgeListeners.delete(listener);
+    };
+  }
+
+  public getAdminMcpBridgeConfig(): { appCheckDebugToken: string; enabled: boolean } {
+    return {
+      appCheckDebugToken: this.mcpAppCheckDebugToken,
+      enabled: this.mcpBridgeEnabled !== false
+    };
+  }
+
+  public async testMcpDebugTokenLive(
+    rawToken: string
+  ): Promise<{ ok: boolean; error?: string }> {
+    const token = rawToken.trim();
+    if (!isValidAppCheckDebugToken(token)) {
+      return { ok: false, error: 'פורמט הטוקן אינו תקין (צפוי מזהה UUID מ-Firebase Console).' };
+    }
+    const cfg = this.activeFirebaseConfig;
+    if (!cfg?.projectId || !cfg?.appId || !cfg?.apiKey) {
+      return { ok: false, error: 'הגדרות הפרויקט חסרות.' };
+    }
+    try {
+      const url = `https://firebaseappcheck.googleapis.com/v1/projects/${encodeURIComponent(
+        cfg.projectId
+      )}/apps/${encodeURIComponent(cfg.appId)}:exchangeDebugToken?key=${encodeURIComponent(
+        cfg.apiKey
+      )}`;
+      const res = await fetch(url, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ debug_token: token })
+      });
+      const data = await res.json().catch(() => ({}));
+      if (res.ok && data?.token) {
+        return { ok: true };
+      }
+      if (res.status === 403 || res.status === 401) {
+        return {
+          ok: false,
+          error: 'הטוקן נדחה — ודא שהוא שמור תחת Manage debug tokens בפרויקט tzavman-qa.'
+        };
+      }
+      return {
+        ok: false,
+        error: data?.error?.message || `אימות הטוקן נכשל (HTTP ${res.status}).`
+      };
+    } catch {
+      return { ok: false, error: 'שגיאת רשת בבדיקת הטוקן.' };
+    }
+  }
+
+  public async saveMcpBridgeConfig(
+    rawDebugToken: string,
+    enabled: boolean
+  ): Promise<{ ok: boolean; error?: string }> {
+    if (!this.activeFirebaseConfig || this.firebaseUserProfile?.role !== 'admin') {
+      return { ok: false, error: 'פעולה זו מותרת למנהל מערכת בלבד.' };
+    }
+    const cleanToken = rawDebugToken.trim();
+    if (cleanToken && !isValidAppCheckDebugToken(cleanToken)) {
+      return { ok: false, error: 'פורמט הטוקן אינו תקין.' };
+    }
+    const payload = {
+      mcpAppCheckToken: cleanToken,
+      mcpEnabled: Boolean(enabled),
+      updatedAt: Date.now()
+    };
+    try {
+      if (this.activeFirebaseConfig.mode === 'firestore' && this.firestore) {
+        await setDoc(doc(this.firestore, 'std_workspaces', 'private_config'), payload, {
+          merge: true
+        });
+      } else if (this.rtdb) {
+        await update(ref(this.rtdb, 'std_private_config'), payload);
+      } else {
+        return { ok: false, error: 'החיבור למסד הנתונים אינו פעיל.' };
+      }
+      this.mcpAppCheckDebugToken = cleanToken;
+      this.mcpBridgeEnabled = Boolean(enabled);
+      this.notifyMcpBridgeListeners();
+      this.recordAuditEvent(
+        enabled && cleanToken
+          ? 'הפעלת/עדכון גשר סוכני AI (MCP) לצוות'
+          : 'השבתת גשר סוכני AI (MCP)',
+        'security'
+      );
+      return { ok: true };
+    } catch (err: any) {
+      return { ok: false, error: err?.message || 'שמירת הגדרות סוכן AI נכשלה.' };
+    }
+  }
+
+  /**
+   * מפיק לכל משתמש מאושר ומחובר טוקן חיבור אישי ל-MCP לפי החשבון וההרשאות שלו (בלי לחשוף סיסמה!)
+   */
+  public generatePersonalMcpToken(): { ok: boolean; token?: string; error?: string } {
+    const cfg = this.activeFirebaseConfig;
+    if (!cfg || !this.firebaseUser || !this.firebaseUserProfile) {
+      return { ok: false, error: 'יש להתחבר לחשבון מאושר כדי להפיק טוקן אישי.' };
+    }
+    if (!this.mcpBridgeEnabled) {
+      return { ok: false, error: 'חיבור סוכני AI מושבת כרגע ע״י מנהל המערכת.' };
+    }
+    if (!isValidAppCheckDebugToken(this.mcpAppCheckDebugToken)) {
+      return {
+        ok: false,
+        error: 'חיבור סוכן AI טרם הופעל ע״י מנהל המערכת (יש להגדיר טוקן פעם אחת בסביבת מפתח).'
+      };
+    }
+    const refreshToken = (this.firebaseUser.refreshToken || '').trim();
+    if (!refreshToken) {
+      return {
+        ok: false,
+        error: 'לא נמצא אסימון חיבור פעיל. נסה להתנתק ולהתחבר מחדש.'
+      };
+    }
+    const dbUrl = (
+      cfg.databaseURL || `https://${cfg.projectId}-default-rtdb.firebaseio.com`
+    ).replace(/\/+$/, '');
+    if (!cfg.apiKey || !cfg.projectId || !cfg.appId || !dbUrl) {
+      return { ok: false, error: 'הגדרות החיבור של המערכת חסרות.' };
+    }
+    const token = encodeMcpPersonalToken({
+      v: 1,
+      rt: refreshToken,
+      ac: this.mcpAppCheckDebugToken,
+      apiKey: cfg.apiKey,
+      dbUrl,
+      projectId: cfg.projectId,
+      appId: cfg.appId
+    });
+    return { ok: true, token };
+  }
+
   public async syncPrivateDriveConfig(googleDriveUrl: string, apiSecret?: string): Promise<void> {
     if (!this.activeFirebaseConfig) return;
     const cleanSecret = typeof apiSecret === 'string' ? apiSecret.trim() : '';
@@ -2464,7 +2655,7 @@ class RealtimeSyncService {
           merge: true
         });
       } else if (this.rtdb) {
-        await set(ref(this.rtdb, 'std_private_config'), payload);
+        await update(ref(this.rtdb, 'std_private_config'), payload);
       }
       this.recordAuditEvent('עדכון הגדרת Google Drive בענן המאובטח', 'backup');
     } catch {
@@ -3369,10 +3560,7 @@ class RealtimeSyncService {
           privateDocRef,
           (snap) => {
             if (!snap.exists()) return;
-            const pData = snap.data() as { googleDriveUrl?: string; apiSecret?: string };
-            const decodedUrl = decodeProtectedUrl(pData?.googleDriveUrl);
-            if (decodedUrl) setSavedGoogleDriveUrl(decodedUrl);
-            if (typeof pData?.apiSecret === 'string') setSavedGoogleDriveSecret(pData.apiSecret);
+            this.applyPrivateConfigSnapshot(snap.data() as any);
           },
           () => {}
         );
@@ -3432,10 +3620,7 @@ class RealtimeSyncService {
         privateDocRef,
         (snap) => {
           if (!snap.exists()) return;
-          const pData = snap.data() as { googleDriveUrl?: string; apiSecret?: string };
-          const decodedUrl = decodeProtectedUrl(pData?.googleDriveUrl);
-          if (decodedUrl) setSavedGoogleDriveUrl(decodedUrl);
-          if (typeof pData?.apiSecret === 'string') setSavedGoogleDriveSecret(pData.apiSecret);
+          this.applyPrivateConfigSnapshot(snap.data() as any);
         },
         () => {}
       );
@@ -3596,11 +3781,7 @@ class RealtimeSyncService {
           this.unsubscribePrivateConfig = onValue(
             privateRef,
             (snap) => {
-              const pData = snap.val() as { googleDriveUrl?: string; apiSecret?: string } | null;
-              if (!pData) return;
-              const decodedUrl = decodeProtectedUrl(pData.googleDriveUrl);
-              if (decodedUrl) setSavedGoogleDriveUrl(decodedUrl);
-              if (typeof pData.apiSecret === 'string') setSavedGoogleDriveSecret(pData.apiSecret);
+              this.applyPrivateConfigSnapshot(snap.val() as any);
             },
             () => {}
           );
@@ -3694,11 +3875,7 @@ class RealtimeSyncService {
         this.unsubscribePrivateConfig = onValue(
           privateRef,
           (snap) => {
-            const pData = snap.val() as { googleDriveUrl?: string; apiSecret?: string } | null;
-            if (!pData) return;
-            const decodedUrl = decodeProtectedUrl(pData.googleDriveUrl);
-            if (decodedUrl) setSavedGoogleDriveUrl(decodedUrl);
-            if (typeof pData.apiSecret === 'string') setSavedGoogleDriveSecret(pData.apiSecret);
+            this.applyPrivateConfigSnapshot(snap.val() as any);
           },
           () => {}
         );

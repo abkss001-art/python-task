@@ -18,7 +18,8 @@ import {
   Eye,
   EyeOff,
   Loader2,
-  ShieldAlert
+  ShieldAlert,
+  Bot
 } from 'lucide-react';
 import { verifyDeveloperVaultPassword } from '../utils/securityUtils';
 
@@ -37,6 +38,7 @@ interface AdminToolsModalProps {
   onOpenSecurity: () => void;
   onOpenQuota: () => void;
   onOpenArchive: () => void;
+  onOpenMcpAdmin: () => void;
   onClose: () => void;
 }
 
@@ -58,6 +60,7 @@ export const AdminToolsModal: React.FC<AdminToolsModalProps> = ({
   onOpenSecurity,
   onOpenQuota,
   onOpenArchive,
+  onOpenMcpAdmin,
   onClose
 }) => {
   const [view, setView] = useState<'main' | 'dev_gate' | 'dev'>(() => {
@@ -197,6 +200,14 @@ export const AdminToolsModal: React.FC<AdminToolsModalProps> = ({
       icon: Settings,
       iconBg: 'bg-sky-100 text-sky-700 border-sky-200 dark:bg-sky-950/70 dark:text-sky-300 dark:border-sky-800',
       action: onOpenCloud
+    },
+    {
+      id: 'mcp',
+      title: 'חיבור סוכני AI (MCP)',
+      subtitle: 'הפעלה, ניהול וכיבוי של חיבור Antigravity ו-Claude לצוות',
+      icon: Bot,
+      iconBg: 'bg-violet-100 text-violet-700 border-violet-200 dark:bg-violet-950/70 dark:text-violet-300 dark:border-violet-800',
+      action: onOpenMcpAdmin
     }
   ];
 
@@ -443,7 +454,7 @@ export const AdminToolsModal: React.FC<AdminToolsModalProps> = ({
                       </span>
                     </div>
                     <p className="text-[11px] text-slate-500 dark:text-slate-400 mt-0.5 truncate">
-                      גיבוי, מכסות שימוש, אבטחה והגדרות חיבור
+                      גיבוי, מכסות שימוש, אבטחה, חיבור וסוכני AI
                     </p>
                   </div>
                 </div>
@@ -459,7 +470,7 @@ export const AdminToolsModal: React.FC<AdminToolsModalProps> = ({
             <div className="flex items-center gap-3 p-3.5 rounded-2xl bg-amber-50 dark:bg-amber-950/40 border border-amber-200 dark:border-amber-800/80 text-xs text-amber-950 dark:text-amber-200">
               <Lock className="w-5 h-5 text-amber-600 dark:text-amber-400 shrink-0" />
               <p className="leading-relaxed font-medium">
-                אזור זה מיועד למפתח המערכת בלבד (גיבוי, מכסות, אבטחה והגדרות חיבור).
+                אזור זה מיועד למפתח המערכת בלבד (גיבוי, מכסות, אבטחה, חיבור וסוכני AI).
               </p>
             </div>
 
