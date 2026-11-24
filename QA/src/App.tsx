@@ -82,6 +82,7 @@ import {
   FolderPlus,
   Home,
   ArrowLeft,
+  ArrowRight,
   Layers,
   ChevronDown,
   Check,
@@ -239,6 +240,10 @@ export function App() {
   const [isAdminQuotaOpen, setIsAdminQuotaOpen] = useState<boolean>(false);
   const [isJoinRequestsModalOpen, setIsJoinRequestsModalOpen] = useState<boolean>(false);
   const [isAdminToolsOpen, setIsAdminToolsOpen] = useState<boolean>(false);
+  const [adminToolsInitialView, setAdminToolsInitialView] = useState<'main' | 'dev'>('main');
+  const [isDevVaultUnlocked, setIsDevVaultUnlocked] = useState<boolean>(false);
+  const [joinRequestsReturnTo, setJoinRequestsReturnTo] = useState<'tools' | 'team' | null>(null);
+  const [archiveReturnToTools, setArchiveReturnToTools] = useState<boolean>(false);
   const [teamMembers, setTeamMembers] = useState<TeamMember[]>(() => getStoredTeamMembers());
 
   // Live Notification Toast & Highlight
@@ -301,6 +306,9 @@ export function App() {
   }, [currentUserName]);
   useEffect(() => {
     isAuthenticatedRef.current = Boolean(authUser);
+    if (!authUser || !authUser.isAdmin) {
+      setIsDevVaultUnlocked(false);
+    }
   }, [authUser]);
 
   // Register Service Worker and capture PWA install prompt
@@ -602,7 +610,7 @@ export function App() {
           id: '__NEW_FROM_PASTE__',
           system: targetSys,
           testCaseId: nextId,
-          platform: 'IOS',
+          platform: 'מחשב',
           subject: '',
           description: '',
           status: 'פתוח',
@@ -760,6 +768,10 @@ export function App() {
     setOwnJoinRequest(null);
     setAdminJoinRequests([]);
     setIsJoinRequestsModalOpen(false);
+    setIsAdminToolsOpen(false);
+    setIsDevVaultUnlocked(false);
+    setJoinRequestsReturnTo(null);
+    setArchiveReturnToTools(false);
     setAuthUser(null);
     setShowShortcutBanner(true);
     try {
@@ -2054,7 +2066,10 @@ export function App() {
           if (isAdmin) setIsAdminSecurityOpen(true);
         }}
         onOpenAdminToolsModal={() => {
-          if (isAdmin) setIsAdminToolsOpen(true);
+          if (isAdmin) {
+            setAdminToolsInitialView('main');
+            setIsAdminToolsOpen(true);
+          }
         }}
         pendingJoinRequestsCount={isAdmin ? pendingJoinRequestsCount : 0}
         onManualSync={() => {
@@ -2180,7 +2195,10 @@ export function App() {
             </div>
             <button
               type="button"
-              onClick={() => setIsJoinRequestsModalOpen(true)}
+              onClick={() => {
+                setJoinRequestsReturnTo(null);
+                setIsJoinRequestsModalOpen(true);
+              }}
               className="px-4 py-2 rounded-xl bg-rose-600 hover:bg-rose-700 text-white text-xs font-extrabold flex items-center gap-1.5 shadow-md shadow-rose-600/20 cursor-pointer transition shrink-0"
             >
               <UserPlus className="w-4 h-4" />
@@ -2271,7 +2289,14 @@ export function App() {
             onOpenSystemChat={(sys) => handleOpenSystemChat(sys)}
             onAddSystem={handleAddSystem}
             onManageSystem={isAdmin ? (sys) => setSystemToManage(sys) : undefined}
-            onOpenArchiveModal={isAdmin ? () => setIsArchiveModalOpen(true) : undefined}
+            onOpenArchiveModal={
+              isAdmin
+                ? () => {
+                    setArchiveReturnToTools(false);
+                    setIsArchiveModalOpen(true);
+                  }
+                : undefined
+            }
             onOpenNewIssue={() => {
               setEditingIssue(null);
               setIsIssueModalOpen(true);
@@ -2730,11 +2755,27 @@ export function App() {
           dir="rtl"
         >
           <div className="bg-white dark:bg-slate-900 rounded-2xl shadow-2xl border border-slate-200 dark:border-slate-800 w-full max-w-xl overflow-hidden">
-            <div className="flex items-center justify-between px-6 py-4 bg-slate-900 text-white border-b border-slate-800">
-              <div className="flex items-center gap-2.5">
-                <Archive className="w-5 h-5 text-amber-400" />
-                <div>
-                  <h3 className="text-base font-extrabold">ארכיון מערכות (סביבת מנהל)</h3>
+            <div className="flex items-center justify-between gap-2 px-5 sm:px-6 py-4 bg-slate-900 text-white border-b border-slate-800">
+              <div className="flex items-center gap-2.5 min-w-0">
+                {archiveReturnToTools && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setIsArchiveModalOpen(false);
+                      setArchiveReturnToTools(false);
+                      setAdminToolsInitialView('main');
+                      setIsAdminToolsOpen(true);
+                    }}
+                    className="flex items-center gap-1 px-2.5 py-1.5 rounded-xl bg-white/10 hover:bg-white/20 text-white text-xs font-bold transition cursor-pointer shrink-0"
+                    title="חזור לכלי מנהל"
+                  >
+                    <ArrowRight className="w-4 h-4" />
+                    <span>חזור</span>
+                  </button>
+                )}
+                <Archive className="w-5 h-5 text-amber-400 shrink-0" />
+                <div className="min-w-0">
+                  <h3 className="text-base font-extrabold truncate">ארכיון מערכות (סביבת מנהל)</h3>
                   <p className="text-xs text-slate-300">
                     מערכות בארכיון מוסתרות מהצוות וזמינות לצפייה או שחזור רק למנהל
                   </p>
@@ -2742,8 +2783,11 @@ export function App() {
               </div>
               <button
                 type="button"
-                onClick={() => setIsArchiveModalOpen(false)}
-                className="p-1.5 rounded-lg text-slate-400 hover:text-white hover:bg-slate-800 cursor-pointer"
+                onClick={() => {
+                  setIsArchiveModalOpen(false);
+                  setArchiveReturnToTools(false);
+                }}
+                className="p-1.5 rounded-lg text-slate-400 hover:text-white hover:bg-slate-800 cursor-pointer shrink-0"
               >
                 <X className="w-5 h-5" />
               </button>
@@ -2827,6 +2871,11 @@ export function App() {
           systems={systems}
           issues={issues.filter((i) => !archivedSystems.includes(i.system))}
           initialSystem={activeSystem}
+          onBack={() => {
+            setIsAdminReportOpen(false);
+            setAdminToolsInitialView('main');
+            setIsAdminToolsOpen(true);
+          }}
           onClose={() => setIsAdminReportOpen(false)}
           onOpenLightbox={(images, index, title) =>
             setLightboxData({ images, index, title })
@@ -2834,8 +2883,8 @@ export function App() {
         />
       )}
 
-      {/* Admin Backup, Restore & CSV Import Modal (Admin Only) */}
-      {isAdminBackupOpen && isAdmin && (
+      {/* Admin Backup, Restore & CSV Import Modal (Developer Vault Only) */}
+      {isAdminBackupOpen && isAdmin && isDevVaultUnlocked && (
         <AdminBackupModal
           systems={systems}
           archivedSystems={archivedSystems}
@@ -2887,6 +2936,11 @@ export function App() {
               currentUserName
             );
           }}
+          onBack={() => {
+            setIsAdminBackupOpen(false);
+            setAdminToolsInitialView('dev');
+            setIsAdminToolsOpen(true);
+          }}
           onClose={() => setIsAdminBackupOpen(false)}
         />
       )}
@@ -2897,8 +2951,16 @@ export function App() {
           systems={systems}
           teamMembers={teamMembers}
           pendingJoinRequestsCount={pendingJoinRequestsCount}
-          onOpenJoinRequests={() => setIsJoinRequestsModalOpen(true)}
+          onOpenJoinRequests={() => {
+            setJoinRequestsReturnTo('team');
+            setIsJoinRequestsModalOpen(true);
+          }}
           onSaveTeamMembers={handleSaveTeamMembers}
+          onBack={() => {
+            setIsTeamModalOpen(false);
+            setAdminToolsInitialView('main');
+            setIsAdminToolsOpen(true);
+          }}
           onClose={() => setIsTeamModalOpen(false)}
         />
       )}
@@ -2914,47 +2976,90 @@ export function App() {
           onUndoRejectRequest={handleUndoRejectJoinRequest}
           onUnblockRequest={(req) => syncService.unblockAndResetJoinRequest(req)}
           onDeleteRequest={(uid) => syncService.deleteJoinRequest(uid)}
-          onClose={() => setIsJoinRequestsModalOpen(false)}
+          onBack={
+            joinRequestsReturnTo
+              ? () => {
+                  const target = joinRequestsReturnTo;
+                  setIsJoinRequestsModalOpen(false);
+                  setJoinRequestsReturnTo(null);
+                  if (target === 'team') {
+                    setIsTeamModalOpen(true);
+                  } else {
+                    setAdminToolsInitialView('main');
+                    setIsAdminToolsOpen(true);
+                  }
+                }
+              : undefined
+          }
+          onClose={() => {
+            setIsJoinRequestsModalOpen(false);
+            setJoinRequestsReturnTo(null);
+          }}
         />
       )}
 
-      {/* Admin Central Tools Hub Modal (Admin Only) */}
+      {/* Admin Central Tools Hub Modal (Admin Only + Password-Protected Developer Vault) */}
       {isAdminToolsOpen && isAdmin && (
         <AdminToolsModal
           archivedCount={archivedSystems.length}
           pendingJoinRequestsCount={pendingJoinRequestsCount}
+          initialView={adminToolsInitialView}
+          isDevVaultUnlocked={isDevVaultUnlocked}
+          onUnlockDevVault={() => setIsDevVaultUnlocked(true)}
+          onLockDevVault={() => setIsDevVaultUnlocked(false)}
           onOpenReport={() => setIsAdminReportOpen(true)}
           onOpenBackup={() => setIsAdminBackupOpen(true)}
           onOpenTeam={() => setIsTeamModalOpen(true)}
-          onOpenJoinRequests={() => setIsJoinRequestsModalOpen(true)}
+          onOpenJoinRequests={() => {
+            setJoinRequestsReturnTo('tools');
+            setIsJoinRequestsModalOpen(true);
+          }}
           onOpenCloud={() => setIsFirebaseModalOpen(true)}
           onOpenSecurity={() => setIsAdminSecurityOpen(true)}
           onOpenQuota={() => setIsAdminQuotaOpen(true)}
-          onOpenArchive={() => setIsArchiveModalOpen(true)}
+          onOpenArchive={() => {
+            setArchiveReturnToTools(true);
+            setIsArchiveModalOpen(true);
+          }}
           onClose={() => setIsAdminToolsOpen(false)}
         />
       )}
 
-      {/* Admin Security & Immutable Server Audit Log Modal (Admin Only) */}
-      {isAdminSecurityOpen && isAdmin && (
+      {/* Admin Security & Immutable Server Audit Log Modal (Developer Vault Only) */}
+      {isAdminSecurityOpen && isAdmin && isDevVaultUnlocked && (
         <AdminSecurityModal
+          onBack={() => {
+            setIsAdminSecurityOpen(false);
+            setAdminToolsInitialView('dev');
+            setIsAdminToolsOpen(true);
+          }}
           onClose={() => setIsAdminSecurityOpen(false)}
         />
       )}
 
-      {/* Admin Free-Tier Platform Quota Monitor Modal (Admin Only) */}
-      {isAdminQuotaOpen && isAdmin && (
+      {/* Admin Free-Tier Platform Quota Monitor Modal (Developer Vault Only) */}
+      {isAdminQuotaOpen && isAdmin && isDevVaultUnlocked && (
         <AdminQuotaModal
+          onBack={() => {
+            setIsAdminQuotaOpen(false);
+            setAdminToolsInitialView('dev');
+            setIsAdminToolsOpen(true);
+          }}
           onClose={() => setIsAdminQuotaOpen(false)}
         />
       )}
 
-      {/* Firebase Cloud Setup Wizard Modal (Admin Only) */}
-      {isFirebaseModalOpen && isAdmin && (
+      {/* Firebase Cloud Setup Wizard Modal (Developer Vault Only) */}
+      {isFirebaseModalOpen && isAdmin && isDevVaultUnlocked && (
         <FirebaseSetupModal
           currentConfig={syncService.getActiveFirebaseConfig()}
           syncStatus={syncStatus}
           onSaveConfig={(cfg) => syncService.connectFirebase(cfg)}
+          onBack={() => {
+            setIsFirebaseModalOpen(false);
+            setAdminToolsInitialView('dev');
+            setIsAdminToolsOpen(true);
+          }}
           onClose={() => setIsFirebaseModalOpen(false)}
         />
       )}

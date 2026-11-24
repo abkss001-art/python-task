@@ -10,13 +10,15 @@ import {
   History,
   UserCheck,
   Database,
-  HardDrive
+  HardDrive,
+  ArrowRight
 } from 'lucide-react';
 import { ServerAuditLogEntry } from '../types/std';
 import { syncService } from '../services/syncService';
 import { getSavedGoogleDriveUrl } from '../services/googleDriveService';
 
 interface AdminSecurityModalProps {
+  onBack?: () => void;
   onClose: () => void;
 }
 
@@ -47,7 +49,7 @@ const CATEGORY_LABELS: Record<ServerAuditLogEntry['category'], { label: string; 
   }
 };
 
-export const AdminSecurityModal: React.FC<AdminSecurityModalProps> = ({ onClose }) => {
+export const AdminSecurityModal: React.FC<AdminSecurityModalProps> = ({ onBack, onClose }) => {
   const [logs, setLogs] = useState<ServerAuditLogEntry[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -105,13 +107,24 @@ export const AdminSecurityModal: React.FC<AdminSecurityModalProps> = ({ onClose 
     >
       <div className="bg-white dark:bg-slate-900 rounded-2xl shadow-2xl border border-slate-200 dark:border-slate-800 w-full max-w-2xl overflow-hidden my-auto max-h-[92vh] flex flex-col">
         {/* Header */}
-        <div className="flex items-center justify-between px-6 py-4 bg-gradient-to-l from-slate-900 via-indigo-950 to-slate-900 text-white border-b border-slate-800 shrink-0">
-          <div className="flex items-center gap-3">
-            <div className="p-2 rounded-xl bg-emerald-500/20 text-emerald-300 border border-emerald-400/30">
+        <div className="flex items-center justify-between gap-2 px-5 sm:px-6 py-4 bg-gradient-to-l from-slate-900 via-indigo-950 to-slate-900 text-white border-b border-slate-800 shrink-0">
+          <div className="flex items-center gap-2.5 min-w-0">
+            {onBack && (
+              <button
+                type="button"
+                onClick={onBack}
+                className="flex items-center gap-1 px-2.5 py-1.5 rounded-xl bg-white/10 hover:bg-white/20 text-white text-xs font-bold transition cursor-pointer shrink-0"
+                title="חזור שלב אחד אחורה"
+              >
+                <ArrowRight className="w-4 h-4" />
+                <span>חזור</span>
+              </button>
+            )}
+            <div className="p-2 rounded-xl bg-emerald-500/20 text-emerald-300 border border-emerald-400/30 shrink-0">
               <ShieldCheck className="w-5 h-5" />
             </div>
-            <div>
-              <h3 className="text-base font-extrabold">אבטחה ויומן פעולות</h3>
+            <div className="min-w-0">
+              <h3 className="text-base font-extrabold truncate">אבטחה ויומן פעולות</h3>
               <p className="text-xs text-slate-300">
                 מצב הגנות המערכת ותיעוד פעולות אחרונות
               </p>

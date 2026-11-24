@@ -16,7 +16,8 @@ import {
   Layers,
   Image as ImageIcon,
   Sparkles,
-  TrendingUp
+  TrendingUp,
+  ArrowRight
 } from 'lucide-react';
 import { StdIssue, StdPlatform, StdStatus, STATUSES } from '../types/std';
 import { PlatformIcon } from './IssueCard';
@@ -25,6 +26,7 @@ interface AdminReportModalProps {
   systems: string[];
   issues: StdIssue[];
   initialSystem?: string;
+  onBack?: () => void;
   onClose: () => void;
   onOpenLightbox: (images: string[], index: number, title: string) => void;
 }
@@ -33,10 +35,13 @@ export const AdminReportModal: React.FC<AdminReportModalProps> = ({
   systems,
   issues,
   initialSystem = 'ALL',
+  onBack,
   onClose,
   onOpenLightbox
 }) => {
-  const [selectedScope, setSelectedScope] = useState<string>(initialSystem);
+  const [selectedScope, setSelectedScope] = useState<string>(() =>
+    !initialSystem || initialSystem === 'HOME' ? 'ALL' : initialSystem
+  );
   const [copiedSummary, setCopiedSummary] = useState(false);
 
   // Filtered issues according to selected scope ('ALL' or specific system)
@@ -98,7 +103,7 @@ export const AdminReportModal: React.FC<AdminReportModalProps> = ({
 
   // Platform breakdown
   const platformStats = useMemo(() => {
-    const platforms: StdPlatform[] = ['IOS', 'אנדרואיד', 'מחשב'];
+    const platforms: StdPlatform[] = ['מחשב', 'IOS', 'אנדרואיד'];
     return platforms.map((p) => {
       const count = scopedIssues.filter((i) => i.platform === p).length;
       return {
@@ -242,6 +247,17 @@ export const AdminReportModal: React.FC<AdminReportModalProps> = ({
         {/* Top Action & Scope Selector Bar (Hidden when printing) */}
         <div className="flex flex-wrap items-center justify-between gap-3 px-4 sm:px-6 py-3.5 bg-slate-900 text-white border-b border-slate-800 print:hidden">
           <div className="flex items-center gap-2.5">
+            {onBack && (
+              <button
+                type="button"
+                onClick={onBack}
+                className="flex items-center gap-1 px-2.5 py-1.5 rounded-xl bg-white/10 hover:bg-white/20 text-white text-xs font-bold transition cursor-pointer shrink-0"
+                title="חזור שלב אחד אחורה"
+              >
+                <ArrowRight className="w-4 h-4" />
+                <span>חזור</span>
+              </button>
+            )}
             <div className="w-9 h-9 rounded-xl bg-indigo-600/30 border border-indigo-400/40 flex items-center justify-center text-indigo-300">
               <BarChart3 className="w-5 h-5" />
             </div>

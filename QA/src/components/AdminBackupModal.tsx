@@ -13,7 +13,8 @@ import {
   ExternalLink,
   Loader2,
   Sparkles,
-  Trash2
+  Trash2,
+  ArrowRight
 } from 'lucide-react';
 import { StdIssue, StdPlatform, StdSeverity, StdStatus } from '../types/std';
 import {
@@ -41,6 +42,7 @@ interface AdminBackupModalProps {
     issues: StdIssue[];
   }) => void;
   onImportIssues: (importedIssues: StdIssue[]) => void;
+  onBack?: () => void;
   onClose: () => void;
 }
 
@@ -52,6 +54,7 @@ export const AdminBackupModal: React.FC<AdminBackupModalProps> = ({
   currentUserDisplay,
   onRestoreBackup,
   onImportIssues,
+  onBack,
   onClose
 }) => {
   const jsonFileInputRef = useRef<HTMLInputElement | null>(null);
@@ -539,11 +542,22 @@ export const AdminBackupModal: React.FC<AdminBackupModalProps> = ({
       dir="rtl"
     >
       <div className="bg-white dark:bg-slate-900 rounded-2xl shadow-2xl border border-slate-200 dark:border-slate-800 w-full max-w-2xl overflow-hidden my-auto max-h-[92vh] flex flex-col">
-        <div className="flex items-center justify-between px-6 py-4 bg-slate-900 dark:bg-slate-950 text-white border-b border-slate-800 shrink-0">
-          <div className="flex items-center gap-2.5">
-            <DatabaseBackup className="w-5 h-5 text-indigo-400" />
-            <div>
-              <h3 className="text-base font-extrabold">
+        <div className="flex items-center justify-between gap-2 px-5 sm:px-6 py-4 bg-slate-900 dark:bg-slate-950 text-white border-b border-slate-800 shrink-0">
+          <div className="flex items-center gap-2.5 min-w-0">
+            {onBack && (
+              <button
+                type="button"
+                onClick={onBack}
+                className="flex items-center gap-1 px-2.5 py-1.5 rounded-xl bg-white/10 hover:bg-white/20 text-white text-xs font-bold transition cursor-pointer shrink-0"
+                title="חזור שלב אחד אחורה"
+              >
+                <ArrowRight className="w-4 h-4" />
+                <span>חזור</span>
+              </button>
+            )}
+            <DatabaseBackup className="w-5 h-5 text-indigo-400 shrink-0" />
+            <div className="min-w-0">
+              <h3 className="text-base font-extrabold truncate">
                 גיבוי, שחזור וייבוא אקסל
               </h3>
               <p className="text-xs text-slate-300 dark:text-slate-400">

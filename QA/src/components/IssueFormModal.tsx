@@ -104,7 +104,7 @@ export const IssueFormModal: React.FC<IssueFormModalProps> = ({
     }
   };
   const [platform, setPlatform] = useState<StdPlatform>(
-    editingIssue?.platform || 'IOS'
+    editingIssue?.platform || 'מחשב'
   );
   const [severity, setSeverity] = useState<StdSeverity>(
     editingIssue?.severity || 'בינונית'

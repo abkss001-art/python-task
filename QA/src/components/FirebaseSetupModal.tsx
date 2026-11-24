@@ -10,7 +10,8 @@ import {
   AlertCircle,
   Link2,
   ShieldCheck,
-  Lock
+  Lock,
+  ArrowRight
 } from 'lucide-react';
 import { FirebaseConfigData, SyncStatusInfo } from '../types/std';
 import {
@@ -27,6 +28,7 @@ interface FirebaseSetupModalProps {
   currentConfig: FirebaseConfigData | null;
   syncStatus: SyncStatusInfo;
   onSaveConfig: (config: FirebaseConfigData) => Promise<{ ok: boolean; error?: string }>;
+  onBack?: () => void;
   onClose: () => void;
 }
 
@@ -34,6 +36,7 @@ export const FirebaseSetupModal: React.FC<FirebaseSetupModalProps> = ({
   currentConfig,
   syncStatus,
   onSaveConfig,
+  onBack,
   onClose
 }) => {
   const [rawSnippet, setRawSnippet] = useState(
@@ -114,13 +117,24 @@ export const FirebaseSetupModal: React.FC<FirebaseSetupModalProps> = ({
     >
       <div className="bg-white dark:bg-slate-900 rounded-2xl shadow-2xl border border-slate-200 dark:border-slate-800 w-full max-w-2xl overflow-hidden">
         {/* Header */}
-        <div className="flex items-center justify-between px-6 py-4 bg-gradient-to-l from-indigo-600 to-violet-600 text-white">
-          <div className="flex items-center gap-3">
-            <div className="p-2 rounded-xl bg-white/15 backdrop-blur">
+        <div className="flex items-center justify-between gap-2 px-5 sm:px-6 py-4 bg-gradient-to-l from-indigo-600 to-violet-600 text-white">
+          <div className="flex items-center gap-2.5 min-w-0">
+            {onBack && (
+              <button
+                type="button"
+                onClick={onBack}
+                className="flex items-center gap-1 px-2.5 py-1.5 rounded-xl bg-white/15 hover:bg-white/25 text-white text-xs font-bold transition cursor-pointer shrink-0"
+                title="חזור שלב אחד אחורה"
+              >
+                <ArrowRight className="w-4 h-4" />
+                <span>חזור</span>
+              </button>
+            )}
+            <div className="p-2 rounded-xl bg-white/15 backdrop-blur shrink-0">
               <Cloud className="w-6 h-6" />
             </div>
-            <div>
-              <h2 className="text-lg font-bold">הגדרות חיבור וסנכרון</h2>
+            <div className="min-w-0">
+              <h2 className="text-lg font-bold truncate">הגדרות חיבור וסנכרון</h2>
               <p className="text-xs text-indigo-100">
                 הגדרות סנכרון בזמן אמת לכל חברי הצוות
               </p>

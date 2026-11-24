@@ -19,7 +19,8 @@ import {
   KeyRound,
   Copy,
   Share2,
-  BellRing
+  BellRing,
+  ArrowRight
 } from 'lucide-react';
 import { TeamMember } from '../utils/teamMembers';
 import { TeamRole } from '../types/std';
@@ -35,6 +36,7 @@ interface AdminTeamModalProps {
     members: TeamMember[],
     renameInfo?: { oldName: string; newName: string }
   ) => void;
+  onBack?: () => void;
   onClose: () => void;
 }
 
@@ -44,6 +46,7 @@ export const AdminTeamModal: React.FC<AdminTeamModalProps> = ({
   pendingJoinRequestsCount = 0,
   onOpenJoinRequests,
   onSaveTeamMembers,
+  onBack,
   onClose
 }) => {
   const [members, setMembers] = useState<TeamMember[]>(teamMembers);
@@ -339,11 +342,22 @@ export const AdminTeamModal: React.FC<AdminTeamModalProps> = ({
     >
       <div className="bg-white dark:bg-slate-900 rounded-2xl shadow-2xl border border-slate-200 dark:border-slate-800 w-full max-w-xl overflow-hidden my-auto max-h-[92vh] flex flex-col">
         {/* Modal Header */}
-        <div className="flex items-center justify-between px-6 py-4 bg-slate-900 dark:bg-slate-950 text-white border-b border-slate-800 shrink-0">
-          <div className="flex items-center gap-2.5">
-            <Users className="w-5 h-5 text-indigo-400" />
-            <div>
-              <h3 className="text-base font-extrabold">ניהול חברי צוות והרשאות מערכת</h3>
+        <div className="flex items-center justify-between gap-2 px-5 sm:px-6 py-4 bg-slate-900 dark:bg-slate-950 text-white border-b border-slate-800 shrink-0">
+          <div className="flex items-center gap-2.5 min-w-0">
+            {onBack && (
+              <button
+                type="button"
+                onClick={onBack}
+                className="flex items-center gap-1 px-2.5 py-1.5 rounded-xl bg-white/10 hover:bg-white/20 text-white text-xs font-bold transition cursor-pointer shrink-0"
+                title="חזור שלב אחד אחורה"
+              >
+                <ArrowRight className="w-4 h-4" />
+                <span>חזור</span>
+              </button>
+            )}
+            <Users className="w-5 h-5 text-indigo-400 shrink-0" />
+            <div className="min-w-0">
+              <h3 className="text-base font-extrabold truncate">ניהול חברי צוות והרשאות מערכת</h3>
               <p className="text-xs text-slate-300 dark:text-slate-400">
                 עריכת שמות, הקצאת מערכות מורשות לבודקים ומפתחים וניהול הגישה
               </p>

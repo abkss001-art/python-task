@@ -3,6 +3,60 @@ import type { TeamRole } from '../types/std';
 const ENVELOPE_PREFIX = 'tzv_enc_v1:';
 const ENVELOPE_KEY = 'TzavMan_Nahshon_QA_Shield_2026';
 
+// PBKDF2-SHA256 (100,000 iterations) digest of the Developer Vault password — plaintext is never stored in source
+const DEV_VAULT_SALT = 'tzavman_dev_vault_v1::nahshon_2026';
+const DEV_VAULT_ITERATIONS = 100_000;
+const DEV_VAULT_EXPECTED_HASH =
+  '4f2ae7321c407e8329ce04ca89c33861a1b927f6066c26c71df7678499992d34';
+
+function constantTimeHexEqual(a: string, b: string): boolean {
+  if (a.length !== b.length) return false;
+  let diff = 0;
+  for (let i = 0; i < a.length; i++) {
+    diff |= a.charCodeAt(i) ^ b.charCodeAt(i);
+  }
+  return diff === 0;
+}
+
+/**
+ * אימות סיסמת "סביבת מפתח" באמצעות PBKDF2-SHA256 (100,000 איטרציות) והשוואה בזמן קבוע.
+ * הסיסמה עצמה אינה שמורה בשום מקום בקוד הגלוי.
+ */
+export async function verifyDeveloperVaultPassword(rawInput: string): Promise<boolean> {
+  const cleaned = rawInput.trim();
+  if (!cleaned) return false;
+  const subtle = typeof globalThis !== 'undefined' ? globalThis.crypto?.subtle : undefined;
+  if (!subtle) return false;
+  try {
+    const enc = new TextEncoder();
+    const keyMaterial = await subtle.importKey(
+      'raw',
+      enc.encode(cleaned),
+      'PBKDF2',
+      false,
+      ['deriveBits']
+    );
+    const derivedBits = await subtle.deriveBits(
+      {
+        name: 'PBKDF2',
+        salt: enc.encode(DEV_VAULT_SALT),
+        iterations: DEV_VAULT_ITERATIONS,
+        hash: 'SHA-256'
+      },
+      keyMaterial,
+      256
+    );
+    const bytes = new Uint8Array(derivedBits);
+    let hex = '';
+    for (let i = 0; i < bytes.length; i++) {
+      hex += bytes[i].toString(16).padStart(2, '0');
+    }
+    return constantTimeHexEqual(hex, DEV_VAULT_EXPECTED_HASH);
+  } catch {
+    return false;
+  }
+}
+
 /**
  * גיבוב דטרמיניסטי מהיר (64-bit Salted Hash) לחתימת מצב מקומי למניעת שינוי isAdmin דרך DevTools
  */

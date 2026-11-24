@@ -106,7 +106,7 @@ export interface SyncStatusInfo {
   firebaseUserEmail?: string;
 }
 
-export const PLATFORMS: StdPlatform[] = ['IOS', 'אנדרואיד', 'מחשב'];
+export const PLATFORMS: StdPlatform[] = ['מחשב', 'IOS', 'אנדרואיד'];
 
 export const STATUSES: StdStatus[] = ['פתוח', 'בטיפול', 'ניתן לבדוק שוב', 'נבדק תקין'];
 
