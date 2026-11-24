@@ -1071,36 +1071,12 @@ class RealtimeSyncService {
   }
 
   /**
-   * מנקה מטמון ישן של App Check מ-IndexedDB (למשל במכשיר שביקר באפליקציה לפני עדכון מפתח האבטחה)
-   */
-  private async clearAppCheckIndexedDb(): Promise<void> {
-    if (typeof indexedDB === 'undefined') return;
-    try {
-      await this.withTimeout(
-        new Promise<void>((resolve) => {
-          try {
-            const req = indexedDB.deleteDatabase('firebase-app-check-database');
-            req.onsuccess = () => resolve();
-            req.onerror = () => resolve();
-            req.onblocked = () => resolve();
-          } catch {
-            resolve();
-          }
-        }),
-        1500,
-        'idb-delete-timeout'
-      );
-    } catch {
-      // ignore timeout/errors
-    }
-  }
-
-  /**
-   * קריאת צומת RTDB עם Timeout קצר + גיבוי HTTPS REST מאומת, כך ש-get() לעולם לא יתקע לנצח בטלפון/PWA
+   * קריאת צומת RTDB עם Timeout קצר + גיבוי HTTPS REST מאומת (כולל רענון טוקן App Check אוטומטי ב-401),
+   * כך ש-get() לעולם לא יתקע לנצח בטלפון או ב-PWA (ולעולם לא נועל IndexedDB בין טאבים).
    */
   private async fetchRtdbNodeWithFallback<T = any>(
     nodePath: string,
-    sdkTimeoutMs = 4500
+    sdkTimeoutMs = 4000
   ): Promise<{ ok: boolean; exists: boolean; value: T | null; error?: string }> {
     // 1. Fast path: Firebase RTDB SDK with strict timeout
     if (this.rtdb) {
@@ -1126,35 +1102,23 @@ class RealtimeSyncService {
       return { ok: false, exists: false, value: null, error: 'חיבור הנתונים לא זמין' };
     }
 
-    try {
-      const idToken = await this.withTimeout(
-        this.firebaseUser.getIdToken(),
-        4000,
-        'id-token-timeout'
-      );
+    const doRestRead = async (
+      idToken: string,
+      forceRefreshAppCheck: boolean
+    ): Promise<{ status: number; value?: T | null; error?: string }> => {
       let acToken = '';
       if (this.firebaseAppCheck) {
         try {
           const acRes = await this.withTimeout(
-            getAppCheckToken(this.firebaseAppCheck, false),
-            4000,
+            getAppCheckToken(this.firebaseAppCheck, forceRefreshAppCheck),
+            4500,
             'appcheck-token-timeout'
           );
           acToken = acRes?.token || '';
         } catch {
-          try {
-            const acResForced = await this.withTimeout(
-              getAppCheckToken(this.firebaseAppCheck, true),
-              4500,
-              'appcheck-force-timeout'
-            );
-            acToken = acResForced?.token || '';
-          } catch {
-            acToken = '';
-          }
+          acToken = '';
         }
       }
-
       const controller = typeof AbortController !== 'undefined' ? new AbortController() : null;
       const abortTimer = controller ? setTimeout(() => controller.abort(), 5000) : null;
       try {
@@ -1169,44 +1133,60 @@ class RealtimeSyncService {
         if (abortTimer) clearTimeout(abortTimer);
         if (res.status === 200) {
           const val = (await res.json()) as T | null;
-          return { ok: true, exists: val !== null && val !== undefined, value: val };
+          return { status: 200, value: val };
         }
-        return { ok: false, exists: false, value: null, error: `HTTP ${res.status}` };
+        return { status: res.status, error: `HTTP ${res.status}` };
       } catch (fetchErr: any) {
         if (abortTimer) clearTimeout(abortTimer);
-        return {
-          ok: false,
-          exists: false,
-          value: null,
-          error: fetchErr?.message || 'שגיאת תקשורת'
-        };
+        return { status: 0, error: fetchErr?.message || 'שגיאת תקשורת' };
       }
+    };
+
+    try {
+      const idToken = await this.withTimeout(
+        this.firebaseUser.getIdToken(),
+        4000,
+        'id-token-timeout'
+      );
+      const firstTry = await doRestRead(idToken, false);
+      if (firstTry.status === 200) {
+        const val = firstTry.value ?? null;
+        return { ok: true, exists: val !== null && val !== undefined, value: val };
+      }
+      // If 401 (stale App Check or Auth token), force-refresh BOTH once and retry cleanly!
+      if (firstTry.status === 401) {
+        const freshIdToken = await this.withTimeout(
+          this.firebaseUser.getIdToken(true),
+          4000,
+          'id-token-refresh-timeout'
+        ).catch(() => idToken);
+        const secondTry = await doRestRead(freshIdToken, true);
+        if (secondTry.status === 200) {
+          const val = secondTry.value ?? null;
+          return { ok: true, exists: val !== null && val !== undefined, value: val };
+        }
+        return { ok: false, exists: false, value: null, error: secondTry.error || 'HTTP 401' };
+      }
+      return { ok: false, exists: false, value: null, error: firstTry.error || 'שגיאת תקשורת' };
     } catch (err: any) {
       return { ok: false, exists: false, value: null, error: err?.message || 'שגיאת אימות' };
     }
   }
 
   public async resetAppCheckCacheAndReload(): Promise<void> {
-    try {
-      localStorage.removeItem('tzavman_ac_sitekey_v1');
-      localStorage.removeItem('tzavman_last_ac_hash');
-    } catch {
-      // ignore
+    if (this.firebaseAppCheck) {
+      await this.withTimeout(
+        getAppCheckToken(this.firebaseAppCheck, true),
+        3500,
+        'ac-refresh-timeout'
+      ).catch(() => {});
     }
-    await this.clearAppCheckIndexedDb();
     if (typeof window !== 'undefined') {
       window.location.reload();
     }
   }
 
   public async forceSignOutAndResetStartup(): Promise<void> {
-    try {
-      localStorage.removeItem('tzavman_ac_sitekey_v1');
-      localStorage.removeItem('tzavman_last_ac_hash');
-    } catch {
-      // ignore
-    }
-    await this.clearAppCheckIndexedDb();
     await this.signOutFirebase();
     this.firebaseAuthInitialized = true;
     this.updateStatus({ errorMessage: undefined });
@@ -3490,11 +3470,11 @@ class RealtimeSyncService {
       // Firebase App Check (Fraud Defense / reCAPTCHA Enterprise): blocks use of the Firebase API key outside this app
       if (isValidAppCheckSiteKey(config.appCheckSiteKey)) {
         const activeKey = (config.appCheckSiteKey as string).trim();
+        let siteKeyChanged = false;
         try {
-          // One-time cleanup if device previously cached an older/broken App Check key in IndexedDB (e.g. phone PWA)
           const savedAcKey = localStorage.getItem('tzavman_ac_sitekey_v1');
           if (savedAcKey !== activeKey) {
-            await this.clearAppCheckIndexedDb();
+            siteKeyChanged = true;
             localStorage.setItem('tzavman_ac_sitekey_v1', activeKey);
           }
         } catch {
@@ -3508,6 +3488,10 @@ class RealtimeSyncService {
             provider: new ReCaptchaEnterpriseProvider(activeKey),
             isTokenAutoRefreshEnabled: true
           });
+          if (siteKeyChanged) {
+            // Non-blocking official SDK refresh when migrating from an older site key (never locks IndexedDB!)
+            getAppCheckToken(this.firebaseAppCheck, true).catch(() => {});
+          }
           this.unsubscribeAppCheckToken = onTokenChanged(this.firebaseAppCheck, (tokenRes) => {
             if (tokenRes?.token) {
               this.recordAppCheckTokenUsage(tokenRes.token);
