@@ -113,6 +113,22 @@ export function buildMcpServerConfigJson(scriptPath: string, personalToken: stri
   );
 }
 
+export function buildMcpServerEntrySnippet(scriptPath: string, personalToken: string): string {
+  const cleanPath = normalizeScriptPathForConfig(scriptPath);
+  const entryJson = JSON.stringify(
+    {
+      command: 'node',
+      args: [cleanPath],
+      env: {
+        TZAVMAN_MCP_TOKEN: personalToken
+      }
+    },
+    null,
+    2
+  );
+  return `"tzavman-qa": ${entryJson}`;
+}
+
 export function buildClaudeCodeAddCommand(scriptPath: string, personalToken: string): string {
   const cleanPath = normalizeScriptPathForConfig(scriptPath);
   return `claude mcp add tzavman-qa -e TZAVMAN_MCP_TOKEN=${personalToken} -- node "${cleanPath}"`;
