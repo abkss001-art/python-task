@@ -8,6 +8,10 @@ import {
 } from 'firebase/app-check';
 import {
   getAuth,
+  initializeAuth,
+  browserLocalPersistence,
+  browserSessionPersistence,
+  inMemoryPersistence,
   onAuthStateChanged,
   signInWithEmailAndPassword,
   createUserWithEmailAndPassword,
@@ -2073,7 +2077,9 @@ class RealtimeSyncService {
           // ignore secondary App Check init error if already initialized
         }
       }
-      const secondaryAuth = getAuth(secondaryApp);
+      const secondaryAuth = initializeAuth(secondaryApp, {
+        persistence: inMemoryPersistence
+      });
       const cred = await createUserWithEmailAndPassword(secondaryAuth, cleanEmail, password);
       const newUid = cred.user.uid;
       await signOut(secondaryAuth).catch(() => {});
@@ -2148,7 +2154,9 @@ class RealtimeSyncService {
     } catch {
       // ignore
     }
-    await clearWorkspaceAndChatsFromIndexedDB().catch(() => {});
+    await this.withTimeout(clearWorkspaceAndChatsFromIndexedDB(), 1500, 'idb-clear-timeout').catch(
+      () => {}
+    );
   }
 
   public async signOutFirebase(): Promise<void> {
@@ -3511,7 +3519,14 @@ class RealtimeSyncService {
         }
       }
 
-      this.firebaseAuth = getAuth(this.firebaseApp);
+      // Use localStorage-based auth persistence instead of IndexedDB to prevent mobile/PWA & multi-tab deadlocks!
+      try {
+        this.firebaseAuth = initializeAuth(this.firebaseApp, {
+          persistence: [browserLocalPersistence, browserSessionPersistence, inMemoryPersistence]
+        });
+      } catch {
+        this.firebaseAuth = getAuth(this.firebaseApp);
+      }
       if (useFirestore) {
         this.firestore = getFirestore(this.firebaseApp);
         this.rtdb = null;
