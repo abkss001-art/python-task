@@ -16,7 +16,11 @@ import {
   Trash2,
   ArrowRight
 } from 'lucide-react';
-import { StdIssue, StdPlatform, StdSeverity, StdStatus } from '../types/std';
+import { StdIssue } from '../types/std';
+import {
+  downloadSampleCsvTemplate,
+  parseCsvBufferToIssues
+} from '../utils/csvImportUtils';
 import {
   GOOGLE_APPS_SCRIPT_CODE,
   getSavedGoogleDriveSecret,
@@ -294,243 +298,35 @@ export const AdminBackupModal: React.FC<AdminBackupModalProps> = ({
     e.target.value = '';
   };
 
-  /**
-   * מנתח CSV / TSV מלא לפי תקן RFC-4180 התומך בירידות שורה (Alt+Enter באקסל) בתוך תאים ממוסגרים במירכאות
-   */
-  const parseFullCsvRows = (rawText: string): string[][] => {
-    const firstNewlineIdx = rawText.search(/\r?\n/);
-    const firstLine = firstNewlineIdx !== -1 ? rawText.slice(0, firstNewlineIdx) : rawText;
-    const tabCount = (firstLine.match(/\t/g) || []).length;
-    const semiCount = (firstLine.match(/;/g) || []).length;
-    const commaCount = (firstLine.match(/,/g) || []).length;
-
-    const delimiter =
-      tabCount > commaCount && tabCount >= semiCount
-        ? '\t'
-        : semiCount > commaCount
-        ? ';'
-        : ',';
-
-    const rows: string[][] = [];
-    let currentRow: string[] = [];
-    let currentCell = '';
-    let inQuotes = false;
-
-    for (let i = 0; i < rawText.length; i++) {
-      const ch = rawText[i];
-
-      if (ch === '"') {
-        if (inQuotes && rawText[i + 1] === '"') {
-          currentCell += '"';
-          i++;
-        } else {
-          inQuotes = !inQuotes;
-        }
-      } else if (ch === delimiter && !inQuotes) {
-        currentRow.push(currentCell.trim());
-        currentCell = '';
-      } else if ((ch === '\n' || ch === '\r') && !inQuotes) {
-        if (ch === '\r' && rawText[i + 1] === '\n') {
-          i++;
-        }
-        currentRow.push(currentCell.trim());
-        if (currentRow.some((cell) => cell.length > 0)) {
-          rows.push(currentRow);
-        }
-        currentRow = [];
-        currentCell = '';
-      } else {
-        currentCell += ch;
-      }
-    }
-
-    currentRow.push(currentCell.trim());
-    if (currentRow.some((cell) => cell.length > 0)) {
-      rows.push(currentRow);
-    }
-
-    return rows;
-  };
-
   const handleUploadCsvFile = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
 
-    if (/\.xlsx?$/i.test(file.name)) {
-      setStatusMsg({
-        type: 'error',
-        text: 'קובץ זה שמור בפורמט בינארי (.xlsx). באקסל לחץ על "שמור בשם" (Save As) ובחר "CSV UTF-8 (מופרד בפסיקים)" ואז העלה אותו לכאן.'
-      });
-      e.target.value = '';
-      return;
-    }
+    const targetSys =
+      activeSystem === 'ALL' || activeSystem === 'HOME' || !activeSystem
+        ? systems[0] || 'CARGO'
+        : activeSystem;
 
     const reader = new FileReader();
     reader.onload = () => {
-      try {
-        const buffer = reader.result as ArrayBuffer;
-        let text = '';
-        try {
-          // ניסיון ראשון: פענוח UTF-8 תקני
-          const utf8Decoder = new TextDecoder('utf-8', { fatal: true });
-          text = utf8Decoder.decode(buffer);
-        } catch {
-          // גיבוי אוטומטי לקובצי אקסל בעברית ב-Windows (קידוד Windows-1255 / ANSI) למניעת ג'יבריש!
-          const hebDecoder = new TextDecoder('windows-1255');
-          text = hebDecoder.decode(buffer);
-        }
-
-        text = text.replace(/^\uFEFF/, '');
-        const rows = parseFullCsvRows(text);
-
-        if (rows.length < 2) {
-          throw new Error('קובץ ה-CSV ריק או שאינו מכיל שורות נתונים');
-        }
-
-        const headerCols = rows[0].map((h) => h.trim().toLowerCase());
-        const findColIdx = (keywords: string[]) =>
-          headerCols.findIndex((h) => keywords.some((kw) => h.includes(kw)));
-
-        const sysCol = findColIdx(['מערכת', 'system']);
-        const idCol = findColIdx(['מזהה', 'תסריט', 'מספר', 'id', 'test']);
-        const platCol = findColIdx(['פלטפורמה', 'מכשיר', 'platform']);
-        const sevCol = findColIdx(['חומרה', 'עדיפות', 'severity', 'priority']);
-        const subjCol = findColIdx(['נושא', 'כותרת', 'שם תסריט', 'subject', 'title']);
-        const descCol = findColIdx(['מהות', 'תיאור', 'פירוט', 'שגיאה', 'description', 'details']);
-        const statusCol = findColIdx(['סטטוס', 'מצב', 'status']);
-
-        const hasRecognizedHeaders =
-          subjCol !== -1 || descCol !== -1 || idCol !== -1 || sysCol !== -1;
-
-        const targetSys = activeSystem === 'ALL' ? systems[0] || 'CARGO' : activeSystem;
-        const imported: StdIssue[] = [];
-
-        // Track used IDs per system to guarantee every imported scenario gets a unique ID per system
-        const usedBySys = new Map<string, Set<string>>();
-        const maxNumBySys = new Map<string, number>();
-        for (const iss of issues) {
-          const sys = iss.system;
-          if (!usedBySys.has(sys)) usedBySys.set(sys, new Set());
-          if (iss.testCaseId) usedBySys.get(sys)!.add(iss.testCaseId.trim().toLowerCase());
-          const num = parseInt(iss.testCaseId, 10);
-          if (!isNaN(num) && num > (maxNumBySys.get(sys) || 0)) {
-            maxNumBySys.set(sys, num);
-          }
-        }
-
-        for (let idx = 1; idx < rows.length; idx++) {
-          const cols = rows[idx];
-          if (cols.length < 2) continue;
-
-          let sys = targetSys;
-          let testCaseId = String(idx);
-          let rawPlat = 'מחשב';
-          let rawSev = 'בינונית';
-          let subject = '';
-          let description = '';
-          let rawStatus = 'פתוח';
-
-          if (hasRecognizedHeaders) {
-            if (sysCol !== -1 && cols[sysCol]) sys = cols[sysCol];
-            if (idCol !== -1 && cols[idCol]) testCaseId = cols[idCol];
-            if (platCol !== -1 && cols[platCol]) rawPlat = cols[platCol];
-            if (sevCol !== -1 && cols[sevCol]) rawSev = cols[sevCol];
-            if (subjCol !== -1 && cols[subjCol]) subject = cols[subjCol];
-            if (descCol !== -1 && cols[descCol]) description = cols[descCol];
-            if (statusCol !== -1 && cols[statusCol]) rawStatus = cols[statusCol];
-
-            if (!subject && description) subject = description.slice(0, 80);
-            if (!description && subject) description = subject;
-            if (!subject) subject = `תסריט בדיקה #${testCaseId}`;
-          } else {
-            const isExportFormat = cols.length >= 6;
-            sys = isExportFormat && cols[0] ? cols[0] : targetSys;
-            testCaseId = isExportFormat ? cols[1] || String(idx) : cols[0] || String(idx);
-            rawPlat = isExportFormat ? cols[2] : cols[3] || 'מחשב';
-            subject = isExportFormat ? cols[3] : cols[1] || `תסריט בדיקה #${testCaseId}`;
-            description = isExportFormat ? cols[4] : cols[2] || subject;
-            rawStatus = isExportFormat ? cols[5] : 'פתוח';
-          }
-
-          const normPlat = rawPlat.trim().toLowerCase();
-          const platform: StdPlatform =
-            normPlat === 'ios' || rawPlat.includes('אייפון')
-              ? 'IOS'
-              : rawPlat.includes('אנדרואיד') || normPlat === 'android'
-              ? 'אנדרואיד'
-              : 'מחשב';
-
-          const status: StdStatus =
-            rawStatus === 'פתוח' ||
-            rawStatus === 'בטיפול' ||
-            rawStatus === 'ניתן לבדוק שוב' ||
-            rawStatus === 'נבדק תקין'
-              ? rawStatus
-              : 'פתוח';
-
-          const severity: StdSeverity =
-            rawSev === 'קריטית' ||
-            rawSev === 'גבוהה' ||
-            rawSev === 'בינונית' ||
-            rawSev === 'נמוכה'
-              ? rawSev
-              : 'בינונית';
-
-          const cleanSys = sys.trim() || targetSys;
-          if (!usedBySys.has(cleanSys)) usedBySys.set(cleanSys, new Set());
-          const sysSet = usedBySys.get(cleanSys)!;
-
-          let finalTestCaseId = testCaseId.trim();
-          if (!finalTestCaseId || sysSet.has(finalTestCaseId.toLowerCase())) {
-            let nextN = (maxNumBySys.get(cleanSys) || 0) + 1;
-            while (sysSet.has(String(nextN).toLowerCase())) {
-              nextN++;
-            }
-            maxNumBySys.set(cleanSys, nextN);
-            finalTestCaseId = String(nextN);
-          }
-          sysSet.add(finalTestCaseId.toLowerCase());
-
-          imported.push({
-            id: `std-${Date.now()}-${idx}-${Math.random().toString(36).substring(2, 6)}`,
-            system: sys.trim() || targetSys,
-            testCaseId: finalTestCaseId,
-            platform,
-            severity,
-            subject: subject.trim(),
-            description: description.trim() || subject.trim(),
-            status,
-            screenshots: [],
-            comments: [],
-            auditLog: [
-              {
-                id: `aud-${Date.now()}-${idx}`,
-                actor: currentUserDisplay,
-                action: 'יובא מתוך קובץ CSV / Excel',
-                timestamp: Date.now()
-              }
-            ],
-            createdBy: currentUserDisplay,
-            createdAt: Date.now(),
-            updatedAt: Date.now()
-          });
-        }
-
-        if (imported.length === 0) {
-          throw new Error('לא נמצאו שורות תקינות לייבוא בקובץ ה-CSV');
-        }
-
-        onImportIssues(imported);
-        setStatusMsg({
-          type: 'success',
-          text: `יובאו בהצלחה ${imported.length} תסריטים / תקלות (קידוד עברית זוהה אוטומטית) וסונכרנו לכל הצוות!`
-        });
-      } catch (err: any) {
-        setStatusMsg({
-          type: 'error',
-          text: err?.message || 'שגיאה בייבוא קובץ ה-CSV'
-        });
+      const buffer = reader.result as ArrayBuffer;
+      const res = parseCsvBufferToIssues({
+        buffer,
+        fileName: file.name,
+        targetSystem: targetSys,
+        existingIssues: issues,
+        currentUserDisplay,
+        allowNewSystems: true
+      });
+      if (!res.ok) {
+        setStatusMsg({ type: 'error', text: res.error });
+        return;
       }
+      onImportIssues(res.issues);
+      setStatusMsg({
+        type: 'success',
+        text: `יובאו בהצלחה ${res.issues.length} תסריטים / תקלות (קידוד עברית זוהה אוטומטית) וסונכרנו לכל הצוות!`
+      });
     };
     reader.readAsArrayBuffer(file);
     e.target.value = '';
@@ -849,14 +645,24 @@ export const AdminBackupModal: React.FC<AdminBackupModalProps> = ({
               onChange={handleUploadCsvFile}
               className="hidden"
             />
-            <button
-              type="button"
-              onClick={() => csvFileInputRef.current?.click()}
-              className="flex items-center gap-2 px-4 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold shadow-xs transition cursor-pointer"
-            >
-              <FileSpreadsheet className="w-4 h-4" />
-              <span>ייבא תסריטים מקובץ CSV</span>
-            </button>
+            <div className="flex flex-wrap items-center gap-2">
+              <button
+                type="button"
+                onClick={() => csvFileInputRef.current?.click()}
+                className="flex items-center gap-2 px-4 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold shadow-xs transition cursor-pointer"
+              >
+                <FileSpreadsheet className="w-4 h-4" />
+                <span>ייבא תסריטים מקובץ CSV</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => downloadSampleCsvTemplate()}
+                className="flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-white dark:bg-slate-800 hover:bg-slate-100 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 border border-slate-300 dark:border-slate-700 text-xs font-bold transition cursor-pointer"
+              >
+                <Download className="w-3.5 h-3.5" />
+                <span>הורד קובץ דוגמה</span>
+              </button>
+            </div>
           </div>
         </div>
 

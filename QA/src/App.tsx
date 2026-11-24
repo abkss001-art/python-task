@@ -1465,6 +1465,60 @@ export function App() {
     setEditingIssue(null);
   };
 
+  const handleImportIssues = (imported: StdIssue[], allowCreatingSystems = false) => {
+    if (!canCreateOrEdit || imported.length === 0) return;
+
+    const liveState = syncService.getState();
+    const baseSystems = liveState.systems?.length ? liveState.systems : systems;
+    const baseIssues = liveState.issues?.length ? liveState.issues : issues;
+    const canCreateSystems = isAdmin && allowCreatingSystems;
+
+    // Non-admin QA testers may strictly import only into their visible/permitted systems
+    const scopedImported = canCreateSystems
+      ? imported
+      : imported.filter((item) => visibleSystems.includes(item.system));
+
+    if (scopedImported.length === 0) {
+      setLiveToast('לא נמצאו תקלות המשוייכות למערכת מורשית לייבוא.');
+      setTimeout(() => setLiveToast(null), 3500);
+      return;
+    }
+
+    const nextSystems = [...baseSystems];
+    let nextDeletedSystems = liveState.deletedSystemIds || [];
+    if (canCreateSystems) {
+      nextDeletedSystems = nextDeletedSystems.filter(
+        (s) => !scopedImported.some((item) => item.system === s)
+      );
+      for (const item of scopedImported) {
+        if (item.system && !nextSystems.includes(item.system)) {
+          nextSystems.push(item.system);
+        }
+      }
+      setSystems(nextSystems);
+    }
+
+    const nextIssues = [...scopedImported, ...baseIssues];
+    setIssues(nextIssues);
+
+    if (activeSystem === 'HOME' && scopedImported[0]?.system) {
+      handleSelectSystem(scopedImported[0].system);
+    }
+
+    syncService.pushStateToCloud(
+      {
+        systems: nextSystems,
+        archivedSystems,
+        deletedSystemIds: nextDeletedSystems,
+        issues: nextIssues
+      },
+      `ייבוא ${scopedImported.length} תסריטים מקובץ אקסל / CSV`,
+      currentUserName
+    );
+    setLiveToast(`✅ יובאו בהצלחה ${scopedImported.length} תקלות מאקסל וסונכרנו לצוות!`);
+    setTimeout(() => setLiveToast(null), 4000);
+  };
+
   const handleStatusChange = (issueId: string, newStatus: StdStatus) => {
     const target = issues.find((i) => i.id === issueId);
     const auditEntry: StdAuditEntry = {
@@ -2655,7 +2709,7 @@ export function App() {
         onToggleTheme={toggleTheme}
       />
 
-      {/* Create / Edit Issue Modal (QA & Admin only) */}
+      {/* Create / Edit Issue Modal (QA & Admin only — includes built-in Excel/CSV Import tab) */}
       {isIssueModalOpen && canCreateOrEdit && (
         <IssueFormModal
           systems={visibleSystems}
@@ -2667,6 +2721,9 @@ export function App() {
           }
           editingIssue={editingIssue}
           existingIssues={issues}
+          currentUserDisplay={formattedUserDisplay}
+          isAdmin={isAdmin}
+          onImportIssues={(imported) => handleImportIssues(imported, false)}
           onSave={handleSaveIssue}
           onClose={() => {
             setIsIssueModalOpen(false);
@@ -2909,33 +2966,7 @@ export function App() {
               currentUserName
             );
           }}
-          onImportIssues={(imported) => {
-            const liveState = syncService.getState();
-            const baseSystems = liveState.systems?.length ? liveState.systems : systems;
-            const baseIssues = liveState.issues?.length ? liveState.issues : issues;
-            const nextSystems = [...baseSystems];
-            const nextDeletedSystems = (liveState.deletedSystemIds || []).filter(
-              (s) => !imported.some((item) => item.system === s)
-            );
-            for (const item of imported) {
-              if (item.system && !nextSystems.includes(item.system)) {
-                nextSystems.push(item.system);
-              }
-            }
-            const nextIssues = [...imported, ...baseIssues];
-            setSystems(nextSystems);
-            setIssues(nextIssues);
-            syncService.pushStateToCloud(
-              {
-                systems: nextSystems,
-                archivedSystems,
-                deletedSystemIds: nextDeletedSystems,
-                issues: nextIssues
-              },
-              `ייבוא ${imported.length} תסריטים מקובץ אקסל / CSV`,
-              currentUserName
-            );
-          }}
+          onImportIssues={(imported) => handleImportIssues(imported, true)}
           onBack={() => {
             setIsAdminBackupOpen(false);
             setAdminToolsInitialView('dev');

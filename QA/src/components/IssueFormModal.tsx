@@ -1,4 +1,4 @@
-import React, { useEffect, useState, useRef } from 'react';
+import React, { useEffect, useState, useRef, useMemo } from 'react';
 import {
   X,
   UploadCloud,
@@ -9,7 +9,12 @@ import {
   AlertCircle,
   PenTool,
   Flame,
-  Lock
+  Lock,
+  FileSpreadsheet,
+  Download,
+  CheckCircle2,
+  Plus,
+  RotateCcw
 } from 'lucide-react';
 import {
   PLATFORMS,
@@ -27,6 +32,10 @@ import {
   processScreenshotFile,
   readImagesFromSystemClipboard
 } from '../utils/imageUtils';
+import {
+  downloadSampleCsvTemplate,
+  parseCsvBufferToIssues
+} from '../utils/csvImportUtils';
 import { PlatformIcon } from './IssueCard';
 import { ScreenshotAnnotatorModal } from './ScreenshotAnnotatorModal';
 
@@ -36,6 +45,9 @@ interface IssueFormModalProps {
   suggestedTestCaseId: string;
   editingIssue: StdIssue | null;
   existingIssues?: StdIssue[];
+  currentUserDisplay?: string;
+  isAdmin?: boolean;
+  onImportIssues?: (importedIssues: StdIssue[]) => void;
   onSave: (data: {
     system: string;
     testCaseId: string;
@@ -56,10 +68,22 @@ export const IssueFormModal: React.FC<IssueFormModalProps> = ({
   suggestedTestCaseId,
   editingIssue,
   existingIssues = [],
+  currentUserDisplay = 'חבר צוות',
+  isAdmin = false,
+  onImportIssues,
   onSave,
   onClose
 }) => {
   const isEditing = Boolean(editingIssue && editingIssue.id !== '__NEW_FROM_PASTE__');
+  const canShowCsvImport = !isEditing && Boolean(onImportIssues);
+  const [activeMode, setActiveMode] = useState<'single' | 'csv'>('single');
+  const [uploadedCsvFile, setUploadedCsvFile] = useState<{
+    name: string;
+    buffer: ArrayBuffer;
+  } | null>(null);
+  const [csvError, setCsvError] = useState<string | null>(null);
+  const [isCsvDragging, setIsCsvDragging] = useState<boolean>(false);
+  const csvFileInputRef = useRef<HTMLInputElement | null>(null);
 
   const availableSystems = systems.length > 0 ? systems : ['כללי'];
   const [system, setSystem] = useState(() => {
@@ -226,6 +250,66 @@ export const IssueFormModal: React.FC<IssueFormModalProps> = ({
     });
   };
 
+  // Re-evaluate CSV preview automatically whenever file or target system changes
+  const csvParseResult = useMemo(() => {
+    if (!uploadedCsvFile) return null;
+    if (!system.trim()) {
+      return { ok: false as const, error: 'נא לבחור מערכת יעד למעלה לפני אישור הייבוא.' };
+    }
+    return parseCsvBufferToIssues({
+      buffer: uploadedCsvFile.buffer,
+      fileName: uploadedCsvFile.name,
+      targetSystem: system,
+      existingIssues,
+      currentUserDisplay,
+      permittedSystems: availableSystems,
+      allowNewSystems: false
+    });
+  }, [uploadedCsvFile, system, existingIssues, currentUserDisplay, availableSystems]);
+
+  const previewIssues = csvParseResult && csvParseResult.ok ? csvParseResult.issues : [];
+  const remappedCount = csvParseResult && csvParseResult.ok ? csvParseResult.remappedToTargetCount : 0;
+  const effectiveCsvError =
+    csvError || (csvParseResult && !csvParseResult.ok ? csvParseResult.error : null);
+
+  const loadCsvFileObject = (file: File | undefined) => {
+    if (!file) return;
+    setCsvError(null);
+    if (/\.xlsx?$/i.test(file.name)) {
+      setUploadedCsvFile(null);
+      setCsvError(
+        'קובץ זה שמור בפורמט אקסל (.xlsx). באקסל לחץ על "שמור בשם" (Save As) ובחר "CSV UTF-8 (מופרד בפסיקים)" ואז העלה אותו לכאן.'
+      );
+      return;
+    }
+    const reader = new FileReader();
+    reader.onload = () => {
+      const buffer = reader.result as ArrayBuffer;
+      setUploadedCsvFile({ name: file.name, buffer });
+    };
+    reader.onerror = () => {
+      setCsvError('לא ניתן לקרוא את הקובץ שנבחר.');
+    };
+    reader.readAsArrayBuffer(file);
+  };
+
+  const handleCsvInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    loadCsvFileObject(e.target.files?.[0]);
+    e.target.value = '';
+  };
+
+  const handleCsvDrop = (e: React.DragEvent) => {
+    e.preventDefault();
+    setIsCsvDragging(false);
+    loadCsvFileObject(e.dataTransfer.files?.[0]);
+  };
+
+  const handleConfirmCsvImport = () => {
+    if (!onImportIssues || previewIssues.length === 0) return;
+    onImportIssues(previewIssues);
+    onClose();
+  };
+
   return (
     <div
       className="fixed inset-0 z-40 flex items-center justify-center bg-slate-900/60 dark:bg-slate-950/80 backdrop-blur-xs p-3 sm:p-4 overflow-y-auto"
@@ -236,16 +320,24 @@ export const IssueFormModal: React.FC<IssueFormModalProps> = ({
         <div className="flex items-center justify-between px-5 sm:px-6 py-4 bg-slate-900 dark:bg-slate-950 text-white border-b border-slate-800">
           <div>
             <h2 className="text-base sm:text-lg font-extrabold">
-              {editingIssue && editingIssue.id !== '__NEW_FROM_PASTE__'
-                ? `עריכת תקלה - תסריט #${editingIssue.testCaseId}`
+              {isEditing
+                ? `עריכת תקלה - תסריט #${editingIssue?.testCaseId}`
+                : activeMode === 'csv'
+                ? 'ייבוא תסריטי בדיקה מאקסל / CSV'
                 : 'דיווח תקלה חדשה'}
             </h2>
             <p className="text-xs text-slate-300 dark:text-slate-400 mt-0.5">
-              להדבקת צילום מסך לחץ{' '}
-              <kbd className="px-1.5 py-0.5 rounded bg-slate-800 dark:bg-slate-800 text-indigo-300 font-mono">
-                Ctrl + V
-              </kbd>{' '}
-              במקלדת או לחץ על כפתור "הדבק מהלוח" למטה
+              {activeMode === 'csv' ? (
+                'העלה קובץ CSV מאקסל כדי להוסיף מספר תסריטי בדיקה או תקלות בבת אחת'
+              ) : (
+                <>
+                  להדבקת צילום מסך לחץ{' '}
+                  <kbd className="px-1.5 py-0.5 rounded bg-slate-800 dark:bg-slate-800 text-indigo-300 font-mono">
+                    Ctrl + V
+                  </kbd>{' '}
+                  במקלדת או לחץ על כפתור "הדבק מהלוח" למטה
+                </>
+              )}
             </p>
           </div>
           <button
@@ -257,6 +349,233 @@ export const IssueFormModal: React.FC<IssueFormModalProps> = ({
           </button>
         </div>
 
+        {/* Mode Tabs inside New Issue Modal: Single Issue vs Excel/CSV Import */}
+        {canShowCsvImport && (
+          <div className="px-5 sm:px-6 pt-3.5 pb-2 bg-slate-50/80 dark:bg-slate-900/80 border-b border-slate-200/80 dark:border-slate-800">
+            <div className="grid grid-cols-2 gap-1.5 p-1 rounded-xl bg-slate-200/70 dark:bg-slate-800">
+              <button
+                type="button"
+                onClick={() => setActiveMode('single')}
+                className={`flex items-center justify-center gap-1.5 py-2 px-3 rounded-lg text-xs sm:text-sm font-extrabold transition cursor-pointer ${
+                  activeMode === 'single'
+                    ? 'bg-white dark:bg-slate-900 text-indigo-700 dark:text-indigo-300 shadow-xs'
+                    : 'text-slate-600 dark:text-slate-300 hover:text-slate-900 dark:hover:text-white'
+                }`}
+              >
+                <Plus className="w-4 h-4" />
+                <span>תקלה בודדת</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => setActiveMode('csv')}
+                className={`flex items-center justify-center gap-1.5 py-2 px-3 rounded-lg text-xs sm:text-sm font-extrabold transition cursor-pointer ${
+                  activeMode === 'csv'
+                    ? 'bg-white dark:bg-slate-900 text-emerald-700 dark:text-emerald-300 shadow-xs'
+                    : 'text-slate-600 dark:text-slate-300 hover:text-slate-900 dark:hover:text-white'
+                }`}
+              >
+                <FileSpreadsheet className="w-4 h-4" />
+                <span>ייבוא מאקסל / CSV</span>
+              </button>
+            </div>
+          </div>
+        )}
+
+        {activeMode === 'csv' && canShowCsvImport ? (
+          <div className="p-5 sm:p-6 space-y-4 max-h-[78vh] overflow-y-auto">
+            {/* Target System Selector (scoped strictly to permitted systems) */}
+            <div>
+              <label className="block text-xs font-bold text-slate-700 dark:text-slate-200 mb-1.5 flex items-center justify-between">
+                <span>
+                  מערכת יעד לייבוא <span className="text-red-500">*</span>
+                </span>
+                {!system && (
+                  <span className="text-[11px] font-bold text-amber-600 dark:text-amber-400">
+                    חובה לבחור מערכת
+                  </span>
+                )}
+              </label>
+              <select
+                value={system}
+                onChange={(e) => handleSystemChange(e.target.value)}
+                className={`w-full px-3.5 py-2.5 rounded-xl border text-sm font-bold transition cursor-pointer ${
+                  !system
+                    ? 'border-amber-400 bg-amber-50/70 dark:bg-amber-950/40 text-amber-900 dark:text-amber-200 ring-2 ring-amber-400/30'
+                    : 'border-slate-300 dark:border-slate-700 bg-slate-50/70 dark:bg-slate-950/80 text-slate-900 dark:text-slate-100 focus:ring-emerald-500/30 focus:border-emerald-500'
+                }`}
+              >
+                <option value="" disabled className="text-slate-400 dark:bg-slate-900">
+                  -- בחר מערכת לייבוא התקלות --
+                </option>
+                {availableSystems.map((sys) => (
+                  <option key={sys} value={sys} className="dark:bg-slate-900 dark:text-slate-100 font-bold">
+                    {sys}
+                  </option>
+                ))}
+              </select>
+              {!isAdmin && (
+                <p className="text-[11px] text-slate-500 dark:text-slate-400 mt-1">
+                  ניתן לייבא תקלות אך ורק למערכות שאושרו עבורך.
+                </p>
+              )}
+            </div>
+
+            {/* Sample Template Download Card (Bonus) */}
+            <div className="flex flex-wrap items-center justify-between gap-3 p-3.5 rounded-2xl bg-emerald-50/70 dark:bg-emerald-950/30 border border-emerald-200 dark:border-emerald-800/70">
+              <div className="space-y-0.5 min-w-0">
+                <div className="text-xs font-extrabold text-emerald-950 dark:text-emerald-200">
+                  רוצה תבנית מוכנה לאקסל?
+                </div>
+                <p className="text-[11px] text-emerald-800/90 dark:text-emerald-300/80 leading-relaxed">
+                  עמודות נתמכות: מזהה תסריט, פלטפורמה, חומרה, נושא, מהות השגיאה, סטטוס.
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={() => downloadSampleCsvTemplate(system || undefined)}
+                className="flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-white dark:bg-slate-900 hover:bg-emerald-100/70 dark:hover:bg-emerald-900/40 text-emerald-800 dark:text-emerald-200 border border-emerald-300 dark:border-emerald-700 text-xs font-extrabold transition cursor-pointer shrink-0 shadow-2xs"
+              >
+                <Download className="w-3.5 h-3.5" />
+                <span>הורד קובץ דוגמה לאקסל</span>
+              </button>
+            </div>
+
+            {/* CSV Dropzone / Upload Button */}
+            <input
+              ref={csvFileInputRef}
+              type="file"
+              accept=".csv,text/csv"
+              onChange={handleCsvInputChange}
+              className="hidden"
+            />
+            <div
+              onDragOver={(e) => {
+                e.preventDefault();
+                setIsCsvDragging(true);
+              }}
+              onDragLeave={() => setIsCsvDragging(false)}
+              onDrop={handleCsvDrop}
+              onClick={() => csvFileInputRef.current?.click()}
+              className={`rounded-2xl border-2 border-dashed p-5 sm:p-6 text-center transition cursor-pointer ${
+                isCsvDragging
+                  ? 'border-emerald-500 bg-emerald-50/70 dark:bg-emerald-950/40'
+                  : 'border-slate-300 dark:border-slate-700 hover:border-emerald-400 dark:hover:border-emerald-600 bg-slate-50/70 dark:bg-slate-950/50'
+              }`}
+            >
+              <div className="w-11 h-11 rounded-2xl bg-emerald-100 dark:bg-emerald-950/70 border border-emerald-200 dark:border-emerald-800 text-emerald-700 dark:text-emerald-300 flex items-center justify-center mx-auto mb-2.5">
+                <FileSpreadsheet className="w-5 h-5" />
+              </div>
+              <div className="text-xs sm:text-sm font-extrabold text-slate-800 dark:text-slate-100">
+                {uploadedCsvFile
+                  ? `נבחר קובץ: ${uploadedCsvFile.name}`
+                  : 'לחץ לבחירת קובץ CSV או גרור לכאן'}
+              </div>
+              <p className="text-[11px] text-slate-500 dark:text-slate-400 mt-1">
+                באקסל: שמור בשם ← CSV UTF-8 (מופרד בפסיקים) • עברית ומספור תסריטים מזוהים אוטומטית
+              </p>
+            </div>
+
+            {/* Error Feedback */}
+            {effectiveCsvError && (
+              <div className="flex items-start gap-2 p-3.5 rounded-xl bg-rose-50 dark:bg-rose-950/50 border border-rose-200 dark:border-rose-800 text-xs font-bold text-rose-700 dark:text-rose-300 leading-relaxed">
+                <AlertCircle className="w-4 h-4 shrink-0 mt-0.5" />
+                <span>{effectiveCsvError}</span>
+              </div>
+            )}
+
+            {/* Live Preview before Confirming Import (Bonus) */}
+            {previewIssues.length > 0 && (
+              <div className="rounded-2xl border border-emerald-200 dark:border-emerald-800/80 bg-white dark:bg-slate-950/60 overflow-hidden shadow-2xs">
+                <div className="flex flex-wrap items-center justify-between gap-2 px-4 py-3 bg-emerald-50/90 dark:bg-emerald-950/50 border-b border-emerald-200/80 dark:border-emerald-800/70">
+                  <div className="flex items-center gap-2 text-xs font-extrabold text-emerald-950 dark:text-emerald-200">
+                    <CheckCircle2 className="w-4 h-4 text-emerald-600 dark:text-emerald-400 shrink-0" />
+                    <span>
+                      תצוגה מקדימה: {previewIssues.length} תקלות מוכנות לייבוא
+                    </span>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setUploadedCsvFile(null);
+                      setCsvError(null);
+                    }}
+                    className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg bg-white dark:bg-slate-900 hover:bg-slate-100 dark:hover:bg-slate-800 border border-slate-200 dark:border-slate-700 text-[11px] font-bold text-slate-600 dark:text-slate-300 cursor-pointer transition"
+                  >
+                    <RotateCcw className="w-3 h-3" />
+                    <span>בחר קובץ אחר</span>
+                  </button>
+                </div>
+
+                {remappedCount > 0 && (
+                  <div className="px-4 py-2 bg-amber-50/80 dark:bg-amber-950/40 border-b border-amber-200/70 dark:border-amber-800/60 text-[11px] font-bold text-amber-800 dark:text-amber-300">
+                    {remappedCount} שורות ללא מערכת מורשית תואמת שויכו אוטומטית למערכת{' '}
+                    <span className="bidi-isolate underline">{system}</span>.
+                  </div>
+                )}
+
+                <div className="divide-y divide-slate-100 dark:divide-slate-800/80">
+                  {previewIssues.slice(0, 5).map((item) => (
+                    <div
+                      key={item.id}
+                      className="flex items-center justify-between gap-3 px-4 py-2.5 text-xs"
+                    >
+                      <div className="flex items-center gap-2 min-w-0">
+                        <span className="px-1.5 py-0.5 rounded-md bg-indigo-50 dark:bg-indigo-950/70 text-indigo-700 dark:text-indigo-300 font-mono font-bold text-[11px] shrink-0">
+                          #{item.testCaseId}
+                        </span>
+                        <span className="font-bold text-slate-800 dark:text-slate-100 truncate">
+                          {item.subject}
+                        </span>
+                      </div>
+                      <div className="flex items-center gap-1.5 shrink-0 text-[11px]">
+                        <span className="px-2 py-0.5 rounded-md bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 font-semibold bidi-isolate">
+                          {item.system}
+                        </span>
+                        <span className="px-2 py-0.5 rounded-md bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 font-semibold">
+                          {item.platform}
+                        </span>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+
+                {previewIssues.length > 5 && (
+                  <div className="px-4 py-2 bg-slate-50 dark:bg-slate-900/80 border-t border-slate-100 dark:border-slate-800 text-[11px] font-bold text-slate-500 dark:text-slate-400 text-center">
+                    + ועוד {previewIssues.length - 5} תקלות נוספות בקובץ
+                  </div>
+                )}
+              </div>
+            )}
+
+            {/* CSV Import Footer Actions */}
+            <div className="flex items-center justify-end gap-2.5 pt-3 border-t border-slate-200 dark:border-slate-800">
+              <button
+                type="button"
+                onClick={onClose}
+                className="px-4 py-2.5 rounded-xl border border-slate-300 dark:border-slate-700 text-slate-700 dark:text-slate-200 hover:bg-slate-50 dark:hover:bg-slate-800 text-sm font-semibold transition cursor-pointer"
+              >
+                ביטול
+              </button>
+              <button
+                type="button"
+                disabled={previewIssues.length === 0 || !system.trim()}
+                onClick={handleConfirmCsvImport}
+                className={`flex items-center gap-2 px-6 py-2.5 rounded-xl text-white text-sm font-bold shadow-md transition ${
+                  previewIssues.length === 0 || !system.trim()
+                    ? 'bg-slate-400 dark:bg-slate-700 cursor-not-allowed opacity-60 shadow-none'
+                    : 'bg-emerald-600 hover:bg-emerald-700 shadow-emerald-600/20 cursor-pointer'
+                }`}
+              >
+                <Check className="w-4 h-4 stroke-[2.5]" />
+                <span>
+                  {previewIssues.length > 0
+                    ? `אשר וייבא ${previewIssues.length} תקלות`
+                    : 'אשר וייבא תקלות'}
+                </span>
+              </button>
+            </div>
+          </div>
+        ) : (
         <form onSubmit={handleSubmit} className="p-5 sm:p-6 space-y-4 max-h-[84vh] overflow-y-auto">
           {/* Top Row: System & Test Case ID */}
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
@@ -593,6 +912,7 @@ export const IssueFormModal: React.FC<IssueFormModalProps> = ({
             </button>
           </div>
         </form>
+        )}
       </div>
 
       {/* Built-in Screenshot Annotator Modal */}
