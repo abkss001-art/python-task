@@ -137,7 +137,7 @@ export function App() {
     }
     const timer = window.setTimeout(() => {
       setAuthTakingLong(true);
-    }, 6500);
+    }, 8500);
     return () => window.clearTimeout(timer);
   }, [authReady]);
 

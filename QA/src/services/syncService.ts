@@ -1076,7 +1076,7 @@ class RealtimeSyncService {
    */
   private async fetchRtdbNodeWithFallback<T = any>(
     nodePath: string,
-    sdkTimeoutMs = 4000
+    sdkTimeoutMs = 3000
   ): Promise<{ ok: boolean; exists: boolean; value: T | null; error?: string }> {
     // 1. Fast path: Firebase RTDB SDK with strict timeout
     if (this.rtdb) {
@@ -1084,7 +1084,7 @@ class RealtimeSyncService {
         const snap = await this.withTimeout(
           get(ref(this.rtdb, nodePath)),
           sdkTimeoutMs,
-          'rtdb-get-timeout'
+          'RTDB_SDK_TIMEOUT'
         );
         return {
           ok: true,
@@ -1099,7 +1099,7 @@ class RealtimeSyncService {
     // 2. Fallback: Direct HTTPS REST request with Firebase ID token + App Check token + AbortController
     const dbUrl = (this.activeFirebaseConfig?.databaseURL || '').replace(/\/+$/, '');
     if (!dbUrl || !this.firebaseUser) {
-      return { ok: false, exists: false, value: null, error: 'חיבור הנתונים לא זמין' };
+      return { ok: false, exists: false, value: null, error: 'DB_UNAVAILABLE' };
     }
 
     const doRestRead = async (
@@ -1107,20 +1107,22 @@ class RealtimeSyncService {
       forceRefreshAppCheck: boolean
     ): Promise<{ status: number; value?: T | null; error?: string }> => {
       let acToken = '';
+      let acErrCode = '';
       if (this.firebaseAppCheck) {
         try {
           const acRes = await this.withTimeout(
             getAppCheckToken(this.firebaseAppCheck, forceRefreshAppCheck),
-            4500,
-            'appcheck-token-timeout'
+            3000,
+            'AC_TIMEOUT'
           );
           acToken = acRes?.token || '';
-        } catch {
+        } catch (acErr: any) {
+          acErrCode = String(acErr?.code || acErr?.message || 'AC_ERR');
           acToken = '';
         }
       }
       const controller = typeof AbortController !== 'undefined' ? new AbortController() : null;
-      const abortTimer = controller ? setTimeout(() => controller.abort(), 5000) : null;
+      const abortTimer = controller ? setTimeout(() => controller.abort(), 4000) : null;
       try {
         const res = await fetch(
           `${dbUrl}/${nodePath}.json?auth=${encodeURIComponent(idToken)}`,
@@ -1135,18 +1137,21 @@ class RealtimeSyncService {
           const val = (await res.json()) as T | null;
           return { status: 200, value: val };
         }
-        return { status: res.status, error: `HTTP ${res.status}` };
+        return {
+          status: res.status,
+          error: acErrCode ? `HTTP_${res.status}_${acErrCode}` : `HTTP_${res.status}`
+        };
       } catch (fetchErr: any) {
         if (abortTimer) clearTimeout(abortTimer);
-        return { status: 0, error: fetchErr?.message || 'שגיאת תקשורת' };
+        return { status: 0, error: fetchErr?.name === 'AbortError' ? 'REST_TIMEOUT' : 'NET_ERR' };
       }
     };
 
     try {
       const idToken = await this.withTimeout(
         this.firebaseUser.getIdToken(),
-        4000,
-        'id-token-timeout'
+        3000,
+        'ID_TOKEN_TIMEOUT'
       );
       const firstTry = await doRestRead(idToken, false);
       if (firstTry.status === 200) {
@@ -1157,19 +1162,19 @@ class RealtimeSyncService {
       if (firstTry.status === 401) {
         const freshIdToken = await this.withTimeout(
           this.firebaseUser.getIdToken(true),
-          4000,
-          'id-token-refresh-timeout'
+          3000,
+          'ID_TOKEN_REFRESH_TIMEOUT'
         ).catch(() => idToken);
         const secondTry = await doRestRead(freshIdToken, true);
         if (secondTry.status === 200) {
           const val = secondTry.value ?? null;
           return { ok: true, exists: val !== null && val !== undefined, value: val };
         }
-        return { ok: false, exists: false, value: null, error: secondTry.error || 'HTTP 401' };
+        return { ok: false, exists: false, value: null, error: secondTry.error || 'HTTP_401' };
       }
-      return { ok: false, exists: false, value: null, error: firstTry.error || 'שגיאת תקשורת' };
+      return { ok: false, exists: false, value: null, error: firstTry.error || 'NET_ERR' };
     } catch (err: any) {
-      return { ok: false, exists: false, value: null, error: err?.message || 'שגיאת אימות' };
+      return { ok: false, exists: false, value: null, error: err?.message || 'AUTH_TOKEN_ERR' };
     }
   }
 
@@ -1177,7 +1182,7 @@ class RealtimeSyncService {
     if (this.firebaseAppCheck) {
       await this.withTimeout(
         getAppCheckToken(this.firebaseAppCheck, true),
-        3500,
+        2500,
         'ac-refresh-timeout'
       ).catch(() => {});
     }
@@ -1187,9 +1192,11 @@ class RealtimeSyncService {
   }
 
   public async forceSignOutAndResetStartup(): Promise<void> {
-    await this.signOutFirebase();
+    await this.withTimeout(this.signOutFirebase(), 2500, 'signout-timeout').catch(() => {});
+    this.firebaseUserProfile = null;
+    this.firebaseUser = null;
     this.firebaseAuthInitialized = true;
-    this.updateStatus({ errorMessage: undefined });
+    this.updateStatus({ connected: false, errorMessage: undefined });
     this.notifyAuthListeners();
   }
 
@@ -1243,7 +1250,7 @@ class RealtimeSyncService {
       if (this.rtdb) {
         const nodeRes = await this.fetchRtdbNodeWithFallback<Partial<FirebaseUserProfile>>(
           `std_users/${uid}`,
-          4500
+          3000
         );
         if (!nodeRes.ok) {
           return { status: 'error', profile: null, error: nodeRes.error || 'שגיאת חיבור' };
@@ -3523,7 +3530,7 @@ class RealtimeSyncService {
             this.updateStatus({
               firebaseUid: user.uid,
               firebaseUserEmail: user.email || undefined,
-              errorMessage: 'לא ניתן להשלים את החיבור כרגע. נסה שוב או התחבר מחדש.'
+              errorMessage: `לא ניתן להשלים את החיבור כרגע (${profileRes.error || 'TIMEOUT'}). נסה שוב או התחבר מחדש.`
             });
             return;
           }
