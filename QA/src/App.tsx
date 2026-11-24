@@ -129,6 +129,8 @@ export function App() {
   const [authReady, setAuthReady] = useState<boolean>(false);
   const [authTakingLong, setAuthTakingLong] = useState<boolean>(false);
   const [isRecoveringAuth, setIsRecoveringAuth] = useState<boolean>(false);
+  const [syncDisconnectedLong, setSyncDisconnectedLong] = useState<boolean>(false);
+  const [isManualReconnecting, setIsManualReconnecting] = useState<boolean>(false);
 
   useEffect(() => {
     if (authReady) {
@@ -140,6 +142,18 @@ export function App() {
     }, 8500);
     return () => window.clearTimeout(timer);
   }, [authReady]);
+
+  useEffect(() => {
+    if (!authUser || syncStatus.connected) {
+      setSyncDisconnectedLong(false);
+      setIsManualReconnecting(false);
+      return;
+    }
+    const timer = window.setTimeout(() => {
+      setSyncDisconnectedLong(true);
+    }, 4500);
+    return () => window.clearTimeout(timer);
+  }, [authUser, syncStatus.connected]);
 
   // Dismissible banners state (remembers dismissal per user session until logout)
   const [showShortcutBanner, setShowShortcutBanner] = useState<boolean>(() => {
@@ -2112,6 +2126,37 @@ export function App() {
 
       {/* Main Content Area */}
       <main className="flex-1 max-w-7xl w-full mx-auto px-3 sm:px-6 py-4 sm:py-6 pb-24 md:pb-8">
+        {/* Clean Reconnect Banner when Live Sync is delayed or temporarily disconnected */}
+        {syncDisconnectedLong && !syncStatus.connected && (
+          <div className="flex flex-wrap items-center justify-between gap-3 mb-4 px-4 py-3 rounded-2xl bg-amber-50 dark:bg-amber-950/50 border border-amber-300 dark:border-amber-800 text-amber-950 dark:text-amber-100 shadow-xs">
+            <div className="flex items-center gap-2.5 min-w-0">
+              <AlertTriangle className="w-4 h-4 text-amber-600 dark:text-amber-400 shrink-0" />
+              <span className="text-xs sm:text-sm font-bold leading-snug">
+                {visibleSystems.length === 0
+                  ? 'טעינת המערכות והסנכרון החי מתעכבים כרגע.'
+                  : 'הסנכרון החי מתעכב כרגע — הנתונים המוצגים עשויים שלא להתעדכן בזמן אמת.'}
+              </span>
+            </div>
+            <button
+              type="button"
+              disabled={isManualReconnecting}
+              onClick={async () => {
+                setIsManualReconnecting(true);
+                setLiveToast('🔄 מחדש את הסנכרון החי...');
+                setTimeout(() => setLiveToast(null), 2500);
+                try {
+                  await syncService.requestManualSync();
+                } finally {
+                  setTimeout(() => setIsManualReconnecting(false), 1800);
+                }
+              }}
+              className="flex items-center gap-1.5 px-3.5 py-1.5 rounded-xl bg-amber-600 hover:bg-amber-700 disabled:opacity-60 text-white text-xs font-extrabold shadow-xs transition cursor-pointer shrink-0"
+            >
+              <RotateCcw className={`w-3.5 h-3.5 ${isManualReconnecting ? 'animate-spin' : ''}`} />
+              <span>{isManualReconnecting ? 'מתחבר...' : 'חבר מחדש'}</span>
+            </button>
+          </div>
+        )}
         {/* Live Admin Banner for Pending Self-Registration Join Requests */}
         {isAdmin && pendingJoinRequestsCount > 0 && (
           <div className="flex flex-wrap items-center justify-between gap-3 mb-4 px-4 py-3 rounded-2xl bg-gradient-to-l from-rose-50 via-amber-50/70 to-indigo-50 dark:from-rose-950/60 dark:via-slate-900 dark:to-indigo-950/50 border-2 border-rose-300 dark:border-rose-800 shadow-sm">

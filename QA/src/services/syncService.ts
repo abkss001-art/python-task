@@ -32,6 +32,9 @@ import {
   query,
   orderByChild,
   limitToLast,
+  forceWebSockets,
+  goOffline,
+  goOnline,
   Database
 } from 'firebase/database';
 import {
@@ -272,6 +275,15 @@ class RealtimeSyncService {
   private realtimeApprovalListeners = new Set<(profile: FirebaseUserProfile) => void>();
   private broadcastChannel: BroadcastChannel | null = null;
   private activeFirebaseConfig: FirebaseConfigData | null = null;
+  private authEpoch = 0;
+  private activeDataListenersUid: string | null = null;
+  private rtdbMetaSnapshotReceived = false;
+  private rtdbBootstrapWatchdogTimer: ReturnType<typeof setTimeout> | null = null;
+  private rtdbReconnectRetryTimer: ReturnType<typeof setTimeout> | null = null;
+  private isRecoveringRtdb = false;
+  private hasForcedWebSockets = false;
+  private isRebuildingFirebaseApp = false;
+  private hasAutoRebuiltFirebaseApp = false;
 
   // Dedicated Per-System Group Chat State & Sync
   private chatsBySystem: Record<string, SystemChatMessage[]> = {};
@@ -974,6 +986,9 @@ class RealtimeSyncService {
   }
 
   private cleanupConnections() {
+    this.clearRtdbWatchdogTimers();
+    this.activeDataListenersUid = null;
+    this.rtdbMetaSnapshotReceived = false;
     if (this.unsubscribeFirebase) {
       this.unsubscribeFirebase();
       this.unsubscribeFirebase = null;
@@ -1075,15 +1090,244 @@ class RealtimeSyncService {
   }
 
   /**
+   * ניקוי דגלי תחבורה ישנים של RTDB ב-localStorage (previous_websocket_failure ו-host cache),
+   * שגורמים לדפדפן הרגיל / PWA להינעל ב-Long-Polling שבור במקום להתחבר ב-WebSocket נקי.
+   * לעולם לא נוגע במפתחות ההתחברות (firebase:authUser:*).
+   */
+  private clearStaleRtdbTransportFlags() {
+    try {
+      const staleKeys: string[] = [];
+      for (let i = 0; i < localStorage.length; i++) {
+        const k = localStorage.key(i);
+        if (k && (k === 'firebase:previous_websocket_failure' || k.startsWith('firebase:host:'))) {
+          staleKeys.push(k);
+        }
+      }
+      for (const k of staleKeys) {
+        localStorage.removeItem(k);
+      }
+    } catch {
+      // ignore storage errors
+    }
+  }
+
+  private clearRtdbWatchdogTimers() {
+    if (this.rtdbBootstrapWatchdogTimer) {
+      clearTimeout(this.rtdbBootstrapWatchdogTimer);
+      this.rtdbBootstrapWatchdogTimer = null;
+    }
+    if (this.rtdbReconnectRetryTimer) {
+      clearTimeout(this.rtdbReconnectRetryTimer);
+      this.rtdbReconnectRetryTimer = null;
+    }
+  }
+
+  /**
+   * מאתחל מחדש את חיבור ה-WebSocket של RTDB (כולל ניקוי דגלים ישנים ורענון טוקן אבטחה במידת הצורך).
+   */
+  private async recoverRtdbRealtimeConnection(forceRefreshAppCheck = false): Promise<void> {
+    if (!this.rtdb || this.isRecoveringRtdb) return;
+    this.isRecoveringRtdb = true;
+    try {
+      this.clearStaleRtdbTransportFlags();
+      if (forceRefreshAppCheck && this.firebaseAppCheck) {
+        await this.withTimeout(
+          getAppCheckToken(this.firebaseAppCheck, true),
+          3000,
+          'ac-recover-timeout'
+        ).catch(() => {});
+      }
+      if (this.firebaseUser) {
+        await this.withTimeout(
+          this.firebaseUser.getIdToken(false),
+          2500,
+          'id-recover-timeout'
+        ).catch(() => {});
+      }
+      if (!this.rtdb) return;
+      try {
+        goOffline(this.rtdb);
+      } catch {}
+      await new Promise((r) => setTimeout(r, 250));
+      this.clearStaleRtdbTransportFlags();
+      if (this.rtdb) {
+        try {
+          goOnline(this.rtdb);
+        } catch {}
+      }
+    } finally {
+      this.isRecoveringRtdb = false;
+    }
+  }
+
+  /**
+   * טעינת גיבוי מהירה דרך HTTPS REST מאומת עבור כל המערכות, התקלות והצ׳אטים המורשים למשתמש,
+   * כך שגם אם חיבור ה-WebSocket מתעכב בדפדפן הרגיל או ב-PWA — המערכות והנתונים מופיעים מיד.
+   */
+  private async hydrateWorkspaceViaRestFallback(config: FirebaseConfigData): Promise<boolean> {
+    if (
+      !this.activeFirebaseConfig ||
+      config.mode === 'firestore' ||
+      !this.firebaseUser ||
+      !this.firebaseUserProfile
+    ) {
+      return false;
+    }
+    const myEpoch = this.authEpoch;
+    const myUid = this.firebaseUser.uid;
+    try {
+      const metaRes = await this.fetchRtdbNodeWithFallback<NonNullable<typeof this.currentMetaState>>(
+        'std_meta',
+        0
+      );
+      if (
+        this.rtdbMetaSnapshotReceived ||
+        this.authEpoch !== myEpoch ||
+        this.firebaseUser?.uid !== myUid
+      ) {
+        return this.rtdbMetaSnapshotReceived;
+      }
+      if (!metaRes.ok || !metaRes.exists || !metaRes.value) {
+        return false;
+      }
+
+      const m = metaRes.value;
+      this.currentMetaState = {
+        systems: Array.isArray(m.systems) && m.systems.length > 0 ? m.systems : DEFAULT_SYSTEMS,
+        archivedSystems: Array.isArray(m.archivedSystems) ? m.archivedSystems : [],
+        deletedIssueIds: Array.isArray(m.deletedIssueIds) ? m.deletedIssueIds : [],
+        deletedSystemIds: Array.isArray(m.deletedSystemIds) ? m.deletedSystemIds : [],
+        teamMembers: Array.isArray(m.teamMembers)
+          ? m.teamMembers
+          : m.teamMembers && typeof m.teamMembers === 'object'
+          ? Object.values(m.teamMembers)
+          : undefined,
+        partitionVersion: m.partitionVersion,
+        revision: m.revision,
+        lastUpdatedBy: m.lastUpdatedBy,
+        lastAction: m.lastAction,
+        updatedAt: m.updatedAt,
+        clientId: m.clientId
+      };
+
+      const allSystems = [
+        ...this.currentMetaState.systems,
+        ...this.currentMetaState.archivedSystems
+      ];
+      const permittedSystems = this.getPermittedSystemsForCurrentProfile(allSystems);
+
+      // Keep real-time per-system listeners armed so live updates take over seamlessly once WebSocket connects
+      this.syncPerSystemListeners(config, allSystems);
+
+      const sysPromises = permittedSystems.map(async (sysName) => {
+        const sysKey = encodeFirebaseSystemKey(sysName);
+        const [sysRes, chatRes] = await Promise.all([
+          this.fetchRtdbNodeWithFallback<{ issues?: StdIssue[] | Record<string, StdIssue> }>(
+            `std_systems/${sysKey}`,
+            0
+          ),
+          this.fetchRtdbNodeWithFallback<Record<string, SystemChatMessage> | SystemChatMessage[]>(
+            `std_chats/${sysKey}`,
+            0
+          )
+        ]);
+        if (this.authEpoch !== myEpoch || this.firebaseUser?.uid !== myUid) return;
+        if (sysRes.ok) {
+          const raw = sysRes.value;
+          const list = Array.isArray(raw?.issues)
+            ? raw.issues
+            : raw?.issues && typeof raw.issues === 'object'
+            ? Object.values(raw.issues)
+            : [];
+          this.loadedPartitionKeys.add(sysKey);
+          this.partitionIssues.set(sysKey, list);
+        }
+        if (chatRes.ok && chatRes.value) {
+          const bucket = chatRes.value;
+          const list = (Array.isArray(bucket) ? bucket : Object.values(bucket)).filter(
+            (msg) => msg && msg.id && msg.system
+          );
+          if (list.length > 0) {
+            this.applyIncomingRemoteChats({ [sysName]: list }, false);
+          }
+        }
+      });
+
+      const privatePromise = this.fetchRtdbNodeWithFallback<{
+        googleDriveUrl?: string;
+        apiSecret?: string;
+      }>('std_private_config', 0).then((pRes) => {
+        if (pRes.ok && pRes.value) {
+          const decodedUrl = decodeProtectedUrl(pRes.value.googleDriveUrl);
+          if (decodedUrl) setSavedGoogleDriveUrl(decodedUrl);
+          if (typeof pRes.value.apiSecret === 'string') {
+            setSavedGoogleDriveSecret(pRes.value.apiSecret);
+          }
+        }
+      });
+
+      const joinReqPromise =
+        this.firebaseUserProfile.role === 'admin'
+          ? this.fetchRtdbNodeWithFallback<Record<string, any>>('std_join_requests', 0).then(
+              (jRes) => {
+                if (this.authEpoch !== myEpoch || this.firebaseUser?.uid !== myUid) return;
+                if (jRes.ok && jRes.value && typeof jRes.value === 'object') {
+                  const list: JoinRequest[] = [];
+                  for (const [uid, val] of Object.entries(jRes.value)) {
+                    const parsed = this.normalizeJoinRequestRecord(uid, val);
+                    if (parsed) list.push(parsed);
+                  }
+                  list.sort(
+                    (a, b) => (b.updatedAt || b.requestedAt) - (a.updatedAt || a.requestedAt)
+                  );
+                  this.hasLoadedInitialJoinRequests = true;
+                  this.adminJoinRequests = list;
+                  this.notifyAdminJoinRequests(undefined);
+                }
+              }
+            )
+          : Promise.resolve();
+
+      await Promise.all([...sysPromises, privatePromise, joinReqPromise]);
+      if (
+        this.rtdbMetaSnapshotReceived ||
+        this.authEpoch !== myEpoch ||
+        this.firebaseUser?.uid !== myUid
+      ) {
+        return true;
+      }
+
+      this.rebuildStateFromPartitions(false);
+      this.updateStatus({
+        lastSyncAt: Date.now(),
+        lastEventText:
+          m.lastAction && !isSystemAdminAction(m.lastAction)
+            ? `${m.lastUpdatedBy || 'צוות'}: ${m.lastAction}`
+            : undefined
+      });
+      return true;
+    } catch {
+      return false;
+    }
+  }
+
+  /**
    * קריאת צומת RTDB עם Timeout קצר + גיבוי HTTPS REST מאומת (כולל רענון טוקן App Check אוטומטי ב-401),
    * כך ש-get() לעולם לא יתקע לנצח בטלפון או ב-PWA (ולעולם לא נועל IndexedDB בין טאבים).
    */
   private async fetchRtdbNodeWithFallback<T = any>(
     nodePath: string,
     sdkTimeoutMs = 3000
-  ): Promise<{ ok: boolean; exists: boolean; value: T | null; error?: string }> {
-    // 1. Fast path: Firebase RTDB SDK with strict timeout
-    if (this.rtdb) {
+  ): Promise<{
+    ok: boolean;
+    exists: boolean;
+    value: T | null;
+    error?: string;
+    usedRestFallback?: boolean;
+    refreshedTokens?: boolean;
+  }> {
+    // 1. Fast path: Firebase RTDB SDK with strict timeout (skipped when sdkTimeoutMs <= 0)
+    if (this.rtdb && sdkTimeoutMs > 0) {
       try {
         const snap = await this.withTimeout(
           get(ref(this.rtdb, nodePath)),
@@ -1093,7 +1337,8 @@ class RealtimeSyncService {
         return {
           ok: true,
           exists: snap.exists(),
-          value: (snap.exists() ? snap.val() : null) as T | null
+          value: (snap.exists() ? snap.val() : null) as T | null,
+          usedRestFallback: false
         };
       } catch {
         // Fall through to authenticated HTTPS REST fallback
@@ -1160,7 +1405,13 @@ class RealtimeSyncService {
       const firstTry = await doRestRead(idToken, false);
       if (firstTry.status === 200) {
         const val = firstTry.value ?? null;
-        return { ok: true, exists: val !== null && val !== undefined, value: val };
+        return {
+          ok: true,
+          exists: val !== null && val !== undefined,
+          value: val,
+          usedRestFallback: true,
+          refreshedTokens: false
+        };
       }
       // If 401 (stale App Check or Auth token), force-refresh BOTH once and retry cleanly!
       if (firstTry.status === 401) {
@@ -1172,7 +1423,13 @@ class RealtimeSyncService {
         const secondTry = await doRestRead(freshIdToken, true);
         if (secondTry.status === 200) {
           const val = secondTry.value ?? null;
-          return { ok: true, exists: val !== null && val !== undefined, value: val };
+          return {
+            ok: true,
+            exists: val !== null && val !== undefined,
+            value: val,
+            usedRestFallback: true,
+            refreshedTokens: true
+          };
         }
         return { ok: false, exists: false, value: null, error: secondTry.error || 'HTTP_401' };
       }
@@ -1183,6 +1440,7 @@ class RealtimeSyncService {
   }
 
   public async resetAppCheckCacheAndReload(): Promise<void> {
+    this.clearStaleRtdbTransportFlags();
     if (this.firebaseAppCheck) {
       await this.withTimeout(
         getAppCheckToken(this.firebaseAppCheck, true),
@@ -1196,6 +1454,8 @@ class RealtimeSyncService {
   }
 
   public async forceSignOutAndResetStartup(): Promise<void> {
+    this.authEpoch++;
+    this.clearStaleRtdbTransportFlags();
     await this.withTimeout(this.signOutFirebase(), 2500, 'signout-timeout').catch(() => {});
     this.firebaseUserProfile = null;
     this.firebaseUser = null;
@@ -1259,6 +1519,10 @@ class RealtimeSyncService {
         if (!nodeRes.ok) {
           return { status: 'error', profile: null, error: nodeRes.error || 'שגיאת חיבור' };
         }
+        if (nodeRes.usedRestFallback) {
+          // SDK timed out while REST succeeded — proactively recover RTDB WebSocket in background
+          void this.recoverRtdbRealtimeConnection(Boolean(nodeRes.refreshedTokens));
+        }
         if (!nodeRes.exists || !nodeRes.value) {
           return { status: 'not_found', profile: null };
         }
@@ -1303,6 +1567,7 @@ class RealtimeSyncService {
     }
     try {
       const cred = await signInWithEmailAndPassword(this.firebaseAuth, normalizedEmail, password);
+      this.authEpoch++;
       this.firebaseUser = cred.user;
       const profileRes = await this.fetchFirebaseUserProfileDetailed(cred.user.uid);
       if (profileRes.status === 'error') {
@@ -2160,6 +2425,7 @@ class RealtimeSyncService {
   }
 
   public async signOutFirebase(): Promise<void> {
+    this.authEpoch++;
     this.firebaseUserProfile = null;
     this.firebaseUser = null;
     this.detachDataListenersOnly();
@@ -2987,6 +3253,9 @@ class RealtimeSyncService {
   }
 
   private detachDataListenersOnly() {
+    this.clearRtdbWatchdogTimers();
+    this.activeDataListenersUid = null;
+    this.rtdbMetaSnapshotReceived = false;
     this.clearPartitionListeners();
     if (this.unsubscribeFirebase) {
       this.unsubscribeFirebase();
@@ -3016,8 +3285,14 @@ class RealtimeSyncService {
     this.hasLoadedInitialChatsFirebase = false;
   }
 
-  private attachFirebaseDataListeners(config: FirebaseConfigData) {
+  private attachFirebaseDataListeners(config: FirebaseConfigData, forceReattach = false) {
+    const currentUid = this.firebaseUser?.uid || '__anonymous__';
+    if (!forceReattach && this.activeDataListenersUid === currentUid && this.unsubscribeFirebase) {
+      return;
+    }
     this.detachDataListenersOnly();
+    this.activeDataListenersUid = currentUid;
+    this.rtdbMetaSnapshotReceived = false;
     const useFirestore = config.mode === 'firestore';
     const isEnforced = Boolean(config.requireFirebaseAuth);
 
@@ -3210,6 +3485,9 @@ class RealtimeSyncService {
         this.unsubscribeFirebase = onValue(
           metaRef,
           (snapshot) => {
+            this.rtdbMetaSnapshotReceived = true;
+            this.hasAutoRebuiltFirebaseApp = false;
+            this.clearRtdbWatchdogTimers();
             const m = snapshot.val() as NonNullable<typeof this.currentMetaState> | null;
             if (!m) {
               if (this.firebaseUserProfile?.role === 'admin') {
@@ -3261,15 +3539,57 @@ class RealtimeSyncService {
               errorMessage: undefined
             });
           },
-          (error) => {
+          () => {
             this.updateStatus({
               mode: 'error',
               connected: false,
               projectId: config.projectId,
-              errorMessage: `שגיאת התחברות ל-Firebase Realtime DB: ${error.message}`
+              errorMessage: 'החיבור לסנכרון החי נקטע זמנית'
             });
+            if (!this.rtdbMetaSnapshotReceived) {
+              void this.hydrateWorkspaceViaRestFallback(config);
+              void this.recoverRtdbRealtimeConnection(true);
+            }
           }
         );
+
+        // Watchdog: if real-time WebSocket does not deliver std_meta within 3.5s (e.g. stale mobile/PWA transport or App Check cache),
+        // hydrate systems & issues immediately via authenticated HTTPS REST and actively recover the live socket.
+        const watchdogEpoch = this.authEpoch;
+        const watchdogUid = this.firebaseUser?.uid;
+        this.rtdbBootstrapWatchdogTimer = setTimeout(() => {
+          this.rtdbBootstrapWatchdogTimer = null;
+          if (
+            this.rtdbMetaSnapshotReceived ||
+            this.authEpoch !== watchdogEpoch ||
+            this.firebaseUser?.uid !== watchdogUid
+          ) {
+            return;
+          }
+          void this.hydrateWorkspaceViaRestFallback(config);
+          void this.recoverRtdbRealtimeConnection(true);
+
+          // If still disconnected after recovery (e.g. RTDB server_kill), rebuild Firebase app at most once automatically
+          this.rtdbReconnectRetryTimer = setTimeout(() => {
+            this.rtdbReconnectRetryTimer = null;
+            if (
+              this.rtdbMetaSnapshotReceived ||
+              this.authEpoch !== watchdogEpoch ||
+              this.firebaseUser?.uid !== watchdogUid ||
+              this.isRebuildingFirebaseApp ||
+              this.hasAutoRebuiltFirebaseApp
+            ) {
+              return;
+            }
+            this.isRebuildingFirebaseApp = true;
+            this.hasAutoRebuiltFirebaseApp = true;
+            this.connectFirebase(config)
+              .catch(() => {})
+              .finally(() => {
+                this.isRebuildingFirebaseApp = false;
+              });
+          }, 6500);
+        }, 3500);
 
         try {
           const privateRef = ref(this.rtdb, 'std_private_config');
@@ -3358,12 +3678,12 @@ class RealtimeSyncService {
             });
           }
         },
-        (error) => {
+        () => {
           this.updateStatus({
             mode: 'error',
             connected: false,
             projectId: config.projectId,
-            errorMessage: `שגיאת התחברות ל-Firebase Realtime DB: ${error.message}`
+            errorMessage: 'החיבור לסנכרון החי נקטע זמנית'
           });
         }
       );
@@ -3531,28 +3851,54 @@ class RealtimeSyncService {
         this.firestore = getFirestore(this.firebaseApp);
         this.rtdb = null;
       } else {
+        // Clear any stale RTDB WebSocket-failure / host-cache flags in localStorage so regular browsers & PWAs
+        // always start with a clean WebSocket connection instead of getting stuck in legacy iframe long-polling!
+        this.clearStaleRtdbTransportFlags();
+        if (typeof WebSocket !== 'undefined' && !this.hasForcedWebSockets) {
+          try {
+            forceWebSockets();
+            this.hasForcedWebSockets = true;
+          } catch {
+            // ignore if transport already initialized
+          }
+        }
         this.rtdb = getDatabase(this.firebaseApp);
         this.firestore = null;
       }
 
       this.unsubscribeAuthState = onAuthStateChanged(this.firebaseAuth, async (user) => {
+        const myEpoch = ++this.authEpoch;
         this.firebaseUser = user;
 
         if (user) {
-          const profileRes = await this.fetchFirebaseUserProfileDetailed(user.uid);
-          if (profileRes.status === 'error') {
-            // Do NOT mistakenly send an approved user to Waiting Room on a transient connection/AppCheck error!
-            this.updateStatus({
-              firebaseUid: user.uid,
-              firebaseUserEmail: user.email || undefined,
-              errorMessage: `לא ניתן להשלים את החיבור כרגע (${profileRes.error || 'TIMEOUT'}). נסה שוב או התחבר מחדש.`
-            });
+          let profile: FirebaseUserProfile | null = null;
+          if (this.firebaseUserProfile?.uid === user.uid) {
+            profile = this.firebaseUserProfile;
+          } else {
+            const profileRes = await this.fetchFirebaseUserProfileDetailed(user.uid);
+            if (this.authEpoch !== myEpoch && this.firebaseUser?.uid !== user.uid) {
+              return;
+            }
+            if (profileRes.status === 'error') {
+              // Do NOT mistakenly send an approved user to Waiting Room on a transient connection/AppCheck error!
+              this.updateStatus({
+                firebaseUid: user.uid,
+                firebaseUserEmail: user.email || undefined,
+                errorMessage: `לא ניתן להשלים את החיבור כרגע (${profileRes.error || 'TIMEOUT'}). נסה שוב או התחבר מחדש.`
+              });
+              return;
+            }
+            profile = profileRes.profile;
+          }
+          if (this.authEpoch !== myEpoch && this.firebaseUser?.uid !== user.uid) {
             return;
           }
-          const profile = profileRes.profile;
           this.firebaseUserProfile = profile;
           if (!profile && config.requireFirebaseAuth) {
             this.pendingJoinRequest = await this.fetchOwnJoinRequest(user.uid);
+            if (this.authEpoch !== myEpoch && this.firebaseUser?.uid !== user.uid) {
+              return;
+            }
             this.attachWaitingRoomListeners(user.uid);
             this.notifyPendingJoinRequestListeners();
           } else {
@@ -3590,6 +3936,9 @@ class RealtimeSyncService {
           if (config.requireFirebaseAuth) {
             this.detachDataListenersOnly();
             await this.clearLocalSensitiveCaches();
+            if (this.authEpoch !== myEpoch || this.firebaseUser) {
+              return;
+            }
             this.notifyState(false);
             this.notifyChats();
           }
@@ -3615,12 +3964,47 @@ class RealtimeSyncService {
   }
 
   /**
-   * כפתור "סנכרון חי" או רענון יזום: מרענן את המאזינים מול Firebase המאובטח
+   * כפתור "סנכרון חי" או רענון יזום: מנקה דגלי חיבור ישנים, מרענן טוקן, מושך נתונים מיידית ומחדש סנכרון חי
    */
-  public requestManualSync() {
-    if (this.activeFirebaseConfig && this.firebaseUser && this.firebaseUserProfile) {
-      this.attachFirebaseDataListeners(this.activeFirebaseConfig);
+  public async requestManualSync(): Promise<void> {
+    const config = this.activeFirebaseConfig;
+    if (!config || !this.firebaseUser || !this.firebaseUserProfile) return;
+
+    this.hasAutoRebuiltFirebaseApp = false;
+    this.clearStaleRtdbTransportFlags();
+
+    if (config.mode !== 'firestore' && this.rtdb) {
+      const wasConnected = this.statusInfo.connected && this.rtdbMetaSnapshotReceived;
+      if (!wasConnected) {
+        void this.hydrateWorkspaceViaRestFallback(config);
+        await this.recoverRtdbRealtimeConnection(true);
+      }
+      this.attachFirebaseDataListeners(config, true);
+
+      if (!wasConnected) {
+        const manualEpoch = this.authEpoch;
+        const manualUid = this.firebaseUser.uid;
+        setTimeout(() => {
+          if (
+            !this.rtdbMetaSnapshotReceived &&
+            this.authEpoch === manualEpoch &&
+            this.firebaseUser?.uid === manualUid &&
+            !this.isRebuildingFirebaseApp
+          ) {
+            this.isRebuildingFirebaseApp = true;
+            this.hasAutoRebuiltFirebaseApp = true;
+            this.connectFirebase(config)
+              .catch(() => {})
+              .finally(() => {
+                this.isRebuildingFirebaseApp = false;
+              });
+          }
+        }, 4500);
+      }
+      return;
     }
+
+    this.attachFirebaseDataListeners(config, true);
   }
 
   /**
