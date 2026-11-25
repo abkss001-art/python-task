@@ -70,11 +70,20 @@ export const FIREBASE_RTDB_RULES_JSON = `{
         }
       }
     },
+    "std_taken_names": {
+      ".read": "auth != null && root.child('std_users/' + auth.uid + '/role').val() === 'admin'",
+      ".write": "auth != null && root.child('std_users/' + auth.uid + '/role').val() === 'admin'",
+      "$nameHash": {
+        ".read": "auth != null",
+        ".write": "auth != null && root.child('std_users/' + auth.uid + '/role').val() === 'admin'",
+        ".validate": "!newData.exists() || (newData.hasChildren(['uid', 'updatedAt']) && newData.child('uid').isString() && newData.child('uid').val().length >= 1 && newData.child('uid').val().length <= 128 && newData.child('updatedAt').isNumber())"
+      }
+    },
     "std_join_requests": {
       ".read": "auth != null && root.child('std_users/' + auth.uid + '/role').val() === 'admin'",
       "$uid": {
         ".read": "auth != null && (auth.uid === $uid || root.child('std_users/' + auth.uid + '/role').val() === 'admin')",
-        ".write": "auth != null && (root.child('std_users/' + auth.uid + '/role').val() === 'admin' || (auth.uid === $uid && newData.exists() && !root.child('std_users/' + auth.uid).exists() && newData.child('uid').val() === auth.uid && newData.child('status').val() === 'pending' && !newData.hasChild('approvedRole') && !newData.hasChild('approvedSystems') && !newData.hasChild('approvedAt') && !newData.hasChild('approvedBy') && ((!data.exists() && newData.child('rejectCount').val() === 0 && newData.child('attemptNumber').val() === 1 && !newData.hasChild('rejectionReason') && !newData.hasChild('rejectedAt') && !newData.hasChild('rejectedBy')) || (data.exists() && data.child('status').val() === 'rejected' && data.child('rejectCount').val() < 3 && newData.child('rejectCount').val() === data.child('rejectCount').val() && newData.child('attemptNumber').val() === data.child('rejectCount').val() + 1 && newData.child('email').val() === data.child('email').val() && ((!data.hasChild('rejectionReason') && !newData.hasChild('rejectionReason')) || newData.child('rejectionReason').val() === data.child('rejectionReason').val()) && ((!data.hasChild('rejectedAt') && !newData.hasChild('rejectedAt')) || newData.child('rejectedAt').val() === data.child('rejectedAt').val()) && ((!data.hasChild('rejectedBy') && !newData.hasChild('rejectedBy')) || newData.child('rejectedBy').val() === data.child('rejectedBy').val())))))",
+        ".write": "auth != null && (root.child('std_users/' + auth.uid + '/role').val() === 'admin' || (auth.uid === $uid && newData.exists() && !root.child('std_users/' + auth.uid).exists() && newData.child('uid').val() === auth.uid && newData.child('status').val() === 'pending' && !newData.hasChild('approvedRole') && !newData.hasChild('approvedSystems') && !newData.hasChild('approvedAt') && !newData.hasChild('approvedBy') && (((!data.exists() || data.child('status').val() === 'approved') && newData.child('rejectCount').val() === 0 && newData.child('attemptNumber').val() === 1 && !newData.hasChild('rejectionReason') && !newData.hasChild('rejectedAt') && !newData.hasChild('rejectedBy') && (!data.exists() || newData.child('email').val() === data.child('email').val())) || (data.exists() && data.child('status').val() === 'rejected' && data.child('rejectCount').val() < 3 && newData.child('rejectCount').val() === data.child('rejectCount').val() && newData.child('attemptNumber').val() === data.child('rejectCount').val() + 1 && newData.child('email').val() === data.child('email').val() && ((!data.hasChild('rejectionReason') && !newData.hasChild('rejectionReason')) || newData.child('rejectionReason').val() === data.child('rejectionReason').val()) && ((!data.hasChild('rejectedAt') && !newData.hasChild('rejectedAt')) || newData.child('rejectedAt').val() === data.child('rejectedAt').val()) && ((!data.hasChild('rejectedBy') && !newData.hasChild('rejectedBy')) || newData.child('rejectedBy').val() === data.child('rejectedBy').val())))))",
         ".validate": "!newData.exists() || (newData.hasChildren(['uid', 'fullName', 'email', 'status', 'rejectCount', 'attemptNumber', 'requestedAt', 'updatedAt']) && newData.child('uid').val() === $uid && newData.child('fullName').isString() && newData.child('fullName').val().length >= 2 && newData.child('fullName').val().length <= 120 && newData.child('email').isString() && newData.child('email').val().length <= 160 && (newData.child('status').val() === 'pending' || newData.child('status').val() === 'approved' || newData.child('status').val() === 'rejected' || newData.child('status').val() === 'blocked') && newData.child('rejectCount').isNumber() && newData.child('rejectCount').val() >= 0 && newData.child('rejectCount').val() <= 3 && newData.child('attemptNumber').isNumber() && newData.child('attemptNumber').val() >= 1 && newData.child('attemptNumber').val() <= 3 && newData.child('requestedAt').isNumber() && newData.child('updatedAt').isNumber() && (!newData.hasChild('rejectionReason') || (newData.child('rejectionReason').isString() && newData.child('rejectionReason').val().length <= 300)) && (!newData.hasChild('approvedRole') || newData.child('approvedRole').val() === 'qa' || newData.child('approvedRole').val() === 'dev'))"
       }
     },
@@ -243,20 +252,36 @@ service cloud.firestore {
         (field in resource.data && request.resource.data[field] == resource.data[field]);
     }
 
+    function isValidTakenName(nameHash, data) {
+      return nameHash is string &&
+        nameHash.matches('^[0-9a-f]{64}$') &&
+        data.keys().hasAll(['uid', 'updatedAt']) &&
+        data.keys().hasOnly(['uid', 'updatedAt']) &&
+        data.uid is string &&
+        data.uid.size() >= 1 &&
+        data.uid.size() <= 128 &&
+        data.updatedAt is int &&
+        data.updatedAt >= 0;
+    }
+
+    // Default deny
     match /{document=**} {
       allow read, write: if false;
     }
 
+    // User roles & per-system permissions directory (server-enforced RBAC)
     match /std_users/{uid} {
       allow read: if isSignedIn() && (request.auth.uid == uid || isAdmin());
       allow create, update, delete: if isAdmin();
     }
 
+    // Protected Google Drive & Apps Script secret config (Admin write, active team read)
     match /std_workspaces/private_config {
       allow read: if hasProfile();
       allow write: if isAdmin();
     }
 
+    // Partitioned workspace metadata (systems list, teamMembers, archives)
     match /std_workspaces/meta {
       allow read: if hasProfile();
       allow create: if isAdmin();
@@ -275,14 +300,17 @@ service cloud.firestore {
       allow delete: if false;
     }
 
+    // Per-system issues partitions (server enforces per-system access!)
     match /std_systems/{systemKey} {
       allow read, write: if hasSystemAccess(systemKey);
     }
 
+    // Per-system group chat partitions (server enforces per-system access!)
     match /std_chats/{systemKey} {
       allow read, write: if hasSystemAccess(systemKey);
     }
 
+    // Immutable append-only server Audit Log (admin read only, authenticated append only, never editable/deletable)
     match /std_audit_log/{entryId} {
       allow read: if isAdmin();
       allow create: if hasProfile() &&
@@ -295,6 +323,14 @@ service cloud.firestore {
       allow update, delete: if false;
     }
 
+    // Monthly App Check usage counters (admin read all, users read/increment only their own {YYYY-MM}_{uid} doc, never deletable)
+    // Assumed Data Model for std_usage/{docId}:
+    //   Document ID: {YYYY-MM}_{uid}
+    //   Fields (all required, strict schema):
+    //     - monthKey: string (immutable, matches YYYY-MM with valid month 01-12, must match docId prefix)
+    //     - uid: string (immutable, must equal request.auth.uid and docId suffix)
+    //     - appCheckTokens: int (0..100000, monotonic non-decreasing on update)
+    //     - updatedAt: int (>= 0, Unix epoch ms)
     match /std_usage/{docId} {
       allow get: if isAdmin() || (
         hasProfile() && (
@@ -316,6 +352,40 @@ service cloud.firestore {
       allow delete: if false;
     }
 
+    // Privacy-preserving duplicate full-name index (SHA-256 keyed; single-hash lookup only, admin managed)
+    // Assumed Data Model for std_taken_names/{nameHash}:
+    //   Document ID: {nameHash} (64-character lowercase hex SHA-256 hash)
+    //   Fields (all required, strict schema):
+    //     - uid: string (1..128 chars, owning user's Firebase Auth UID)
+    //     - updatedAt: int (>= 0, Unix epoch ms)
+    match /std_taken_names/{nameHash} {
+      allow get: if isSignedIn();
+      allow list: if isAdmin();
+      allow create, update: if isAdmin() &&
+        isValidTakenName(nameHash, request.resource.data);
+      allow delete: if isAdmin();
+    }
+
+    // Self-registration waiting room with server-enforced 3-attempt anti-spam cap
+    // Assumed Data Model for std_join_requests/{uid}:
+    //   Document ID: {uid} (applicant Firebase Auth UID)
+    //   Required base fields (8):
+    //     - uid: string (immutable, 1..128 chars, must equal {uid})
+    //     - fullName: string (trimmed >= 2 chars, total <= 120 chars)
+    //     - email: string (1..160 chars, valid email format, matches Auth token email on user writes)
+    //     - status: string ('pending' | 'approved' | 'rejected' | 'blocked')
+    //     - rejectCount: int (0..3, immutable on rejected retry, reset to 0 on revoked-approved resubmit, admin-managed)
+    //     - attemptNumber: int (1..3, must be 1 on create or revoked-approved resubmit, and resource.rejectCount + 1 on retry)
+    //     - requestedAt: int (>= 0, Unix epoch ms)
+    //     - updatedAt: int (>= 0, Unix epoch ms)
+    //   Optional admin-only fields (7):
+    //     - rejectionReason: string (<= 300 chars)
+    //     - rejectedAt: int (>= 0, Unix epoch ms)
+    //     - rejectedBy: string (<= 120 chars)
+    //     - approvedRole: string ('qa' | 'dev')
+    //     - approvedSystems: list<string> (<= 100 items, element length <= 120 chars)
+    //     - approvedAt: int (>= 0, Unix epoch ms)
+    //     - approvedBy: string (<= 120 chars)
     match /std_join_requests/{uid} {
       allow get: if (isSignedIn() && request.auth.uid == uid) || isAdmin();
       allow list: if isAdmin();
@@ -360,27 +430,46 @@ service cloud.firestore {
         resource.data.email is string &&
         request.resource.data.email.lower() == resource.data.email.lower() &&
         ('status' in resource.data) &&
-        resource.data.status == 'rejected' &&
-        ('rejectCount' in resource.data) &&
-        resource.data.rejectCount is int &&
-        resource.data.rejectCount >= 0 &&
-        resource.data.rejectCount < 3 &&
         request.resource.data.status == 'pending' &&
-        request.resource.data.rejectCount == resource.data.rejectCount &&
-        request.resource.data.attemptNumber == resource.data.rejectCount + 1 &&
-        !request.resource.data.keys().hasAny([
-          'approvedRole',
-          'approvedSystems',
-          'approvedAt',
-          'approvedBy'
-        ]) &&
-        isJoinRequestFieldAbsentOrUnchanged('rejectionReason') &&
-        isJoinRequestFieldAbsentOrUnchanged('rejectedAt') &&
-        isJoinRequestFieldAbsentOrUnchanged('rejectedBy')
+        (
+          (
+            resource.data.status == 'rejected' &&
+            ('rejectCount' in resource.data) &&
+            resource.data.rejectCount is int &&
+            resource.data.rejectCount >= 0 &&
+            resource.data.rejectCount < 3 &&
+            request.resource.data.rejectCount == resource.data.rejectCount &&
+            request.resource.data.attemptNumber == resource.data.rejectCount + 1 &&
+            !request.resource.data.keys().hasAny([
+              'approvedRole',
+              'approvedSystems',
+              'approvedAt',
+              'approvedBy'
+            ]) &&
+            isJoinRequestFieldAbsentOrUnchanged('rejectionReason') &&
+            isJoinRequestFieldAbsentOrUnchanged('rejectedAt') &&
+            isJoinRequestFieldAbsentOrUnchanged('rejectedBy')
+          ) || (
+            resource.data.status == 'approved' &&
+            request.resource.data.keys().hasOnly([
+              'uid',
+              'fullName',
+              'email',
+              'status',
+              'rejectCount',
+              'attemptNumber',
+              'requestedAt',
+              'updatedAt'
+            ]) &&
+            request.resource.data.rejectCount == 0 &&
+            request.resource.data.attemptNumber == 1
+          )
+        )
       );
       allow delete: if isAdmin();
     }
 
+    // Legacy monolithic docs (restricted to admins / unrestricted users for migration)
     match /std_workspaces/main_workspace {
       allow read: if isAllSystems();
       allow write: if isAdmin();

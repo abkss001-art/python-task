@@ -71,6 +71,7 @@ import {
   TeamRole
 } from '../types/std';
 import {
+  computeFullNameHash,
   MAX_JOIN_REJECTIONS,
   normalizeLoginEmail
 } from '../utils/authHelpers';
@@ -1915,6 +1916,79 @@ class RealtimeSyncService {
     }
   }
 
+  private async isFullNameTakenByAnotherUser(fullName: string, currentUid: string): Promise<boolean> {
+    if (!this.activeFirebaseConfig) return false;
+    try {
+      const nameHash = await computeFullNameHash(fullName);
+      if (!nameHash) return false;
+      if (this.activeFirebaseConfig.mode === 'firestore' && this.firestore) {
+        const snap = await getDoc(doc(this.firestore, 'std_taken_names', nameHash));
+        if (!snap.exists()) return false;
+        const data = snap.data() as { uid?: string } | undefined;
+        return Boolean(data?.uid && data.uid !== currentUid);
+      }
+      if (this.rtdb) {
+        const snap = await get(ref(this.rtdb, `std_taken_names/${nameHash}`));
+        if (!snap.exists()) return false;
+        const data = snap.val() as { uid?: string } | null;
+        return Boolean(data?.uid && data.uid !== currentUid);
+      }
+    } catch {
+      // If lookup fails transiently, do not crash auth flow
+    }
+    return false;
+  }
+
+  private async registerTakenNameHash(fullName: string, uid: string): Promise<void> {
+    if (!this.activeFirebaseConfig || !uid) return;
+    try {
+      const nameHash = await computeFullNameHash(fullName);
+      if (!nameHash) return;
+      const entry = { uid, updatedAt: Date.now() };
+      if (this.activeFirebaseConfig.mode === 'firestore' && this.firestore) {
+        await setDoc(doc(this.firestore, 'std_taken_names', nameHash), entry);
+      } else if (this.rtdb) {
+        await set(ref(this.rtdb, `std_taken_names/${nameHash}`), entry);
+      }
+    } catch {
+      // non-fatal
+    }
+  }
+
+  private async syncTakenNamesIndexFromProfiles(
+    profiles: Iterable<FirebaseUserProfile>
+  ): Promise<void> {
+    if (!this.activeFirebaseConfig) return;
+    try {
+      const now = Date.now();
+      const nextMap: Record<string, { uid: string; updatedAt: number }> = {};
+      for (const p of profiles) {
+        if (!p?.fullName || !p?.uid) continue;
+        const hash = await computeFullNameHash(p.fullName);
+        if (hash) {
+          nextMap[hash] = { uid: p.uid, updatedAt: now };
+        }
+      }
+      if (this.activeFirebaseConfig.mode === 'firestore' && this.firestore) {
+        const existingSnap = await getDocs(collection(this.firestore, 'std_taken_names'));
+        const existingIds = new Set<string>();
+        existingSnap.forEach((d) => existingIds.add(d.id));
+        for (const [hash, entry] of Object.entries(nextMap)) {
+          await setDoc(doc(this.firestore, 'std_taken_names', hash), entry).catch(() => {});
+        }
+        for (const oldHash of existingIds) {
+          if (!nextMap[oldHash]) {
+            await deleteDoc(doc(this.firestore, 'std_taken_names', oldHash)).catch(() => {});
+          }
+        }
+      } else if (this.rtdb) {
+        await set(ref(this.rtdb, 'std_taken_names'), Object.keys(nextMap).length > 0 ? nextMap : null);
+      }
+    } catch {
+      // non-fatal
+    }
+  }
+
   /**
    * הרשמה עצמאית של חבר צוות חדש + שליחת בקשת הצטרפות לחדר ההמתנה (אפס גישה לנתונים עד אישור מנהל)
    */
@@ -1945,20 +2019,24 @@ class RealtimeSyncService {
     }
 
     let signedInUser: User | null = null;
+    let createdNewAuthUser = false;
     try {
       const cred = await createUserWithEmailAndPassword(this.firebaseAuth, normalizedEmail, password);
       signedInUser = cred.user;
+      createdNewAuthUser = true;
     } catch (err: any) {
       const code = String(err?.code || '');
       if (code === 'auth/email-already-in-use') {
-        // Attempt sign-in so returning waiting/rejected users enter their server-enforced Waiting Room
+        // Attempt sign-in so returning waiting/rejected users enter their server-enforced Waiting Room,
+        // while blocking already-active approved accounts from re-registering via the Register tab!
         try {
           const cred = await signInWithEmailAndPassword(this.firebaseAuth, normalizedEmail, password);
           signedInUser = cred.user;
         } catch {
           return {
             ok: false,
-            error: 'כתובת אימייל זו כבר רשומה עם סיסמה אחרת. עבור ללשונית "התחברות" או לחץ "שכחתי סיסמה".'
+            error:
+              'שם המשתמש / האימייל הזה כבר קיים במערכת! לא ניתן להירשם שוב עם אותו שם משתמש — עבור ללשונית "התחברות" או לחץ "שכחתי סיסמה".'
           };
         }
       } else if (code === 'auth/weak-password') {
@@ -1979,21 +2057,34 @@ class RealtimeSyncService {
     this.firebaseUser = signedInUser;
     const existingProfile = await this.fetchFirebaseUserProfile(signedInUser.uid);
     if (existingProfile) {
-      this.firebaseUserProfile = existingProfile;
-      this.detachWaitingRoomListeners();
-      this.attachFirebaseDataListeners(this.activeFirebaseConfig);
-      this.notifyAuthListeners();
-      this.recordAuditEvent('התחברות מאובטחת למערכת', 'auth');
-      return { ok: true, profile: existingProfile, alreadyApproved: true };
+      await this.signOutFirebase().catch(() => {});
+      return {
+        ok: false,
+        error:
+          'שם המשתמש / האימייל הזה כבר קיים ופעיל במערכת! לא ניתן להירשם שוב עם אותו שם משתמש — עבור ללשונית "התחברות".'
+      };
     }
 
     const existingReq = await this.fetchOwnJoinRequest(signedInUser.uid);
-    if (existingReq) {
+    if (existingReq && existingReq.status !== 'approved') {
       this.pendingJoinRequest = existingReq;
       this.attachWaitingRoomListeners(signedInUser.uid);
       this.notifyPendingJoinRequestListeners();
       this.notifyAuthListeners();
       return { ok: true, request: existingReq };
+    }
+
+    // Block registering a second account under a fullName that already belongs to an active team member!
+    const nameTaken = await this.isFullNameTakenByAnotherUser(cleanName, signedInUser.uid);
+    if (nameTaken) {
+      if (createdNewAuthUser) {
+        await signedInUser.delete().catch(() => {});
+      }
+      await this.signOutFirebase().catch(() => {});
+      return {
+        ok: false,
+        error: `השם "${cleanName}" כבר קיים ופעיל במערכת תחת חשבון אחר! לא ניתן להירשם שוב עם אותו שם — התחבר דרך לשונית "התחברות" עם החשבון המקורי שלך (או הוסף פרט מזהה אם מדובר בעובד אחר).`
+      };
     }
 
     const now = Date.now();
@@ -2047,7 +2138,7 @@ class RealtimeSyncService {
           error: 'החשבון שלך נחסם לאחר 3 דחיות. יש לפנות ישירות למנהל המערכת.'
         };
       }
-      if (existing.status !== 'rejected') {
+      if (existing.status === 'pending') {
         return { ok: true, request: existing };
       }
 
@@ -2056,19 +2147,40 @@ class RealtimeSyncService {
         return { ok: false, error: 'נא להזין שם מלא תקין (לפחות 2 תווים).' };
       }
 
-      const retryReq: JoinRequest = {
-        uid,
-        fullName: cleanName,
-        email: existing.email || this.firebaseUser.email || '',
-        status: 'pending',
-        rejectCount: existing.rejectCount,
-        attemptNumber: Math.min(existing.rejectCount + 1, MAX_JOIN_REJECTIONS),
-        requestedAt: now,
-        updatedAt: now,
-        ...(existing.rejectionReason ? { rejectionReason: existing.rejectionReason } : {}),
-        ...(existing.rejectedAt ? { rejectedAt: existing.rejectedAt } : {}),
-        ...(existing.rejectedBy ? { rejectedBy: existing.rejectedBy } : {})
-      };
+      const nameTaken = await this.isFullNameTakenByAnotherUser(cleanName, uid);
+      if (nameTaken) {
+        return {
+          ok: false,
+          error: `השם "${cleanName}" כבר קיים ופעיל במערכת תחת חשבון אחר! אם כבר יש לך חשבון אחר במערכת — התנתק והתחבר דרכו.`
+        };
+      }
+
+      // Handle both rejected retry AND previously-approved accounts whose std_users profile was removed
+      const isRevokedApproved = existing.status === 'approved';
+      const retryReq: JoinRequest = isRevokedApproved
+        ? {
+            uid,
+            fullName: cleanName,
+            email: existing.email || this.firebaseUser.email || '',
+            status: 'pending',
+            rejectCount: 0,
+            attemptNumber: 1,
+            requestedAt: now,
+            updatedAt: now
+          }
+        : {
+            uid,
+            fullName: cleanName,
+            email: existing.email || this.firebaseUser.email || '',
+            status: 'pending',
+            rejectCount: existing.rejectCount,
+            attemptNumber: Math.min(existing.rejectCount + 1, MAX_JOIN_REJECTIONS),
+            requestedAt: now,
+            updatedAt: now,
+            ...(existing.rejectionReason ? { rejectionReason: existing.rejectionReason } : {}),
+            ...(existing.rejectedAt ? { rejectedAt: existing.rejectedAt } : {}),
+            ...(existing.rejectedBy ? { rejectedBy: existing.rejectedBy } : {})
+          };
 
       try {
         if (this.activeFirebaseConfig.mode === 'firestore' && this.firestore) {
@@ -2088,6 +2200,13 @@ class RealtimeSyncService {
     const cleanName = (fullNameInput || '').trim().slice(0, 120);
     if (cleanName.length < 2) {
       return { ok: false, error: 'נא להזין שם מלא תקין (לפחות 2 תווים).' };
+    }
+    const nameTaken = await this.isFullNameTakenByAnotherUser(cleanName, uid);
+    if (nameTaken) {
+      return {
+        ok: false,
+        error: `השם "${cleanName}" כבר קיים ופעיל במערכת תחת חשבון אחר! אם כבר יש לך חשבון אחר במערכת — התנתק והתחבר דרכו.`
+      };
     }
     const freshReq: JoinRequest = {
       uid,
@@ -2162,6 +2281,7 @@ class RealtimeSyncService {
         await set(ref(this.rtdb, `std_users/${req.uid}`), stripUndefinedDeep(newProfile));
         await set(ref(this.rtdb, `std_join_requests/${req.uid}`), stripUndefinedDeep(updatedReq));
       }
+      await this.registerTakenNameHash(newProfile.fullName, req.uid);
       const roleHe = role === 'dev' ? 'מפתח (Dev)' : 'בודק תוכנה (QA)';
       this.recordAuditEvent(
         `אישור בקשת הצטרפות (${roleHe}): ${req.fullName}`,
@@ -2304,6 +2424,7 @@ class RealtimeSyncService {
       } else {
         return { ok: false, error: 'מסד הנתונים אינו מחובר.' };
       }
+      await this.registerTakenNameHash(profile.fullName, profile.uid);
       this.firebaseUserProfile = profile;
       this.attachFirebaseDataListeners(this.activeFirebaseConfig);
       this.notifyAuthListeners();
@@ -2379,6 +2500,7 @@ class RealtimeSyncService {
       } else if (this.rtdb) {
         await set(ref(this.rtdb, `std_users/${newUid}`), stripUndefinedDeep(profile));
       }
+      await this.registerTakenNameHash(profile.fullName, newUid);
 
       this.recordAuditEvent(
         `יצירת חשבון Firebase Auth חדש (${role}) עבור ${cleanName}`,
@@ -3115,9 +3237,12 @@ class RealtimeSyncService {
       }
 
       const activeUids = new Set<string>();
+      const survivingProfiles = new Map<string, FirebaseUserProfile>();
       for (const m of members) {
-        const targetProfile =
-          (m.uid ? byUid.get(m.uid) : undefined) || byName.get(m.fullName.trim().toLowerCase());
+        // Match by UID strictly when linked; fall back to name ONLY for legacy unlinked rows (never steal another UID!)
+        const targetProfile = m.uid
+          ? byUid.get(m.uid)
+          : byName.get(m.fullName.trim().toLowerCase());
         if (!targetProfile) continue;
         activeUids.add(targetProfile.uid);
 
@@ -3131,6 +3256,7 @@ class RealtimeSyncService {
           isSuperAdmin: Boolean(m.isSuperAdmin || (m.role === 'admin' && targetProfile.isSuperAdmin)),
           updatedAt: Date.now()
         };
+        survivingProfiles.set(updatedProfile.uid, updatedProfile);
 
         if (this.activeFirebaseConfig.mode === 'firestore' && this.firestore) {
           await setDoc(
@@ -3148,11 +3274,23 @@ class RealtimeSyncService {
       // Revoke server access immediately for any removed team members (never delete active admin or super admin)
       for (const [uid, existingProfile] of byUid.entries()) {
         if (activeUids.has(uid)) continue;
-        if (uid === this.firebaseUser?.uid || existingProfile.isSuperAdmin) continue;
+        if (uid === this.firebaseUser?.uid || existingProfile.isSuperAdmin) {
+          survivingProfiles.set(uid, existingProfile);
+          continue;
+        }
         if (this.activeFirebaseConfig.mode === 'firestore' && this.firestore) {
           await deleteDoc(doc(this.firestore, 'std_users', uid)).catch(() => {});
+          // Clear stale 'approved' join request so removed user never hits a dead-end waiting screen
+          const reqSnap = await getDoc(doc(this.firestore, 'std_join_requests', uid)).catch(() => null);
+          if (reqSnap && reqSnap.exists() && reqSnap.data()?.status === 'approved') {
+            await deleteDoc(doc(this.firestore, 'std_join_requests', uid)).catch(() => {});
+          }
         } else if (this.rtdb) {
           await remove(ref(this.rtdb, `std_users/${uid}`)).catch(() => {});
+          const reqSnap = await get(ref(this.rtdb, `std_join_requests/${uid}`)).catch(() => null);
+          if (reqSnap && reqSnap.exists() && reqSnap.val()?.status === 'approved') {
+            await remove(ref(this.rtdb, `std_join_requests/${uid}`)).catch(() => {});
+          }
         }
         this.recordAuditEvent(
           `ביטול הרשאות שרת למשתמש שהוסר: ${existingProfile.fullName}`,
@@ -3160,6 +3298,9 @@ class RealtimeSyncService {
           existingProfile.email || uid
         );
       }
+
+      // Keep privacy-preserving SHA-256 taken-names index strictly synchronized with active std_users
+      await this.syncTakenNamesIndexFromProfiles(survivingProfiles.values());
     } catch {
       // ignore background profile sync error
     }

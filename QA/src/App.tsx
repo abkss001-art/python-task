@@ -825,14 +825,14 @@ export function App() {
     const res = await syncService.approveJoinRequest(req, role, allowedSystems);
     if (!res.ok) return res;
 
-    // Automatically add/update approved member inside workspace teamMembers so they appear in Team Management & Chat @mentions
+    // Automatically add/update approved member inside workspace teamMembers without EVER overwriting another user's UID!
     const cleanName = req.fullName.trim();
     const scopedSystems =
       Array.isArray(allowedSystems) && allowedSystems.length > 0 ? allowedSystems : undefined;
     const existingIdx = teamMembers.findIndex(
       (m) =>
         (m.uid && m.uid === req.uid) ||
-        m.fullName.trim().toLowerCase() === cleanName.toLowerCase()
+        (!m.uid && m.fullName.trim().toLowerCase() === cleanName.toLowerCase())
     );
     let nextMembers: TeamMember[];
     if (existingIdx >= 0) {
@@ -3012,6 +3012,8 @@ export function App() {
         <AdminJoinRequestsModal
           requests={adminJoinRequests}
           systems={systems}
+          activeTeamUids={teamMembers.map((m) => m.uid).filter((u): u is string => Boolean(u))}
+          existingTeamNames={teamMembers.map((m) => m.fullName).filter(Boolean)}
           pendingUndoRejections={pendingUndoRejections}
           onApproveRequest={handleApproveJoinRequest}
           onQueueRejectRequest={handleQueueRejectJoinRequest}

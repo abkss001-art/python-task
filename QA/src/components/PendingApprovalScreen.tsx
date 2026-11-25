@@ -77,6 +77,7 @@ export const PendingApprovalScreen: React.FC<PendingApprovalScreenProps> = ({
     joinRequest?.status === 'blocked' || rejectCount >= MAX_JOIN_REJECTIONS;
   const isRejected = !isBlocked && joinRequest?.status === 'rejected';
   const isPending = joinRequest?.status === 'pending';
+  const isRevokedApproved = !isBlocked && joinRequest?.status === 'approved';
   const displayName = joinRequest?.fullName || fullNameInput || firebaseEmail.split('@')[0] || 'משתמש';
 
   const handleSubmitRequest = async (e: React.FormEvent) => {
@@ -261,6 +262,16 @@ export const PendingApprovalScreen: React.FC<PendingApprovalScreenProps> = ({
                   דף הבית יתחבר אוטומטית ותקבל הודעת אישור מיד.
                 </p>
               </>
+            ) : isRevokedApproved ? (
+              <>
+                <h2 className="text-xl sm:text-2xl font-black text-slate-900 dark:text-white">
+                  הרשאת הגישה של חשבון זה אינה פעילה
+                </h2>
+                <p className="text-xs sm:text-sm text-slate-600 dark:text-slate-300 mt-2 max-w-lg mx-auto leading-relaxed">
+                  חשבון זה אושר בעבר אך כרגע אינו פעיל בצוות (ייתכן שהגישה הוסרה או הועברה לחשבון אימייל אחר שלך).
+                  אם יש לך מייל אחר במערכת — לחץ <strong>התנתק</strong> והתחבר דרכו, או שלח בקשת הצטרפות מחדש למנהל למטה.
+                </p>
+              </>
             ) : (
               <>
                 <h2 className="text-xl sm:text-2xl font-black text-slate-900 dark:text-white">
@@ -406,14 +417,14 @@ export const PendingApprovalScreen: React.FC<PendingApprovalScreenProps> = ({
               </div>
             )}
 
-            {/* Retry / Initial Submit Form (Only for rejected < 3 or missing joinRequest) */}
-            {(isRejected || !joinRequest) && !isBlocked && (
+            {/* Retry / Initial Submit Form (For rejected < 3, revoked previously-approved accounts, or missing joinRequest) */}
+            {(isRejected || isRevokedApproved || !joinRequest) && !isBlocked && (
               <form
                 onSubmit={handleSubmitRequest}
                 className="p-4 rounded-2xl bg-slate-50 dark:bg-slate-800/70 border border-slate-200 dark:border-slate-700 space-y-3"
               >
                 <label className="block text-xs font-extrabold text-slate-800 dark:text-slate-200">
-                  {isRejected
+                  {isRejected || isRevokedApproved
                     ? 'עדכן את שמך המלא ושלח בקשה מחדש למנהל:'
                     : 'הזן את שמך המלא לשליחת הבקשה למנהל:'}
                 </label>

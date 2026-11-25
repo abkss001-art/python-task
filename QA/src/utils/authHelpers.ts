@@ -1,9 +1,29 @@
-import { TeamRole } from '../types/std';
+import type { TeamRole } from '../types/std';
 
 const LAST_LOGIN_IDENTIFIER_KEY = 'tzavman_last_login_identifier_v1';
 export const DEFAULT_SHORT_LOGIN_DOMAIN = 'gmail.com';
 export const MAX_JOIN_REJECTIONS = 3;
 export const JOIN_RETRY_COOLDOWN_MS = 60_000;
+
+/**
+ * מנרמל שם מלא לצורך זיהוי כפילויות (הסרת רווחים מיותרים ואותיות קטנות)
+ */
+export function normalizeFullNameKey(rawName: string): string {
+  return String(rawName || '').trim().replace(/\s+/g, ' ').toLowerCase();
+}
+
+/**
+ * מחשב hash חד-כיווני (SHA-256) עבור שם מלא כדי לבדוק כפילויות בשרת בלי לחשוף שמות עובדים
+ */
+export async function computeFullNameHash(rawName: string): Promise<string> {
+  const normalized = normalizeFullNameKey(rawName);
+  if (!normalized) return '';
+  const bytes = new TextEncoder().encode(`tzavman-name-v1:${normalized}`);
+  const digest = await crypto.subtle.digest('SHA-256', bytes);
+  return Array.from(new Uint8Array(digest))
+    .map((b) => b.toString(16).padStart(2, '0'))
+    .join('');
+}
 
 /**
  * מאפשר הזנת שם משתמש קצר (למשל `david` או `1234`) בלי להקליד `@gmail.com` בכל פעם,

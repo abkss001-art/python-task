@@ -148,6 +148,18 @@ service cloud.firestore {
         (field in resource.data && request.resource.data[field] == resource.data[field]);
     }
 
+    function isValidTakenName(nameHash, data) {
+      return nameHash is string &&
+        nameHash.matches('^[0-9a-f]{64}$') &&
+        data.keys().hasAll(['uid', 'updatedAt']) &&
+        data.keys().hasOnly(['uid', 'updatedAt']) &&
+        data.uid is string &&
+        data.uid.size() >= 1 &&
+        data.uid.size() <= 128 &&
+        data.updatedAt is int &&
+        data.updatedAt >= 0;
+    }
+
     // Default deny
     match /{document=**} {
       allow read, write: if false;
@@ -236,6 +248,20 @@ service cloud.firestore {
       allow delete: if false;
     }
 
+    // Privacy-preserving duplicate full-name index (SHA-256 keyed; single-hash lookup only, admin managed)
+    // Assumed Data Model for std_taken_names/{nameHash}:
+    //   Document ID: {nameHash} (64-character lowercase hex SHA-256 hash)
+    //   Fields (all required, strict schema):
+    //     - uid: string (1..128 chars, owning user's Firebase Auth UID)
+    //     - updatedAt: int (>= 0, Unix epoch ms)
+    match /std_taken_names/{nameHash} {
+      allow get: if isSignedIn();
+      allow list: if isAdmin();
+      allow create, update: if isAdmin() &&
+        isValidTakenName(nameHash, request.resource.data);
+      allow delete: if isAdmin();
+    }
+
     // Self-registration waiting room with server-enforced 3-attempt anti-spam cap
     // Assumed Data Model for std_join_requests/{uid}:
     //   Document ID: {uid} (applicant Firebase Auth UID)
@@ -244,8 +270,8 @@ service cloud.firestore {
     //     - fullName: string (trimmed >= 2 chars, total <= 120 chars)
     //     - email: string (1..160 chars, valid email format, matches Auth token email on user writes)
     //     - status: string ('pending' | 'approved' | 'rejected' | 'blocked')
-    //     - rejectCount: int (0..3, immutable for applicant, admin-managed)
-    //     - attemptNumber: int (1..3, must be 1 on create and resource.rejectCount + 1 on retry)
+    //     - rejectCount: int (0..3, immutable on rejected retry, reset to 0 on revoked-approved resubmit, admin-managed)
+    //     - attemptNumber: int (1..3, must be 1 on create or revoked-approved resubmit, and resource.rejectCount + 1 on retry)
     //     - requestedAt: int (>= 0, Unix epoch ms)
     //     - updatedAt: int (>= 0, Unix epoch ms)
     //   Optional admin-only fields (7):
@@ -300,23 +326,41 @@ service cloud.firestore {
         resource.data.email is string &&
         request.resource.data.email.lower() == resource.data.email.lower() &&
         ('status' in resource.data) &&
-        resource.data.status == 'rejected' &&
-        ('rejectCount' in resource.data) &&
-        resource.data.rejectCount is int &&
-        resource.data.rejectCount >= 0 &&
-        resource.data.rejectCount < 3 &&
         request.resource.data.status == 'pending' &&
-        request.resource.data.rejectCount == resource.data.rejectCount &&
-        request.resource.data.attemptNumber == resource.data.rejectCount + 1 &&
-        !request.resource.data.keys().hasAny([
-          'approvedRole',
-          'approvedSystems',
-          'approvedAt',
-          'approvedBy'
-        ]) &&
-        isJoinRequestFieldAbsentOrUnchanged('rejectionReason') &&
-        isJoinRequestFieldAbsentOrUnchanged('rejectedAt') &&
-        isJoinRequestFieldAbsentOrUnchanged('rejectedBy')
+        (
+          (
+            resource.data.status == 'rejected' &&
+            ('rejectCount' in resource.data) &&
+            resource.data.rejectCount is int &&
+            resource.data.rejectCount >= 0 &&
+            resource.data.rejectCount < 3 &&
+            request.resource.data.rejectCount == resource.data.rejectCount &&
+            request.resource.data.attemptNumber == resource.data.rejectCount + 1 &&
+            !request.resource.data.keys().hasAny([
+              'approvedRole',
+              'approvedSystems',
+              'approvedAt',
+              'approvedBy'
+            ]) &&
+            isJoinRequestFieldAbsentOrUnchanged('rejectionReason') &&
+            isJoinRequestFieldAbsentOrUnchanged('rejectedAt') &&
+            isJoinRequestFieldAbsentOrUnchanged('rejectedBy')
+          ) || (
+            resource.data.status == 'approved' &&
+            request.resource.data.keys().hasOnly([
+              'uid',
+              'fullName',
+              'email',
+              'status',
+              'rejectCount',
+              'attemptNumber',
+              'requestedAt',
+              'updatedAt'
+            ]) &&
+            request.resource.data.rejectCount == 0 &&
+            request.resource.data.attemptNumber == 1
+          )
+        )
       );
       allow delete: if isAdmin();
     }

@@ -32,6 +32,8 @@ export interface PendingUndoRejection {
 interface AdminJoinRequestsModalProps {
   requests: JoinRequest[];
   systems: string[];
+  activeTeamUids?: string[];
+  existingTeamNames?: string[];
   pendingUndoRejections: PendingUndoRejection[];
   onApproveRequest: (
     req: JoinRequest,
@@ -55,6 +57,8 @@ const QUICK_REJECTION_REASONS = [
 export const AdminJoinRequestsModal: React.FC<AdminJoinRequestsModalProps> = ({
   requests,
   systems,
+  activeTeamUids,
+  existingTeamNames,
   pendingUndoRejections,
   onApproveRequest,
   onQueueRejectRequest,
@@ -412,6 +416,20 @@ export const AdminJoinRequestsModal: React.FC<AdminJoinRequestsModalProps> = ({
                         </div>
                       )}
 
+                      {Array.isArray(existingTeamNames) &&
+                        existingTeamNames.some(
+                          (n) =>
+                            n.trim().replace(/\s+/g, ' ').toLowerCase() ===
+                            req.fullName.trim().replace(/\s+/g, ' ').toLowerCase()
+                        ) && (
+                          <div className="px-3 py-2 rounded-xl bg-rose-50 dark:bg-rose-950/40 border border-rose-200 dark:border-rose-800 text-[11px] text-rose-800 dark:text-rose-200 font-bold flex items-start gap-1.5">
+                            <AlertTriangle className="w-3.5 h-3.5 shrink-0 mt-0.5" />
+                            <span>
+                              שים לב: כבר קיים חבר צוות פעיל בשם &ldquo;{req.fullName}&rdquo;! ודא שלא מדובר בחשבון כפול לפני אישור.
+                            </span>
+                          </div>
+                        )}
+
                       {/* 1. Role Picker (Strictly QA or Dev) */}
                       <div className="space-y-1.5">
                         <div className="text-[11px] font-extrabold text-slate-700 dark:text-slate-300">
@@ -561,6 +579,10 @@ export const AdminJoinRequestsModal: React.FC<AdminJoinRequestsModalProps> = ({
                 const isBlocked =
                   req.status === 'blocked' || req.rejectCount >= MAX_JOIN_REJECTIONS;
                 const isApproved = req.status === 'approved';
+                const isRevokedApproved =
+                  isApproved &&
+                  Array.isArray(activeTeamUids) &&
+                  !activeTeamUids.includes(req.uid);
                 const isBusy = busyUid === req.uid;
 
                 return (
@@ -576,14 +598,18 @@ export const AdminJoinRequestsModal: React.FC<AdminJoinRequestsModalProps> = ({
                           </span>
                           <span
                             className={`px-2 py-0.5 rounded-full text-[10px] font-extrabold border ${
-                              isApproved
+                              isRevokedApproved
+                                ? 'bg-slate-200 text-slate-700 border-slate-300 dark:bg-slate-700 dark:text-slate-200 dark:border-slate-600'
+                                : isApproved
                                 ? 'bg-emerald-100 text-emerald-800 border-emerald-200 dark:bg-emerald-950 dark:text-emerald-300 dark:border-emerald-800'
                                 : isBlocked
                                 ? 'bg-red-100 text-red-700 border-red-200 dark:bg-red-950 dark:text-red-300 dark:border-red-800'
                                 : 'bg-amber-100 text-amber-800 border-amber-200 dark:bg-amber-950 dark:text-amber-300 dark:border-amber-800'
                             }`}
                           >
-                            {isApproved
+                            {isRevokedApproved
+                              ? 'אושר בעבר • הוסר מהצוות'
+                              : isApproved
                               ? `אושר (${req.approvedRole === 'dev' ? 'מפתח' : 'בודק QA'})`
                               : isBlocked
                               ? `חסום (${req.rejectCount}/${MAX_JOIN_REJECTIONS} דחיות)`
@@ -596,20 +622,30 @@ export const AdminJoinRequestsModal: React.FC<AdminJoinRequestsModalProps> = ({
                       </div>
 
                       <div className="flex items-center gap-1.5">
-                        {!isApproved && (
+                        {(!isApproved || isRevokedApproved) && (
                           <button
                             type="button"
                             disabled={isBusy}
                             onClick={() => handleUnblock(req)}
                             className="px-3 py-1.5 rounded-xl bg-indigo-600 hover:bg-indigo-700 disabled:opacity-60 text-white text-xs font-bold flex items-center gap-1.5 cursor-pointer transition shadow-xs"
-                            title="שחרר חסימה ואפס את מונה הדחיות ל-0"
+                            title={
+                              isRevokedApproved
+                                ? 'החזר את הבקשה לממתינות כדי לאשר מחדש'
+                                : 'שחרר חסימה ואפס את מונה הדחיות ל-0'
+                            }
                           >
                             {isBusy ? (
                               <Loader2 className="w-3.5 h-3.5 animate-spin" />
                             ) : (
                               <RotateCcw className="w-3.5 h-3.5" />
                             )}
-                            <span>{isBlocked ? 'שחרר חסימה ואפס ניסיונות' : 'החזר לממתינות ואפס'}</span>
+                            <span>
+                              {isBlocked
+                                ? 'שחרר חסימה ואפס ניסיונות'
+                                : isRevokedApproved
+                                ? 'החזר לממתינות לאישור'
+                                : 'החזר לממתינות ואפס'}
+                            </span>
                           </button>
                         )}
                         <button
