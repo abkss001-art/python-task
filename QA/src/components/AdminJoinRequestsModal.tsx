@@ -398,7 +398,15 @@ export const AdminJoinRequestsModal: React.FC<AdminJoinRequestsModalProps> = ({
                               {req.attemptNumber >= MAX_JOIN_REJECTIONS ? ' (אחרון!)' : ''}
                             </span>
                           </div>
-                          <div className="flex items-center gap-2 text-xs text-slate-500 dark:text-slate-400">
+                          <div className="flex items-center gap-2 text-xs text-slate-500 dark:text-slate-400 flex-wrap">
+                            {req.username && (
+                              <span
+                                className="px-1.5 py-0.5 rounded-md bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-200 font-mono text-[11px] font-bold"
+                                dir="ltr"
+                              >
+                                @{req.username}
+                              </span>
+                            )}
                             <Mail className="w-3.5 h-3.5 shrink-0" />
                             <span className="font-mono" dir="ltr">
                               {req.email}
@@ -616,8 +624,9 @@ export const AdminJoinRequestsModal: React.FC<AdminJoinRequestsModalProps> = ({
                               : `נדחה (${req.rejectCount}/${MAX_JOIN_REJECTIONS})`}
                           </span>
                         </div>
-                        <div className="text-xs text-slate-500 dark:text-slate-400 font-mono mt-0.5" dir="ltr">
-                          {req.email}
+                        <div className="flex items-center gap-2 flex-wrap text-xs text-slate-500 dark:text-slate-400 font-mono mt-0.5" dir="ltr">
+                          {req.username && <span className="font-bold text-indigo-600 dark:text-indigo-400">@{req.username}</span>}
+                          <span>{req.email}</span>
                         </div>
                       </div>
 

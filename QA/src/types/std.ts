@@ -79,6 +79,7 @@ export interface FirebaseConfigData {
 export interface FirebaseUserProfile {
   uid: string;
   email?: string;
+  username?: string;
   fullName: string;
   role: TeamRole;
   allowedSystems?: string[];
@@ -260,6 +261,7 @@ export type JoinRequestStatus = 'pending' | 'approved' | 'rejected' | 'blocked';
 export interface JoinRequest {
   uid: string;
   fullName: string;
+  username?: string;
   email: string;
   status: JoinRequestStatus;
   rejectCount: number;

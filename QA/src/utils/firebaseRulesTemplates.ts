@@ -79,12 +79,21 @@ export const FIREBASE_RTDB_RULES_JSON = `{
         ".validate": "!newData.exists() || (newData.hasChildren(['uid', 'updatedAt']) && newData.child('uid').isString() && newData.child('uid').val().length >= 1 && newData.child('uid').val().length <= 128 && newData.child('updatedAt').isNumber())"
       }
     },
+    "std_usernames": {
+      ".read": "auth != null && root.child('std_users/' + auth.uid + '/role').val() === 'admin'",
+      ".write": "auth != null && root.child('std_users/' + auth.uid + '/role').val() === 'admin'",
+      "$usernameHash": {
+        ".read": true,
+        ".write": "auth != null && (root.child('std_users/' + auth.uid + '/role').val() === 'admin' || (!data.exists() && newData.exists() && newData.child('uid').val() === auth.uid))",
+        ".validate": "!newData.exists() || (newData.hasChildren(['email', 'uid', 'updatedAt']) && newData.child('email').isString() && newData.child('email').val().length >= 5 && newData.child('email').val().length <= 160 && newData.child('uid').isString() && newData.child('uid').val().length >= 1 && newData.child('uid').val().length <= 128 && newData.child('updatedAt').isNumber())"
+      }
+    },
     "std_join_requests": {
       ".read": "auth != null && root.child('std_users/' + auth.uid + '/role').val() === 'admin'",
       "$uid": {
         ".read": "auth != null && (auth.uid === $uid || root.child('std_users/' + auth.uid + '/role').val() === 'admin')",
         ".write": "auth != null && (root.child('std_users/' + auth.uid + '/role').val() === 'admin' || (auth.uid === $uid && newData.exists() && !root.child('std_users/' + auth.uid).exists() && newData.child('uid').val() === auth.uid && newData.child('status').val() === 'pending' && !newData.hasChild('approvedRole') && !newData.hasChild('approvedSystems') && !newData.hasChild('approvedAt') && !newData.hasChild('approvedBy') && (((!data.exists() || data.child('status').val() === 'approved') && newData.child('rejectCount').val() === 0 && newData.child('attemptNumber').val() === 1 && !newData.hasChild('rejectionReason') && !newData.hasChild('rejectedAt') && !newData.hasChild('rejectedBy') && (!data.exists() || newData.child('email').val() === data.child('email').val())) || (data.exists() && data.child('status').val() === 'rejected' && data.child('rejectCount').val() < 3 && newData.child('rejectCount').val() === data.child('rejectCount').val() && newData.child('attemptNumber').val() === data.child('rejectCount').val() + 1 && newData.child('email').val() === data.child('email').val() && ((!data.hasChild('rejectionReason') && !newData.hasChild('rejectionReason')) || newData.child('rejectionReason').val() === data.child('rejectionReason').val()) && ((!data.hasChild('rejectedAt') && !newData.hasChild('rejectedAt')) || newData.child('rejectedAt').val() === data.child('rejectedAt').val()) && ((!data.hasChild('rejectedBy') && !newData.hasChild('rejectedBy')) || newData.child('rejectedBy').val() === data.child('rejectedBy').val())))))",
-        ".validate": "!newData.exists() || (newData.hasChildren(['uid', 'fullName', 'email', 'status', 'rejectCount', 'attemptNumber', 'requestedAt', 'updatedAt']) && newData.child('uid').val() === $uid && newData.child('fullName').isString() && newData.child('fullName').val().length >= 2 && newData.child('fullName').val().length <= 120 && newData.child('email').isString() && newData.child('email').val().length <= 160 && (newData.child('status').val() === 'pending' || newData.child('status').val() === 'approved' || newData.child('status').val() === 'rejected' || newData.child('status').val() === 'blocked') && newData.child('rejectCount').isNumber() && newData.child('rejectCount').val() >= 0 && newData.child('rejectCount').val() <= 3 && newData.child('attemptNumber').isNumber() && newData.child('attemptNumber').val() >= 1 && newData.child('attemptNumber').val() <= 3 && newData.child('requestedAt').isNumber() && newData.child('updatedAt').isNumber() && (!newData.hasChild('rejectionReason') || (newData.child('rejectionReason').isString() && newData.child('rejectionReason').val().length <= 300)) && (!newData.hasChild('approvedRole') || newData.child('approvedRole').val() === 'qa' || newData.child('approvedRole').val() === 'dev'))"
+        ".validate": "!newData.exists() || (newData.hasChildren(['uid', 'fullName', 'email', 'status', 'rejectCount', 'attemptNumber', 'requestedAt', 'updatedAt']) && newData.child('uid').val() === $uid && newData.child('fullName').isString() && newData.child('fullName').val().length >= 2 && newData.child('fullName').val().length <= 120 && newData.child('email').isString() && newData.child('email').val().length <= 160 && (!newData.hasChild('username') || (newData.child('username').isString() && newData.child('username').val().length >= 3 && newData.child('username').val().length <= 40)) && (newData.child('status').val() === 'pending' || newData.child('status').val() === 'approved' || newData.child('status').val() === 'rejected' || newData.child('status').val() === 'blocked') && newData.child('rejectCount').isNumber() && newData.child('rejectCount').val() >= 0 && newData.child('rejectCount').val() <= 3 && newData.child('attemptNumber').isNumber() && newData.child('attemptNumber').val() >= 1 && newData.child('attemptNumber').val() <= 3 && newData.child('requestedAt').isNumber() && newData.child('updatedAt').isNumber() && (!newData.hasChild('rejectionReason') || (newData.child('rejectionReason').isString() && newData.child('rejectionReason').val().length <= 300)) && (!newData.hasChild('approvedRole') || newData.child('approvedRole').val() === 'qa' || newData.child('approvedRole').val() === 'dev'))"
       }
     },
     "std_presence": {
@@ -195,6 +204,7 @@ service cloud.firestore {
         data.keys().hasOnly([
           'uid',
           'fullName',
+          'username',
           'email',
           'status',
           'rejectCount',
@@ -216,6 +226,12 @@ service cloud.firestore {
         data.fullName is string &&
         data.fullName.trim().size() >= 2 &&
         data.fullName.size() <= 120 &&
+        (!('username' in data) || (
+          data.username is string &&
+          data.username.size() >= 3 &&
+          data.username.size() <= 40 &&
+          data.username.matches('^[a-z0-9._-]+$')
+        )) &&
         data.email is string &&
         data.email.size() >= 1 &&
         data.email.size() <= 160 &&
@@ -257,6 +273,22 @@ service cloud.firestore {
         nameHash.matches('^[0-9a-f]{64}$') &&
         data.keys().hasAll(['uid', 'updatedAt']) &&
         data.keys().hasOnly(['uid', 'updatedAt']) &&
+        data.uid is string &&
+        data.uid.size() >= 1 &&
+        data.uid.size() <= 128 &&
+        data.updatedAt is int &&
+        data.updatedAt >= 0;
+    }
+
+    function isValidUsernameMapping(usernameHash, data) {
+      return usernameHash is string &&
+        usernameHash.matches('^[0-9a-f]{64}$') &&
+        data.keys().hasAll(['email', 'uid', 'updatedAt']) &&
+        data.keys().hasOnly(['email', 'uid', 'updatedAt']) &&
+        data.email is string &&
+        data.email.size() >= 5 &&
+        data.email.size() <= 160 &&
+        data.email.matches('^[^[:space:]@]+@[^[:space:]@]+[.][^[:space:]@]+$') &&
         data.uid is string &&
         data.uid.size() >= 1 &&
         data.uid.size() <= 128 &&
@@ -366,6 +398,30 @@ service cloud.firestore {
       allow delete: if isAdmin();
     }
 
+    // Privacy-preserving username-to-email lookup index (SHA-256 keyed; single-hash lookup only, no enumeration)
+    // Assumed Data Model for std_usernames/{usernameHash}:
+    //   Document ID: {usernameHash} (64-character lowercase hex SHA-256 hash)
+    //   Fields (all required, strict schema):
+    //     - email: string (5..160 chars, valid email format, must match Auth token email on non-admin create)
+    //     - uid: string (1..128 chars, owning user's Firebase Auth UID; must equal request.auth.uid on non-admin create)
+    //     - updatedAt: int (>= 0, Unix epoch ms)
+    match /std_usernames/{usernameHash} {
+      allow get: if true;
+      allow list: if isAdmin();
+      allow create: if (
+        isAdmin() &&
+        isValidUsernameMapping(usernameHash, request.resource.data)
+      ) || (
+        isSignedIn() &&
+        isValidUsernameMapping(usernameHash, request.resource.data) &&
+        request.resource.data.uid == request.auth.uid &&
+        matchesAuthEmailIfPresent(request.resource.data.email)
+      );
+      allow update: if isAdmin() &&
+        isValidUsernameMapping(usernameHash, request.resource.data);
+      allow delete: if isAdmin();
+    }
+
     // Self-registration waiting room with server-enforced 3-attempt anti-spam cap
     // Assumed Data Model for std_join_requests/{uid}:
     //   Document ID: {uid} (applicant Firebase Auth UID)
@@ -378,6 +434,8 @@ service cloud.firestore {
     //     - attemptNumber: int (1..3, must be 1 on create or revoked-approved resubmit, and resource.rejectCount + 1 on retry)
     //     - requestedAt: int (>= 0, Unix epoch ms)
     //     - updatedAt: int (>= 0, Unix epoch ms)
+    //   Optional applicant field (1):
+    //     - username: string (3..40 chars, lowercase letters/digits/._-, matches ^[a-z0-9._-]+$)
     //   Optional admin-only fields (7):
     //     - rejectionReason: string (<= 300 chars)
     //     - rejectedAt: int (>= 0, Unix epoch ms)
@@ -400,6 +458,7 @@ service cloud.firestore {
         request.resource.data.keys().hasOnly([
           'uid',
           'fullName',
+          'username',
           'email',
           'status',
           'rejectCount',
@@ -454,6 +513,7 @@ service cloud.firestore {
             request.resource.data.keys().hasOnly([
               'uid',
               'fullName',
+              'username',
               'email',
               'status',
               'rejectCount',

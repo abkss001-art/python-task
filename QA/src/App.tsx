@@ -2128,8 +2128,8 @@ export function App() {
           onFirebaseEmailLogin={(email, password) =>
             syncService.signInWithFirebaseEmail(email, password)
           }
-          onRegisterJoinRequest={(fullName, email, password) =>
-            syncService.registerAndSubmitJoinRequest(fullName, email, password)
+          onRegisterJoinRequest={(fullName, email, password, username) =>
+            syncService.registerAndSubmitJoinRequest(fullName, email, password, username)
           }
           onSendPasswordReset={(email) => syncService.sendFirebasePasswordReset(email)}
           onBootstrapAdminProfile={(fullName) =>

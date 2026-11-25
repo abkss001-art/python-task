@@ -6,6 +6,57 @@ export const DEFAULT_SHORT_LOGIN_DOMAIN = 'gmail.com';
 export const MAX_JOIN_REJECTIONS = 3;
 export const JOIN_RETRY_COOLDOWN_MS = 60_000;
 
+const USERNAME_RE = /^[a-z0-9._-]{3,32}$/;
+const STRICT_EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/;
+
+/**
+ * מנרמל שם משתמש (אותיות קטנות, ללא רווחים)
+ */
+export function normalizeUsername(rawUsername: string): string {
+  return String(rawUsername || '').trim().toLowerCase();
+}
+
+/**
+ * בודק תקינות שם משתמש (3-32 תווים באנגלית, ספרות, נקודה, קו תחתון או מקף, ללא @ ורווחים)
+ */
+export function isValidUsername(rawUsername: string): boolean {
+  return USERNAME_RE.test(normalizeUsername(rawUsername));
+}
+
+/**
+ * בודק כתובת אימייל מלאה ותקינה (חובה בהרשמה כדי שיהיה ניתן לשחזר סיסמה)
+ */
+export function isValidEmailAddress(rawEmail: string): boolean {
+  const cleaned = String(rawEmail || '').trim().toLowerCase();
+  return cleaned.length >= 5 && cleaned.length <= 160 && STRICT_EMAIL_RE.test(cleaned);
+}
+
+/**
+ * מחשב hash חד-כיווני (SHA-256) עבור שם משתמש לצורך אימות ייחודיות ואיתור מייל בהתחברות/איפוס סיסמה
+ */
+export async function computeUsernameHash(rawUsername: string): Promise<string> {
+  const normalized = normalizeUsername(rawUsername);
+  if (!normalized) return '';
+  const bytes = new TextEncoder().encode(`tzavman-username-v1:${normalized}`);
+  const digest = await crypto.subtle.digest('SHA-256', bytes);
+  return Array.from(new Uint8Array(digest))
+    .map((b) => b.toString(16).padStart(2, '0'))
+    .join('');
+}
+
+/**
+ * ממסך כתובת אימייל להצגה בטוחה בהודעת איפוס סיסמה לפי שם משתמש (למשל ab***@gmail.com)
+ */
+export function maskEmailForDisplay(rawEmail: string): string {
+  const cleaned = String(rawEmail || '').trim().toLowerCase();
+  const atIdx = cleaned.indexOf('@');
+  if (atIdx <= 0) return cleaned;
+  const local = cleaned.slice(0, atIdx);
+  const domain = cleaned.slice(atIdx);
+  const visible = local.length <= 2 ? local.slice(0, 1) : local.slice(0, 2);
+  return `${visible}***${domain}`;
+}
+
 /**
  * מנרמל שם מלא לצורך זיהוי כפילויות (הסרת רווחים מיותרים ואותיות קטנות)
  */

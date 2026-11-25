@@ -91,6 +91,7 @@ service cloud.firestore {
         data.keys().hasOnly([
           'uid',
           'fullName',
+          'username',
           'email',
           'status',
           'rejectCount',
@@ -112,6 +113,12 @@ service cloud.firestore {
         data.fullName is string &&
         data.fullName.trim().size() >= 2 &&
         data.fullName.size() <= 120 &&
+        (!('username' in data) || (
+          data.username is string &&
+          data.username.size() >= 3 &&
+          data.username.size() <= 40 &&
+          data.username.matches('^[a-z0-9._-]+$')
+        )) &&
         data.email is string &&
         data.email.size() >= 1 &&
         data.email.size() <= 160 &&
@@ -153,6 +160,22 @@ service cloud.firestore {
         nameHash.matches('^[0-9a-f]{64}$') &&
         data.keys().hasAll(['uid', 'updatedAt']) &&
         data.keys().hasOnly(['uid', 'updatedAt']) &&
+        data.uid is string &&
+        data.uid.size() >= 1 &&
+        data.uid.size() <= 128 &&
+        data.updatedAt is int &&
+        data.updatedAt >= 0;
+    }
+
+    function isValidUsernameMapping(usernameHash, data) {
+      return usernameHash is string &&
+        usernameHash.matches('^[0-9a-f]{64}$') &&
+        data.keys().hasAll(['email', 'uid', 'updatedAt']) &&
+        data.keys().hasOnly(['email', 'uid', 'updatedAt']) &&
+        data.email is string &&
+        data.email.size() >= 5 &&
+        data.email.size() <= 160 &&
+        data.email.matches('^[^[:space:]@]+@[^[:space:]@]+[.][^[:space:]@]+$') &&
         data.uid is string &&
         data.uid.size() >= 1 &&
         data.uid.size() <= 128 &&
@@ -262,6 +285,30 @@ service cloud.firestore {
       allow delete: if isAdmin();
     }
 
+    // Privacy-preserving username-to-email lookup index (SHA-256 keyed; single-hash lookup only, no enumeration)
+    // Assumed Data Model for std_usernames/{usernameHash}:
+    //   Document ID: {usernameHash} (64-character lowercase hex SHA-256 hash)
+    //   Fields (all required, strict schema):
+    //     - email: string (5..160 chars, valid email format, must match Auth token email on non-admin create)
+    //     - uid: string (1..128 chars, owning user's Firebase Auth UID; must equal request.auth.uid on non-admin create)
+    //     - updatedAt: int (>= 0, Unix epoch ms)
+    match /std_usernames/{usernameHash} {
+      allow get: if true;
+      allow list: if isAdmin();
+      allow create: if (
+        isAdmin() &&
+        isValidUsernameMapping(usernameHash, request.resource.data)
+      ) || (
+        isSignedIn() &&
+        isValidUsernameMapping(usernameHash, request.resource.data) &&
+        request.resource.data.uid == request.auth.uid &&
+        matchesAuthEmailIfPresent(request.resource.data.email)
+      );
+      allow update: if isAdmin() &&
+        isValidUsernameMapping(usernameHash, request.resource.data);
+      allow delete: if isAdmin();
+    }
+
     // Self-registration waiting room with server-enforced 3-attempt anti-spam cap
     // Assumed Data Model for std_join_requests/{uid}:
     //   Document ID: {uid} (applicant Firebase Auth UID)
@@ -274,6 +321,8 @@ service cloud.firestore {
     //     - attemptNumber: int (1..3, must be 1 on create or revoked-approved resubmit, and resource.rejectCount + 1 on retry)
     //     - requestedAt: int (>= 0, Unix epoch ms)
     //     - updatedAt: int (>= 0, Unix epoch ms)
+    //   Optional applicant field (1):
+    //     - username: string (3..40 chars, lowercase letters/digits/._-, matches ^[a-z0-9._-]+$)
     //   Optional admin-only fields (7):
     //     - rejectionReason: string (<= 300 chars)
     //     - rejectedAt: int (>= 0, Unix epoch ms)
@@ -296,6 +345,7 @@ service cloud.firestore {
         request.resource.data.keys().hasOnly([
           'uid',
           'fullName',
+          'username',
           'email',
           'status',
           'rejectCount',
@@ -350,6 +400,7 @@ service cloud.firestore {
             request.resource.data.keys().hasOnly([
               'uid',
               'fullName',
+              'username',
               'email',
               'status',
               'rejectCount',
