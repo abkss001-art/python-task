@@ -5,9 +5,15 @@
   "type": "module",
   "scripts": {
     "dev": "vite --host",
+    "dev:staging": "vite --host --mode staging",
     "build": "tsc -b && vite build",
+    "build:staging": "tsc -b && vite build --mode staging",
     "preview": "vite preview --host",
-    "deploy": "npm run build && node deploy.mjs"
+    "deploy": "node deploy.mjs",
+    "deploy:staging": "npm run build:staging && node deploy.mjs --env=staging",
+    "deploy:prod": "npm run build && node deploy.mjs --env=prod",
+    "rules:staging": "npx -y firebase-tools@latest deploy --only database --project staging",
+    "rules:prod": "npx -y firebase-tools@latest deploy --only database --project prod"
   },
   "dependencies": {
     "firebase": "^11.3.1",

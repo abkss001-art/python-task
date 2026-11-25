@@ -43,6 +43,7 @@ import { McpConnectModal } from './components/McpConnectModal';
 import { AdminMcpModal } from './components/AdminMcpModal';
 import { AdminDevSettingsModal } from './components/AdminDevSettingsModal';
 import { UserProfileModal } from './components/UserProfileModal';
+import { StagingBanner } from './components/StagingBanner';
 import { SystemSelectorHome } from './components/SystemSelectorHome';
 import { LoginScreen, AuthenticatedUser } from './components/LoginScreen';
 import { PendingApprovalScreen } from './components/PendingApprovalScreen';
@@ -97,10 +98,11 @@ import {
   Clock
 } from 'lucide-react';
 import { computeUserAuthSignature } from './utils/securityUtils';
+import { envStorageKey } from './utils/appEnv';
 
-const AUTH_STORAGE_KEY = 'std_qa_auth_user_v1';
-const LAST_ACTIVE_SYSTEM_KEY = 'std_qa_last_active_system_v1';
-const SHORTCUT_BANNER_STORAGE_KEY = 'std_qa_dismissed_shortcut_banner_v1';
+const AUTH_STORAGE_KEY = envStorageKey('std_qa_auth_user_v1');
+const LAST_ACTIVE_SYSTEM_KEY = envStorageKey('std_qa_last_active_system_v1');
+const SHORTCUT_BANNER_STORAGE_KEY = envStorageKey('std_qa_dismissed_shortcut_banner_v1');
 
 export function App() {
   const [systems, setSystems] = useState<string[]>([]);
@@ -2023,9 +2025,11 @@ export function App() {
     const showRecovery = authTakingLong || Boolean(syncStatus.errorMessage);
     return (
       <div
-        className="min-h-screen flex flex-col items-center justify-center bg-slate-50 dark:bg-slate-950 text-slate-900 dark:text-slate-100 p-6 transition-colors"
+        className="min-h-screen flex flex-col bg-slate-50 dark:bg-slate-950 text-slate-900 dark:text-slate-100 transition-colors"
         dir="rtl"
       >
+        <StagingBanner />
+        <div className="flex-1 flex flex-col items-center justify-center p-6">
         <div className="flex flex-col items-center gap-4 text-center max-w-xs w-full">
           <div className="w-14 h-14 rounded-2xl bg-indigo-600/15 dark:bg-indigo-500/20 border border-indigo-500/30 flex items-center justify-center shadow-lg shadow-indigo-500/10">
             <ShieldCheck className="w-7 h-7 text-indigo-600 dark:text-indigo-400 animate-pulse" />
@@ -2074,6 +2078,7 @@ export function App() {
             </div>
           )}
         </div>
+        </div>
       </div>
     );
   }
@@ -2082,6 +2087,7 @@ export function App() {
   if (!authUser && waitingFirebaseUser) {
     return (
       <>
+        <StagingBanner />
         <PendingApprovalScreen
           firebaseEmail={waitingFirebaseUser.email}
           joinRequest={ownJoinRequest}
@@ -2114,6 +2120,7 @@ export function App() {
   if (!authUser) {
     return (
       <>
+        <StagingBanner />
         <LoginScreen
           onLoginSuccess={handleLoginSuccess}
           onInstallAndNotify={handleInstallAndNotify}
@@ -2136,6 +2143,7 @@ export function App() {
 
   return (
     <div className="min-h-screen flex flex-col bg-slate-50 dark:bg-slate-950 text-slate-900 dark:text-slate-100 transition-colors" dir="rtl">
+      <StagingBanner />
       {/* Top Navigation & System Bar */}
       <Navbar
         systems={visibleSystems}

@@ -1,8 +1,20 @@
 import { sanitizeImageUrl } from '../utils/securityUtils';
 import { GoogleDriveQuotaInfo } from '../types/std';
+import { IS_STAGING, envStorageKey } from '../utils/appEnv';
 
-const GDRIVE_URL_STORAGE_KEY = 'std_qa_gdrive_webapp_url';
-const GDRIVE_SECRET_STORAGE_KEY = 'std_qa_gdrive_api_secret';
+const GDRIVE_URL_STORAGE_KEY = envStorageKey('std_qa_gdrive_webapp_url');
+const GDRIVE_SECRET_STORAGE_KEY = envStorageKey('std_qa_gdrive_api_secret');
+
+const SCRIPT_FOLDER_NAME = IS_STAGING
+  ? 'צב מן (Pre-Prod) - צילומי מסך וגיבויים'
+  : 'צב מן - צילומי מסך וגיבויים';
+const SCRIPT_FIREBASE_API_KEY = IS_STAGING
+  ? 'AIzaSyDcf8DHPUF2_QSOybD2epbrM1JbeoAo1Ng'
+  : 'AIzaSyBUlQYiSgJxqZGjIVSQdSNy1I0dn467j9E';
+const SCRIPT_FIREBASE_DB_URL = IS_STAGING
+  ? 'https://tzavman-qa-staging-default-rtdb.europe-west1.firebasedatabase.app'
+  : 'https://tzavman-qa-default-rtdb.europe-west1.firebasedatabase.app';
+const SCRIPT_FIREBASE_PROJECT_LABEL = IS_STAGING ? 'tzavman-qa-staging' : 'tzavman-qa';
 
 let firebaseIdTokenProvider: (() => Promise<string | null>) | null = null;
 let firebaseAppCheckTokenProvider: (() => Promise<string | null>) | null = null;
@@ -42,9 +54,9 @@ export const GOOGLE_APPS_SCRIPT_CODE = `// =====================================
 //   (או FIREBASE_PROJECT_ID אם אתה משתמש ב-Cloud Firestore)
 // אם הגדרת אימות Firebase, מומלץ להשאיר את TZAVMAN_API_SECRET ריק כדי שלא יישלח סוד קבוע לדפדפן.
 // ============================================================================
-var MAIN_FOLDER_NAME = "צב מן - צילומי מסך וגיבויים";
-var FIREBASE_API_KEY = "AIzaSyBUlQYiSgJxqZGjIVSQdSNy1I0dn467j9E";    // מפתח הפרויקט tzavman-qa (ניתן גם להגדיר ב-Script Property בשם FIREBASE_API_KEY)
-var FIREBASE_DB_URL = "https://tzavman-qa-default-rtdb.europe-west1.firebasedatabase.app"; // כתובת Realtime Database של tzavman-qa
+var MAIN_FOLDER_NAME = "${SCRIPT_FOLDER_NAME}";
+var FIREBASE_API_KEY = "${SCRIPT_FIREBASE_API_KEY}";    // מפתח הפרויקט ${SCRIPT_FIREBASE_PROJECT_LABEL} (ניתן גם להגדיר ב-Script Property בשם FIREBASE_API_KEY)
+var FIREBASE_DB_URL = "${SCRIPT_FIREBASE_DB_URL}"; // כתובת Realtime Database של ${SCRIPT_FIREBASE_PROJECT_LABEL}
 var FIREBASE_PROJECT_ID = ""; // אופציונלי עבור Firestore בלבד (או Script Property בשם FIREBASE_PROJECT_ID)
 var TZAVMAN_API_SECRET = "";  // מומלץ להשאיר ריק כאשר אימות Firebase Token פעיל למעלה
 

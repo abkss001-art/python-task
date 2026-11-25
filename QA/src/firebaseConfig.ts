@@ -1,31 +1,55 @@
-import { FirebaseConfigData } from './types/std';
+import type { FirebaseConfigData } from './types/std';
+import { IS_STAGING, envStorageKey } from './utils/appEnv';
 
 /**
- * ניתן להדביק כאן ישירות את הגדרות ה-Firebase של הפרויקט שלך,
- * או להגדיר אותן בקובץ .env, או להזין אותן בלחיצת כפתור מתוך אשף ההגדרות באפליקציה!
+ * הגדרות Firebase לפי סביבת הבנייה:
+ * - Prod: פרויקט tzavman-qa (עם App Check מלא)
+ * - Pre-Prod (Staging): פרויקט מבודד tzavman-qa-staging — לעולם אינו נופל חזרה לנתוני Prod
+ * הערה: שימוש ישיר ב-IS_STAGING מאפשר ל-Vite להסיר (tree-shake) את קונפיגורציית הסביבה הנגדית בזמן build.
  */
-export const HARDCODED_FIREBASE_CONFIG: Partial<FirebaseConfigData> = {
-  apiKey: import.meta.env.VITE_FIREBASE_API_KEY || 'AIzaSyBUlQYiSgJxqZGjIVSQdSNy1I0dn467j9E',
-  authDomain: import.meta.env.VITE_FIREBASE_AUTH_DOMAIN || 'tzavman-qa.firebaseapp.com',
-  databaseURL:
-    import.meta.env.VITE_FIREBASE_DATABASE_URL ||
-    'https://tzavman-qa-default-rtdb.europe-west1.firebasedatabase.app',
-  projectId: import.meta.env.VITE_FIREBASE_PROJECT_ID || 'tzavman-qa',
-  storageBucket: import.meta.env.VITE_FIREBASE_STORAGE_BUCKET || 'tzavman-qa.firebasestorage.app',
-  messagingSenderId: import.meta.env.VITE_FIREBASE_MESSAGING_SENDER_ID || '526394526293',
-  appId: import.meta.env.VITE_FIREBASE_APP_ID || '1:526394526293:web:aeee1272ebb2da9482e2dc',
-  mode: 'rtdb',
-  requireFirebaseAuth: import.meta.env.VITE_FIREBASE_REQUIRE_AUTH !== 'false',
-  appCheckSiteKey:
-    import.meta.env.VITE_FIREBASE_APPCHECK_SITE_KEY ||
-    '6Ld6DS8uAAAAAJpvS0uOfVDq9EWiEqFpsCixsifo'
-};
+export const HARDCODED_FIREBASE_CONFIG: Partial<FirebaseConfigData> = IS_STAGING
+  ? {
+      apiKey: import.meta.env.VITE_FIREBASE_API_KEY || 'AIzaSyDcf8DHPUF2_QSOybD2epbrM1JbeoAo1Ng',
+      authDomain: import.meta.env.VITE_FIREBASE_AUTH_DOMAIN || 'tzavman-qa-staging.firebaseapp.com',
+      databaseURL:
+        import.meta.env.VITE_FIREBASE_DATABASE_URL ||
+        'https://tzavman-qa-staging-default-rtdb.europe-west1.firebasedatabase.app',
+      projectId: import.meta.env.VITE_FIREBASE_PROJECT_ID || 'tzavman-qa-staging',
+      storageBucket:
+        import.meta.env.VITE_FIREBASE_STORAGE_BUCKET || 'tzavman-qa-staging.firebasestorage.app',
+      messagingSenderId: import.meta.env.VITE_FIREBASE_MESSAGING_SENDER_ID || '32370340978',
+      appId:
+        import.meta.env.VITE_FIREBASE_APP_ID || '1:32370340978:web:85a3a2129487feda3b3eeb',
+      mode: 'rtdb',
+      requireFirebaseAuth: import.meta.env.VITE_FIREBASE_REQUIRE_AUTH !== 'false',
+      ...(import.meta.env.VITE_FIREBASE_APPCHECK_SITE_KEY
+        ? { appCheckSiteKey: import.meta.env.VITE_FIREBASE_APPCHECK_SITE_KEY }
+        : {})
+    }
+  : {
+      apiKey: import.meta.env.VITE_FIREBASE_API_KEY || 'AIzaSyBUlQYiSgJxqZGjIVSQdSNy1I0dn467j9E',
+      authDomain: import.meta.env.VITE_FIREBASE_AUTH_DOMAIN || 'tzavman-qa.firebaseapp.com',
+      databaseURL:
+        import.meta.env.VITE_FIREBASE_DATABASE_URL ||
+        'https://tzavman-qa-default-rtdb.europe-west1.firebasedatabase.app',
+      projectId: import.meta.env.VITE_FIREBASE_PROJECT_ID || 'tzavman-qa',
+      storageBucket:
+        import.meta.env.VITE_FIREBASE_STORAGE_BUCKET || 'tzavman-qa.firebasestorage.app',
+      messagingSenderId: import.meta.env.VITE_FIREBASE_MESSAGING_SENDER_ID || '526394526293',
+      appId:
+        import.meta.env.VITE_FIREBASE_APP_ID || '1:526394526293:web:aeee1272ebb2da9482e2dc',
+      mode: 'rtdb',
+      requireFirebaseAuth: import.meta.env.VITE_FIREBASE_REQUIRE_AUTH !== 'false',
+      appCheckSiteKey:
+        import.meta.env.VITE_FIREBASE_APPCHECK_SITE_KEY ||
+        '6Ld6DS8uAAAAAJpvS0uOfVDq9EWiEqFpsCixsifo'
+    };
 
 export function isValidAppCheckSiteKey(key: string | undefined | null): boolean {
   return typeof key === 'string' && /^[A-Za-z0-9_-]{20,80}$/.test(key.trim());
 }
 
-const STORAGE_KEY = 'std_qa_firebase_config_v1';
+const STORAGE_KEY = envStorageKey('std_qa_firebase_config_v1');
 
 const SAFE_PROJECT_ID_RE = /^[a-zA-Z0-9-]{3,100}$/;
 const SAFE_FIREBASE_DB_URL_RE =

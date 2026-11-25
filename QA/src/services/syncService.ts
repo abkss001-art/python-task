@@ -144,7 +144,19 @@ type ChatListener = (
 ) => void;
 type TypingListener = (typingBySystem: Record<string, ChatTypingUser[]>) => void;
 
-const CHATS_LOCAL_STORAGE_KEY = 'std_qa_chats_fallback_v1';
+import {
+  ENV_BROADCAST_CHANNEL,
+  FIREBASE_APP_NAME,
+  IS_STAGING,
+  envStorageKey
+} from '../utils/appEnv';
+
+const CHATS_LOCAL_STORAGE_KEY = envStorageKey('std_qa_chats_fallback_v1');
+const CLIENT_ID_STORAGE_KEY = envStorageKey('std_qa_client_id');
+const FALLBACK_CACHE_STORAGE_KEY = envStorageKey('std_qa_fallback_cache');
+const PENDING_PUSH_STORAGE_KEY = envStorageKey('std_qa_pending_push');
+const LAST_AC_HASH_STORAGE_KEY = envStorageKey('tzavman_last_ac_hash');
+const AC_SITEKEY_STORAGE_KEY = envStorageKey('tzavman_ac_sitekey_v1');
 
 function stripUndefinedChatFields(msg: SystemChatMessage): Record<string, any> {
   const clean: Record<string, any> = {
@@ -176,10 +188,10 @@ function stripUndefinedChatFields(msg: SystemChatMessage): Record<string, any> {
 
 function getPersistentClientId(): string {
   try {
-    const saved = localStorage.getItem('std_qa_client_id');
+    const saved = localStorage.getItem(CLIENT_ID_STORAGE_KEY);
     if (saved && saved.length > 4) return saved;
     const next = `client-${Math.random().toString(36).substring(2, 9)}`;
-    localStorage.setItem('std_qa_client_id', next);
+    localStorage.setItem(CLIENT_ID_STORAGE_KEY, next);
     return next;
   } catch {
     return `client-${Math.random().toString(36).substring(2, 9)}`;
@@ -371,7 +383,7 @@ class RealtimeSyncService {
     this.notifyMcpBridgeListeners();
 
     if (typeof BroadcastChannel !== 'undefined') {
-      this.broadcastChannel = new BroadcastChannel('std_qa_live_channel');
+      this.broadcastChannel = new BroadcastChannel(ENV_BROADCAST_CHANNEL);
       this.broadcastChannel.onmessage = (event) => {
         if (!this.firebaseUser || !this.firebaseUserProfile) return;
         const data = event.data;
@@ -975,7 +987,7 @@ class RealtimeSyncService {
     }
     saveWorkspaceToIndexedDB(payload);
     try {
-      localStorage.setItem('std_qa_fallback_cache', JSON.stringify(payload));
+      localStorage.setItem(FALLBACK_CACHE_STORAGE_KEY, JSON.stringify(payload));
     } catch {
       // If localStorage is full, save a stripped metadata cache (exclude heavy base64 strings)
       try {
@@ -990,7 +1002,7 @@ class RealtimeSyncService {
             }))
           }))
         };
-        localStorage.setItem('std_qa_fallback_cache', JSON.stringify(lightCache));
+        localStorage.setItem(FALLBACK_CACHE_STORAGE_KEY, JSON.stringify(lightCache));
       } catch {
         // IndexedDB handles full offline dataset
       }
@@ -2426,8 +2438,10 @@ class RealtimeSyncService {
     try {
       if (this.activeFirebaseConfig.mode === 'firestore' && this.firestore) {
         await setDoc(doc(this.firestore, 'std_users', profile.uid), profile);
+        await deleteDoc(doc(this.firestore, 'std_join_requests', profile.uid)).catch(() => {});
       } else if (this.rtdb) {
         await set(ref(this.rtdb, `std_users/${profile.uid}`), profile);
+        await remove(ref(this.rtdb, `std_join_requests/${profile.uid}`)).catch(() => {});
       } else {
         return { ok: false, error: 'מסד הנתונים אינו מחובר.' };
       }
@@ -2551,14 +2565,14 @@ class RealtimeSyncService {
 
     try {
       const sensitiveKeys = [
-        'std_qa_auth_user_v1',
-        'std_qa_fallback_cache',
+        envStorageKey('std_qa_auth_user_v1'),
+        FALLBACK_CACHE_STORAGE_KEY,
         CHATS_LOCAL_STORAGE_KEY,
-        'std_qa_gdrive_webapp_url',
-        'std_qa_gdrive_api_secret',
-        'std_qa_pending_push',
-        'tzavman_team_members_v2',
-        'tzavman_security_config_v2'
+        envStorageKey('std_qa_gdrive_webapp_url'),
+        envStorageKey('std_qa_gdrive_api_secret'),
+        PENDING_PUSH_STORAGE_KEY,
+        envStorageKey('tzavman_team_members_v2'),
+        envStorageKey('tzavman_security_config_v2')
       ];
       for (const k of sensitiveKeys) {
         localStorage.removeItem(k);
@@ -3017,12 +3031,12 @@ class RealtimeSyncService {
     const tokenHash = hashString(token);
     if (!tokenHash || tokenHash === this.lastRecordedAppCheckTokenHash) return;
     try {
-      const storedHash = localStorage.getItem('tzavman_last_ac_hash');
+      const storedHash = localStorage.getItem(LAST_AC_HASH_STORAGE_KEY);
       if (storedHash === tokenHash) {
         this.lastRecordedAppCheckTokenHash = tokenHash;
         return;
       }
-      localStorage.setItem('tzavman_last_ac_hash', tokenHash);
+      localStorage.setItem(LAST_AC_HASH_STORAGE_KEY, tokenHash);
     } catch {
       // ignore storage errors
     }
@@ -4293,7 +4307,9 @@ class RealtimeSyncService {
         await deleteApp(app);
       }
 
-      this.firebaseApp = initializeApp(this.buildFirebaseOptions(config));
+      this.firebaseApp = IS_STAGING
+        ? initializeApp(this.buildFirebaseOptions(config), FIREBASE_APP_NAME)
+        : initializeApp(this.buildFirebaseOptions(config));
       this.firebaseAppCheck = null;
 
       // Firebase App Check (Fraud Defense / reCAPTCHA Enterprise): blocks use of the Firebase API key outside this app
@@ -4301,10 +4317,10 @@ class RealtimeSyncService {
         const activeKey = (config.appCheckSiteKey as string).trim();
         let siteKeyChanged = false;
         try {
-          const savedAcKey = localStorage.getItem('tzavman_ac_sitekey_v1');
+          const savedAcKey = localStorage.getItem(AC_SITEKEY_STORAGE_KEY);
           if (savedAcKey !== activeKey) {
             siteKeyChanged = true;
-            localStorage.setItem('tzavman_ac_sitekey_v1', activeKey);
+            localStorage.setItem(AC_SITEKEY_STORAGE_KEY, activeKey);
           }
         } catch {
           // ignore storage errors
@@ -5088,7 +5104,7 @@ class RealtimeSyncService {
     }
 
     try {
-      localStorage.setItem('std_qa_pending_push', '1');
+      localStorage.setItem(PENDING_PUSH_STORAGE_KEY, '1');
     } catch {
       // ignore
     }
@@ -5180,7 +5196,7 @@ class RealtimeSyncService {
       if (getSavedGoogleDriveUrl()) {
         this.offloadNewImagesToGoogleDriveInBackground();
       }
-      localStorage.removeItem('std_qa_pending_push');
+      localStorage.removeItem(PENDING_PUSH_STORAGE_KEY);
       return;
     }
 
@@ -5250,7 +5266,7 @@ class RealtimeSyncService {
       if (getSavedGoogleDriveUrl()) {
         this.offloadNewImagesToGoogleDriveInBackground();
       }
-      localStorage.removeItem('std_qa_pending_push');
+      localStorage.removeItem(PENDING_PUSH_STORAGE_KEY);
       return;
     }
 

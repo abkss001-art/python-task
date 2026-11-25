@@ -20,6 +20,7 @@ import {
 } from 'lucide-react';
 import { JoinRequest } from '../types/std';
 import { JOIN_RETRY_COOLDOWN_MS, MAX_JOIN_REJECTIONS } from '../utils/authHelpers';
+import { IS_STAGING } from '../utils/appEnv';
 
 interface PendingApprovalScreenProps {
   firebaseEmail: string;
@@ -506,10 +507,10 @@ export const PendingApprovalScreen: React.FC<PendingApprovalScreenProps> = ({
               </div>
             </div>
 
-            {/* Subtle First-Time Empty-DB Admin Bootstrap Option (only when no joinRequest yet) */}
-            {!joinRequest && onBootstrapAdminProfile && (
+            {/* First-Time Empty-DB Admin Bootstrap Option (shown automatically on Staging when pending, or when no joinRequest yet) */}
+            {(!joinRequest || (IS_STAGING && isPending)) && onBootstrapAdminProfile && (
               <div className="pt-2 border-t border-slate-100 dark:border-slate-800 text-center">
-                {!showBootstrapPanel ? (
+                {!showBootstrapPanel && !IS_STAGING ? (
                   <button
                     type="button"
                     onClick={() => setShowBootstrapPanel(true)}
@@ -520,16 +521,20 @@ export const PendingApprovalScreen: React.FC<PendingApprovalScreenProps> = ({
                 ) : (
                   <form
                     onSubmit={handleBootstrapSubmit}
-                    className="mt-2 p-3 rounded-xl bg-indigo-50/70 dark:bg-indigo-950/40 border border-indigo-200 dark:border-indigo-800 flex flex-col sm:flex-row items-center justify-between gap-2 text-right"
+                    className="mt-2 p-3 rounded-xl bg-amber-50/80 dark:bg-amber-950/40 border border-amber-300 dark:border-amber-800 flex flex-col sm:flex-row items-center justify-between gap-2 text-right"
                   >
-                    <div className="flex items-center gap-2 text-[11px] font-bold text-indigo-900 dark:text-indigo-200">
-                      <ShieldCheck className="w-4 h-4 shrink-0" />
-                      <span>הגדרת מנהל ראשי למערכת חדשה</span>
+                    <div className="flex items-center gap-2 text-[11px] font-bold text-amber-950 dark:text-amber-200">
+                      <ShieldCheck className="w-4 h-4 text-amber-600 dark:text-amber-400 shrink-0" />
+                      <span>
+                        {IS_STAGING
+                          ? 'כניסה ראשונה ל-Pre-Prod? הפעל את עצמך כמנהל ראשי של סביבת הבדיקות:'
+                          : 'הגדרת מנהל ראשי למערכת חדשה'}
+                      </span>
                     </div>
                     <button
                       type="submit"
                       disabled={isSubmitting}
-                      className="px-3 py-1.5 rounded-lg bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-bold cursor-pointer shrink-0"
+                      className="px-3.5 py-1.5 rounded-lg bg-amber-600 hover:bg-amber-700 text-white text-xs font-extrabold cursor-pointer shrink-0 shadow-xs"
                     >
                       הגדר כמנהל ראשי
                     </button>

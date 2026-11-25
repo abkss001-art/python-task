@@ -257,24 +257,76 @@ function productionCspPlugin(): Plugin {
   };
 }
 
-export default defineConfig({
-  base: './',
-  plugins: [react(), tailwindcss(), realtimeSyncServerPlugin(), productionCspPlugin()],
-  build: {
-    chunkSizeWarningLimit: 700,
-    rollupOptions: {
-      output: {
-        manualChunks: {
-          'vendor-react': ['react', 'react-dom'],
-          'vendor-firebase': ['firebase/app', 'firebase/auth', 'firebase/app-check', 'firebase/database', 'firebase/firestore'],
-          'vendor-icons': ['lucide-react']
+function stagingBrandingPlugin(isStaging: boolean): Plugin {
+  return {
+    name: 'staging-branding-meta',
+    apply: 'build',
+    transformIndexHtml(html) {
+      if (!isStaging) return html;
+      return html
+        .replace(
+          '<title>צב מן | סביבת עבודה של צוות בדיקות מדור נחשון</title>',
+          '<title>🧪 [Pre-Prod] צב מן | סביבת בדיקות</title>'
+        )
+        .replace(
+          '<meta name="theme-color" content="#4f46e5" />',
+          '<meta name="theme-color" content="#d97706" />'
+        )
+        .replace(
+          '<meta name="apple-mobile-web-app-title" content="צב מן" />',
+          '<meta name="apple-mobile-web-app-title" content="צב מן בדיקות" />'
+        );
+    }
+  };
+}
+
+export default defineConfig(({ mode }) => {
+  const isStaging = mode === 'staging';
+  let pkgVersion = '1.0.0';
+  try {
+    const pkg = JSON.parse(fs.readFileSync(path.resolve(process.cwd(), 'package.json'), 'utf8'));
+    if (pkg?.version) pkgVersion = String(pkg.version);
+  } catch {
+    // fallback version
+  }
+
+  return {
+    base: './',
+    define: {
+      'globalThis.__TZAVMAN_IS_STAGING__': JSON.stringify(isStaging),
+      'globalThis.__TZAVMAN_APP_VERSION__': JSON.stringify(pkgVersion),
+      'import.meta.env.VITE_APP_ENV': JSON.stringify(isStaging ? 'staging' : 'prod'),
+      'import.meta.env.VITE_APP_VERSION': JSON.stringify(pkgVersion)
+    },
+    plugins: [
+      react(),
+      tailwindcss(),
+      realtimeSyncServerPlugin(),
+      productionCspPlugin(),
+      stagingBrandingPlugin(isStaging)
+    ],
+    build: {
+      chunkSizeWarningLimit: 700,
+      rollupOptions: {
+        output: {
+          manualChunks: {
+            'vendor-react': ['react', 'react-dom'],
+            'vendor-firebase': [
+              'firebase/app',
+              'firebase/auth',
+              'firebase/app-check',
+              'firebase/database',
+              'firebase/firestore'
+            ],
+            'vendor-icons': ['lucide-react']
+          }
         }
       }
+    },
+    server: {
+      port: 5173,
+      host: true,
+      allowedHosts: true
     }
-  },
-  server: {
-    port: 5173,
-    host: true,
-    allowedHosts: true
-  }
+  };
 });

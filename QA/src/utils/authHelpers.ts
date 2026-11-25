@@ -1,6 +1,7 @@
 import type { TeamRole } from '../types/std';
+import { envStorageKey } from './appEnv.ts';
 
-const LAST_LOGIN_IDENTIFIER_KEY = 'tzavman_last_login_identifier_v1';
+const LAST_LOGIN_IDENTIFIER_KEY = envStorageKey('tzavman_last_login_identifier_v1');
 export const DEFAULT_SHORT_LOGIN_DOMAIN = 'gmail.com';
 export const MAX_JOIN_REJECTIONS = 3;
 export const JOIN_RETRY_COOLDOWN_MS = 60_000;

@@ -12,7 +12,9 @@ export interface NotificationPreferences {
   soundEnabled: boolean;
 }
 
-const PREFS_STORAGE_KEY = 'std_qa_notification_prefs_v1';
+import { envStorageKey } from './appEnv.ts';
+
+const PREFS_STORAGE_KEY = envStorageKey('std_qa_notification_prefs_v1');
 
 export function loadNotificationPreferences(): NotificationPreferences {
   const browserGranted =

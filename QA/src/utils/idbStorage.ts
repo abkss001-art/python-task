@@ -1,4 +1,6 @@
-const DB_NAME = 'tzavman_qa_idb_v1';
+import { ENV_IDB_NAME } from './appEnv.ts';
+
+const DB_NAME = ENV_IDB_NAME;
 const STORE_NAME = 'workspace_store';
 const STATE_KEY = 'current_workspace_state';
 const CHATS_KEY = 'system_chat_messages_v1';

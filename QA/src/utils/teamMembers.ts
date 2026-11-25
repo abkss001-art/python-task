@@ -1,4 +1,5 @@
-import { TeamRole } from '../types/std';
+import type { TeamRole } from '../types/std';
+import { envStorageKey } from './appEnv.ts';
 
 const DEFAULT_SUPER_ADMIN_NAME = 'שמעון אבקסיס';
 
@@ -26,8 +27,8 @@ export const DEFAULT_TEAM_MEMBERS: TeamMember[] = [
   { id: 'tm-10', fullName: 'טל פרידמן', role: 'qa' }
 ];
 
-const TEAM_MEMBERS_STORAGE_KEY = 'tzavman_team_members_v2';
-const REMEMBERED_USER_STORAGE_KEY = 'tzavman_remembered_user_v2';
+const TEAM_MEMBERS_STORAGE_KEY = envStorageKey('tzavman_team_members_v2');
+const REMEMBERED_USER_STORAGE_KEY = envStorageKey('tzavman_remembered_user_v2');
 
 export function ensureSuperAdminInMembers(members: TeamMember[]): TeamMember[] {
   const existingSuper = members.find((m) => m.isSuperAdmin);

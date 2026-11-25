@@ -1,5 +1,7 @@
 {
   "projects": {
-    "default": "tzavman-qa"
+    "default": "tzavman-qa",
+    "prod": "tzavman-qa",
+    "staging": "tzavman-qa-staging"
   }
 }

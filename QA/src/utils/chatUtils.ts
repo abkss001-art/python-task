@@ -1,8 +1,9 @@
 import type { SystemChatMessage } from '../types/std';
 import type { TeamMember } from './teamMembers';
+import { envStorageKey } from './appEnv.ts';
 
 export const MAX_CHAT_MESSAGES_PER_SYSTEM = 500;
-const CHAT_LAST_READ_STORAGE_KEY = 'std_qa_chat_last_read_v1';
+const CHAT_LAST_READ_STORAGE_KEY = envStorageKey('std_qa_chat_last_read_v1');
 
 export function pruneChatMessages(messages: SystemChatMessage[]): SystemChatMessage[] {
   if (!Array.isArray(messages)) return [];
