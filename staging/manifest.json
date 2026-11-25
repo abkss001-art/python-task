@@ -1,0 +1,32 @@
+{
+  "name": "צב מן - סביבת בדיקות (Pre-Prod)",
+  "short_name": "צב מן בדיקות",
+  "description": "סביבת עבודה של צוות בדיקות מדור נחשון - ניהול ותיעוד בדיקות מערכת בזמן אמת",
+  "start_url": "./",
+  "scope": "./",
+  "display": "standalone",
+  "dir": "rtl",
+  "lang": "he",
+  "background_color": "#0f172a",
+  "theme_color": "#d97706",
+  "icons": [
+    {
+      "src": "./icon-192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "./icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any maskable"
+    },
+    {
+      "src": "./icon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any"
+    }
+  ]
+}
