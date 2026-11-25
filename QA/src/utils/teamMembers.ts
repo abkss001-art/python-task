@@ -35,8 +35,7 @@ export function ensureSuperAdminInMembers(members: TeamMember[]): TeamMember[] {
   const filtered = members.filter(
     (m) =>
       !m.isSuperAdmin &&
-      m.fullName.toLowerCase() !== superAdminName.toLowerCase() &&
-      m.fullName.toLowerCase() !== DEFAULT_SUPER_ADMIN_NAME.toLowerCase()
+      m.fullName.toLowerCase() !== superAdminName.toLowerCase()
   );
 
   const superAdminItem: TeamMember = {

@@ -3,11 +3,16 @@ import type { TeamRole } from '../types/std';
 const ENVELOPE_PREFIX = 'tzv_enc_v1:';
 const ENVELOPE_KEY = 'TzavMan_Nahshon_QA_Shield_2026';
 
-// PBKDF2-SHA256 (100,000 iterations) digest of the Developer Vault password — plaintext is never stored in source
+// PBKDF2-SHA256 (100,000 iterations) digest of the default Developer Vault password — plaintext is never stored in source
 const DEV_VAULT_SALT = 'tzavman_dev_vault_v1::nahshon_2026';
 const DEV_VAULT_ITERATIONS = 100_000;
 const DEV_VAULT_EXPECTED_HASH =
   '4f2ae7321c407e8329ce04ca89c33861a1b927f6066c26c71df7678499992d34';
+
+export interface DeveloperVaultCredential {
+  salt: string;
+  hash: string;
+}
 
 function constantTimeHexEqual(a: string, b: string): boolean {
   if (a.length !== b.length) return false;
@@ -18,20 +23,14 @@ function constantTimeHexEqual(a: string, b: string): boolean {
   return diff === 0;
 }
 
-/**
- * אימות סיסמת "סביבת מפתח" באמצעות PBKDF2-SHA256 (100,000 איטרציות) והשוואה בזמן קבוע.
- * הסיסמה עצמה אינה שמורה בשום מקום בקוד הגלוי.
- */
-export async function verifyDeveloperVaultPassword(rawInput: string): Promise<boolean> {
-  const cleaned = rawInput.trim();
-  if (!cleaned) return false;
+async function deriveVaultPbkdf2Hex(password: string, salt: string): Promise<string | null> {
   const subtle = typeof globalThis !== 'undefined' ? globalThis.crypto?.subtle : undefined;
-  if (!subtle) return false;
+  if (!subtle) return null;
   try {
     const enc = new TextEncoder();
     const keyMaterial = await subtle.importKey(
       'raw',
-      enc.encode(cleaned),
+      enc.encode(password),
       'PBKDF2',
       false,
       ['deriveBits']
@@ -39,7 +38,7 @@ export async function verifyDeveloperVaultPassword(rawInput: string): Promise<bo
     const derivedBits = await subtle.deriveBits(
       {
         name: 'PBKDF2',
-        salt: enc.encode(DEV_VAULT_SALT),
+        salt: enc.encode(salt),
         iterations: DEV_VAULT_ITERATIONS,
         hash: 'SHA-256'
       },
@@ -51,10 +50,59 @@ export async function verifyDeveloperVaultPassword(rawInput: string): Promise<bo
     for (let i = 0; i < bytes.length; i++) {
       hex += bytes[i].toString(16).padStart(2, '0');
     }
-    return constantTimeHexEqual(hex, DEV_VAULT_EXPECTED_HASH);
+    return hex;
   } catch {
-    return false;
+    return null;
   }
+}
+
+/**
+ * מפיק salt אקראי ו-hash מוצפן (PBKDF2-SHA256, 100,000 איטרציות) לשמירת סיסמת סביבת מפתח חדשה ללא טקסט גלוי.
+ */
+export async function hashDeveloperVaultPassword(
+  rawPassword: string,
+  customSalt?: string
+): Promise<DeveloperVaultCredential | null> {
+  const cleaned = rawPassword.trim();
+  if (!cleaned) return null;
+  let salt = customSalt?.trim() || '';
+  if (!salt) {
+    const rand = new Uint8Array(16);
+    if (typeof globalThis !== 'undefined' && globalThis.crypto?.getRandomValues) {
+      globalThis.crypto.getRandomValues(rand);
+    } else {
+      for (let i = 0; i < rand.length; i++) rand[i] = Math.floor(Math.random() * 256);
+    }
+    salt =
+      'tzavman_vault_v2::' +
+      Array.from(rand)
+        .map((b) => b.toString(16).padStart(2, '0'))
+        .join('');
+  }
+  const hash = await deriveVaultPbkdf2Hex(cleaned, salt);
+  if (!hash) return null;
+  return { salt, hash };
+}
+
+/**
+ * אימות סיסמת "סביבת מפתח" באמצעות PBKDF2-SHA256 (100,000 איטרציות) והשוואה בזמן קבוע.
+ * תומך בסיסמה מותאמת שנשמרה בענן (customCredential) עם גיבוי לסיסמת ברירת המחדל אם טרם שונתה.
+ */
+export async function verifyDeveloperVaultPassword(
+  rawInput: string,
+  customCredential?: DeveloperVaultCredential | null
+): Promise<boolean> {
+  const cleaned = rawInput.trim();
+  if (!cleaned) return false;
+  const activeSalt =
+    customCredential?.salt && customCredential?.hash ? customCredential.salt : DEV_VAULT_SALT;
+  const expectedHash =
+    customCredential?.salt && customCredential?.hash
+      ? customCredential.hash.toLowerCase()
+      : DEV_VAULT_EXPECTED_HASH;
+  const hex = await deriveVaultPbkdf2Hex(cleaned, activeSalt);
+  if (!hex) return false;
+  return constantTimeHexEqual(hex, expectedHash);
 }
 
 /**

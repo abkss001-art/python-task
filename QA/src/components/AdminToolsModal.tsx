@@ -19,9 +19,10 @@ import {
   EyeOff,
   Loader2,
   ShieldAlert,
-  Bot
+  Bot,
+  UserCog
 } from 'lucide-react';
-import { verifyDeveloperVaultPassword } from '../utils/securityUtils';
+import { syncService } from '../services/syncService';
 
 interface AdminToolsModalProps {
   archivedCount: number;
@@ -39,6 +40,7 @@ interface AdminToolsModalProps {
   onOpenQuota: () => void;
   onOpenArchive: () => void;
   onOpenMcpAdmin: () => void;
+  onOpenDevSettings: () => void;
   onClose: () => void;
 }
 
@@ -61,6 +63,7 @@ export const AdminToolsModal: React.FC<AdminToolsModalProps> = ({
   onOpenQuota,
   onOpenArchive,
   onOpenMcpAdmin,
+  onOpenDevSettings,
   onClose
 }) => {
   const [view, setView] = useState<'main' | 'dev_gate' | 'dev'>(() => {
@@ -116,7 +119,7 @@ export const AdminToolsModal: React.FC<AdminToolsModalProps> = ({
     setIsVerifying(true);
     setAuthError(null);
     try {
-      const ok = await verifyDeveloperVaultPassword(devPassword);
+      const ok = await syncService.verifyDeveloperVaultPasswordLive(devPassword);
       if (ok) {
         setDevPassword('');
         setFailedAttempts(0);
@@ -169,6 +172,14 @@ export const AdminToolsModal: React.FC<AdminToolsModalProps> = ({
   ];
 
   const devTools = [
+    {
+      id: 'dev_settings',
+      title: 'הגדרות מנהל וסיסמת מפתח',
+      subtitle: 'שינוי סיסמת הכניסה לסביבת מפתח ועדכון שם המנהל המחובר',
+      icon: UserCog,
+      iconBg: 'bg-rose-100 text-rose-700 border-rose-200 dark:bg-rose-950/70 dark:text-rose-300 dark:border-rose-800',
+      action: onOpenDevSettings
+    },
     {
       id: 'backup',
       title: 'גיבוי נתונים וייבוא אקסל',
@@ -481,7 +492,6 @@ export const AdminToolsModal: React.FC<AdminToolsModalProps> = ({
               <div className="relative">
                 <input
                   type={showPassword ? 'text' : 'password'}
-                  inputMode="numeric"
                   autoComplete="off"
                   autoFocus
                   disabled={lockSecondsLeft > 0 || isVerifying}

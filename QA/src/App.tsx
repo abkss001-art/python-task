@@ -41,6 +41,7 @@ import { AdminSystemManageModal } from './components/AdminSystemManageModal';
 import { AdminToolsModal } from './components/AdminToolsModal';
 import { McpConnectModal } from './components/McpConnectModal';
 import { AdminMcpModal } from './components/AdminMcpModal';
+import { AdminDevSettingsModal } from './components/AdminDevSettingsModal';
 import { UserProfileModal } from './components/UserProfileModal';
 import { SystemSelectorHome } from './components/SystemSelectorHome';
 import { LoginScreen, AuthenticatedUser } from './components/LoginScreen';
@@ -247,6 +248,7 @@ export function App() {
   const [isDevVaultUnlocked, setIsDevVaultUnlocked] = useState<boolean>(false);
   const [isMcpModalOpen, setIsMcpModalOpen] = useState<boolean>(false);
   const [isAdminMcpOpen, setIsAdminMcpOpen] = useState<boolean>(false);
+  const [isAdminDevSettingsOpen, setIsAdminDevSettingsOpen] = useState<boolean>(false);
   const [isProfileModalOpen, setIsProfileModalOpen] = useState<boolean>(false);
   const [joinRequestsReturnTo, setJoinRequestsReturnTo] = useState<'tools' | 'team' | null>(null);
   const [archiveReturnToTools, setArchiveReturnToTools] = useState<boolean>(false);
@@ -314,6 +316,7 @@ export function App() {
     isAuthenticatedRef.current = Boolean(authUser);
     if (!authUser || !authUser.isAdmin) {
       setIsDevVaultUnlocked(false);
+      setIsAdminDevSettingsOpen(false);
     }
   }, [authUser]);
 
@@ -591,6 +594,7 @@ export function App() {
         isAdminToolsOpen ||
         isMcpModalOpen ||
         isAdminMcpOpen ||
+        isAdminDevSettingsOpen ||
         isProfileModalOpen ||
         isChatDrawerOpen ||
         systemToManage
@@ -654,6 +658,7 @@ export function App() {
     isAdminToolsOpen,
     isMcpModalOpen,
     isAdminMcpOpen,
+    isAdminDevSettingsOpen,
     isProfileModalOpen,
     isChatDrawerOpen,
     systemToManage,
@@ -756,7 +761,12 @@ export function App() {
     const toastText =
       renameInfo && renameInfo.oldName.trim() !== renameInfo.newName.trim()
         ? `✏️ עודכן שם איש צוות מ-${renameInfo.oldName} ל-${renameInfo.newName} (סונכרנו ${renameStats.issues} דיווחים ו-${renameStats.comments} הערות)`
-        : undefined;
+        : 'עדכון רשימת חברי צוות והרשאות';
+
+    const effectiveActorForSave =
+      renameInfo && authUser && authUser.fullName.trim() === renameInfo.oldName.trim()
+        ? renameInfo.newName.trim()
+        : currentUserName;
 
     syncService.syncTeamMemberAccessProfiles(updated).catch(() => {});
 
@@ -768,7 +778,7 @@ export function App() {
         teamMembers: updated
       },
       toastText,
-      currentUserName
+      effectiveActorForSave
     );
   };
 
@@ -784,6 +794,7 @@ export function App() {
     setIsDevVaultUnlocked(false);
     setIsMcpModalOpen(false);
     setIsAdminMcpOpen(false);
+    setIsAdminDevSettingsOpen(false);
     setIsProfileModalOpen(false);
     setJoinRequestsReturnTo(null);
     setArchiveReturnToTools(false);
@@ -982,7 +993,7 @@ export function App() {
         deletedSystemIds: nextDeletedSystems,
         issues
       },
-      undefined,
+      `הוספת מערכת חדשה: ${newSys}`,
       currentUserName
     );
   };
@@ -1051,7 +1062,7 @@ export function App() {
         issues: nextIssues,
         teamMembers: updatedTeamMembers
       },
-      undefined,
+      `שינוי שם מערכת מ-"${oldName}" ל-"${cleanNewName}"`,
       currentUserName
     );
 
@@ -1073,7 +1084,7 @@ export function App() {
     setSystemToRemove(null);
     syncService.pushStateToCloud(
       { systems: nextSystems, archivedSystems: nextArchived, issues },
-      undefined,
+      `העברת מערכת לארכיון: ${sysToArchive}`,
       currentUserName
     );
   };
@@ -1089,7 +1100,7 @@ export function App() {
     handleSelectSystem(sysToRestore);
     syncService.pushStateToCloud(
       { systems: nextSystems, archivedSystems: nextArchived, issues },
-      undefined,
+      `שחזור מערכת מהארכיון: ${sysToRestore}`,
       currentUserName
     );
   };
@@ -1145,7 +1156,7 @@ export function App() {
         issues: nextIssues,
         teamMembers: updatedTeamMembers
       },
-      undefined,
+      `מחיקת מערכת לצמיתות: ${sysToDelete}`,
       currentUserName
     );
   };
@@ -1154,7 +1165,9 @@ export function App() {
   const currentMember = useMemo(() => {
     if (!authUser) return null;
     return teamMembers.find(
-      (m) => m.fullName.trim().toLowerCase() === authUser.fullName.trim().toLowerCase()
+      (m) =>
+        (authUser.uid && m.uid && m.uid === authUser.uid) ||
+        m.fullName.trim().toLowerCase() === authUser.fullName.trim().toLowerCase()
     );
   }, [authUser, teamMembers]);
 
@@ -1513,11 +1526,22 @@ export function App() {
       setSystems(nextSystems);
     }
 
-    const nextIssues = [...scopedImported, ...baseIssues];
+    const normalizedImported = scopedImported.map((item) => {
+      const rawCreator = (item.createdBy || '').trim();
+      const isGenericCreator =
+        !rawCreator ||
+        rawCreator === 'חבר צוות' ||
+        rawCreator === 'Admin' ||
+        rawCreator === 'מנהל' ||
+        rawCreator === 'מנהל מנהל מערכת';
+      return isGenericCreator ? { ...item, createdBy: formattedUserDisplay } : item;
+    });
+
+    const nextIssues = [...normalizedImported, ...baseIssues];
     setIssues(nextIssues);
 
-    if (activeSystem === 'HOME' && scopedImported[0]?.system) {
-      handleSelectSystem(scopedImported[0].system);
+    if (activeSystem === 'HOME' && normalizedImported[0]?.system) {
+      handleSelectSystem(normalizedImported[0].system);
     }
 
     syncService.pushStateToCloud(
@@ -1527,10 +1551,10 @@ export function App() {
         deletedSystemIds: nextDeletedSystems,
         issues: nextIssues
       },
-      `ייבוא ${scopedImported.length} תסריטים מקובץ אקסל / CSV`,
+      `ייבוא ${normalizedImported.length} תסריטים מקובץ אקסל / CSV`,
       currentUserName
     );
-    setLiveToast(`✅ יובאו בהצלחה ${scopedImported.length} תקלות מאקסל וסונכרנו לצוות!`);
+    setLiveToast(`✅ יובאו בהצלחה ${normalizedImported.length} תקלות מאקסל וסונכרנו לצוות!`);
     setTimeout(() => setLiveToast(null), 4000);
   };
 
@@ -3072,6 +3096,7 @@ export function App() {
             setIsArchiveModalOpen(true);
           }}
           onOpenMcpAdmin={() => setIsAdminMcpOpen(true)}
+          onOpenDevSettings={() => setIsAdminDevSettingsOpen(true)}
           onClose={() => setIsAdminToolsOpen(false)}
         />
       )}
@@ -3138,6 +3163,56 @@ export function App() {
             setIsAdminToolsOpen(true);
           }}
           onClose={() => setIsAdminMcpOpen(false)}
+        />
+      )}
+
+      {/* Admin Developer Vault Password & Own Admin Name Settings Modal (Developer Vault Only) */}
+      {isAdminDevSettingsOpen && isAdmin && isDevVaultUnlocked && (
+        <AdminDevSettingsModal
+          currentAdminName={currentUserName}
+          currentAdminEmail={authUser?.email}
+          onAdminNameUpdated={(oldName, newName) => {
+            const cleanNew = newName.trim();
+            const cleanOld = oldName.trim();
+            let matched = false;
+            const nextMembers = teamMembers.map((m) => {
+              if (authUser?.uid && m.uid && m.uid === authUser.uid) {
+                matched = true;
+                return { ...m, fullName: cleanNew };
+              }
+              if (
+                !matched &&
+                !m.uid &&
+                m.fullName.trim().toLowerCase() === cleanOld.toLowerCase()
+              ) {
+                matched = true;
+                return {
+                  ...m,
+                  fullName: cleanNew,
+                  ...(authUser?.uid ? { uid: authUser.uid } : {})
+                };
+              }
+              return m;
+            });
+            const finalMembers = matched
+              ? nextMembers
+              : [
+                  ...nextMembers,
+                  {
+                    id: `tm-${Date.now()}-${Math.random().toString(36).substring(2, 5)}`,
+                    fullName: cleanNew,
+                    role: 'admin' as const,
+                    ...(authUser?.uid ? { uid: authUser.uid } : {})
+                  }
+                ];
+            handleSaveTeamMembers(finalMembers, { oldName: cleanOld, newName: cleanNew });
+          }}
+          onBack={() => {
+            setIsAdminDevSettingsOpen(false);
+            setAdminToolsInitialView('dev');
+            setIsAdminToolsOpen(true);
+          }}
+          onClose={() => setIsAdminDevSettingsOpen(false)}
         />
       )}
 

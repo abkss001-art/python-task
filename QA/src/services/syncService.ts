@@ -109,8 +109,11 @@ import {
 } from './googleDriveService';
 import {
   decodeProtectedUrl,
+  DeveloperVaultCredential,
   encodeProtectedUrl,
-  sanitizeImageUrl
+  hashDeveloperVaultPassword,
+  sanitizeImageUrl,
+  verifyDeveloperVaultPassword
 } from '../utils/securityUtils';
 import {
   TeamMember,
@@ -291,6 +294,7 @@ class RealtimeSyncService {
   private hasAutoRebuiltFirebaseApp = false;
   private mcpAppCheckDebugToken = '';
   private mcpBridgeEnabled = true;
+  private devVaultCredential: DeveloperVaultCredential | null = null;
   private mcpBridgeListeners = new Set<
     (info: { configured: boolean; enabled: boolean }) => void
   >();
@@ -363,6 +367,7 @@ class RealtimeSyncService {
     this.chatsBySystem = {};
     this.mcpAppCheckDebugToken = '';
     this.mcpBridgeEnabled = true;
+    this.devVaultCredential = null;
     this.notifyMcpBridgeListeners();
 
     if (typeof BroadcastChannel !== 'undefined') {
@@ -1271,6 +1276,8 @@ class RealtimeSyncService {
         apiSecret?: string;
         mcpAppCheckToken?: string;
         mcpEnabled?: boolean;
+        devVaultSalt?: string;
+        devVaultHash?: string;
       }>('std_private_config', 0).then((pRes) => {
         if (pRes.ok && pRes.value) {
           this.applyPrivateConfigSnapshot(pRes.value);
@@ -2539,6 +2546,7 @@ class RealtimeSyncService {
     this.chatsBySystem = {};
     this.mcpAppCheckDebugToken = '';
     this.mcpBridgeEnabled = true;
+    this.devVaultCredential = null;
     this.notifyMcpBridgeListeners();
 
     try {
@@ -2594,6 +2602,8 @@ class RealtimeSyncService {
     apiSecret?: string;
     mcpAppCheckToken?: string;
     mcpEnabled?: boolean;
+    devVaultSalt?: string;
+    devVaultHash?: string;
   } | null) {
     if (!pData) return;
     const decodedUrl = decodeProtectedUrl(pData.googleDriveUrl);
@@ -2605,7 +2615,117 @@ class RealtimeSyncService {
     if (typeof pData.mcpEnabled === 'boolean') {
       this.mcpBridgeEnabled = pData.mcpEnabled;
     }
+    if (
+      typeof pData.devVaultSalt === 'string' &&
+      typeof pData.devVaultHash === 'string' &&
+      pData.devVaultSalt.trim() &&
+      /^[0-9a-f]{64}$/i.test(pData.devVaultHash.trim())
+    ) {
+      this.devVaultCredential = {
+        salt: pData.devVaultSalt.trim(),
+        hash: pData.devVaultHash.trim().toLowerCase()
+      };
+    }
     this.notifyMcpBridgeListeners();
+  }
+
+  public getDeveloperVaultCredential(): DeveloperVaultCredential | null {
+    return this.devVaultCredential;
+  }
+
+  public async verifyDeveloperVaultPasswordLive(rawInput: string): Promise<boolean> {
+    return verifyDeveloperVaultPassword(rawInput, this.devVaultCredential);
+  }
+
+  /**
+   * שינוי סיסמת סביבת מפתח — מאמת את הסיסמה הנוכחית ושומר רק PBKDF2-SHA256 (ללא טקסט גלוי) ב-std_private_config
+   */
+  public async updateDeveloperVaultPassword(
+    currentPassword: string,
+    newPassword: string
+  ): Promise<{ ok: boolean; error?: string }> {
+    if (!this.activeFirebaseConfig || this.firebaseUserProfile?.role !== 'admin') {
+      return { ok: false, error: 'פעולה זו מותרת למנהל מערכת בלבד.' };
+    }
+    const cleanNew = newPassword.trim();
+    if (cleanNew.length < 6) {
+      return { ok: false, error: 'הסיסמה החדשה חייבת להכיל לפחות 6 תווים.' };
+    }
+    const currentValid = await this.verifyDeveloperVaultPasswordLive(currentPassword);
+    if (!currentValid) {
+      return { ok: false, error: 'הסיסמה הנוכחית שגויה.' };
+    }
+    const hashed = await hashDeveloperVaultPassword(cleanNew);
+    if (!hashed) {
+      return { ok: false, error: 'לא ניתן להצפין את הסיסמה בדפדפן זה.' };
+    }
+    const payload = {
+      devVaultSalt: hashed.salt,
+      devVaultHash: hashed.hash,
+      updatedAt: Date.now()
+    };
+    try {
+      if (this.activeFirebaseConfig.mode === 'firestore' && this.firestore) {
+        await setDoc(doc(this.firestore, 'std_workspaces', 'private_config'), payload, {
+          merge: true
+        });
+      } else if (this.rtdb) {
+        await update(ref(this.rtdb, 'std_private_config'), payload);
+      } else {
+        return { ok: false, error: 'החיבור למסד הנתונים אינו פעיל.' };
+      }
+      this.devVaultCredential = hashed;
+      this.recordAuditEvent('שינוי סיסמת הכניסה לסביבת מפתח', 'security');
+      return { ok: true };
+    } catch (err: any) {
+      return { ok: false, error: err?.message || 'שמירת הסיסמה החדשה נכשלה.' };
+    }
+  }
+
+  /**
+   * עדכון השם המלא של המנהל המחובר בפרופיל שלו (std_users/{uid}) ובאינדקס השמות (std_taken_names)
+   */
+  public async updateOwnAdminDisplayName(
+    newFullName: string
+  ): Promise<{ ok: boolean; oldName?: string; newName?: string; error?: string }> {
+    if (!this.activeFirebaseConfig || !this.firebaseUser || this.firebaseUserProfile?.role !== 'admin') {
+      return { ok: false, error: 'פעולה זו מותרת למנהל מערכת מחובר בלבד.' };
+    }
+    const cleanName = newFullName.trim().replace(/\s+/g, ' ').slice(0, 120);
+    if (cleanName.length < 2) {
+      return { ok: false, error: 'נא להזין שם מלא תקין (לפחות 2 תווים).' };
+    }
+    const uid = this.firebaseUser.uid;
+    const oldName = this.firebaseUserProfile.fullName.trim();
+    if (cleanName === oldName) {
+      return { ok: true, oldName, newName: cleanName };
+    }
+    const takenByOther = await this.isFullNameTakenByAnotherUser(cleanName, uid);
+    if (takenByOther) {
+      return { ok: false, error: `השם "${cleanName}" כבר בשימוש אצל חבר צוות אחר במערכת.` };
+    }
+    const updatedProfile: FirebaseUserProfile = {
+      ...this.firebaseUserProfile,
+      uid,
+      fullName: cleanName,
+      updatedAt: Date.now()
+    };
+    try {
+      if (this.activeFirebaseConfig.mode === 'firestore' && this.firestore) {
+        await setDoc(doc(this.firestore, 'std_users', uid), stripUndefinedDeep(updatedProfile));
+      } else if (this.rtdb) {
+        await set(ref(this.rtdb, `std_users/${uid}`), stripUndefinedDeep(updatedProfile));
+      } else {
+        return { ok: false, error: 'החיבור למסד הנתונים אינו פעיל.' };
+      }
+      this.firebaseUserProfile = updatedProfile;
+      await this.registerTakenNameHash(cleanName, uid);
+      this.notifyAuthListeners();
+      this.recordAuditEvent(`עדכון שם מנהל מ-"${oldName}" ל-"${cleanName}"`, 'team', updatedProfile.email || uid);
+      return { ok: true, oldName, newName: cleanName };
+    } catch (err: any) {
+      return { ok: false, error: err?.message || 'עדכון השם בשרת נכשל.' };
+    }
   }
 
   private notifyMcpBridgeListeners() {
@@ -3403,7 +3523,7 @@ class RealtimeSyncService {
               issues: sysIssues,
               updatedAt: Date.now(),
               revision: baseState.revision || 1,
-              lastUpdatedBy: baseState.lastUpdatedBy || 'Admin'
+              lastUpdatedBy: baseState.lastUpdatedBy || this.firebaseUserProfile?.fullName || 'מנהל מערכת'
             })
           );
           if (baseChats[sys] && baseChats[sys].length > 0) {
@@ -3427,7 +3547,7 @@ class RealtimeSyncService {
           teamMembers: baseState.teamMembers || getStoredTeamMembers(),
           partitionVersion: 2,
           revision: Math.max(baseState.revision || 0, 1),
-          lastUpdatedBy: baseState.lastUpdatedBy || 'Admin',
+          lastUpdatedBy: baseState.lastUpdatedBy || this.firebaseUserProfile?.fullName || 'מנהל מערכת',
           lastAction: 'מיגרציה אוטומטית למחיצות מאובטחות לפי מערכת',
           updatedAt: Date.now(),
           clientId: this.clientId
@@ -3477,7 +3597,7 @@ class RealtimeSyncService {
               issues: sysIssues,
               updatedAt: Date.now(),
               revision: baseState.revision || 1,
-              lastUpdatedBy: baseState.lastUpdatedBy || 'Admin',
+              lastUpdatedBy: baseState.lastUpdatedBy || this.firebaseUserProfile?.fullName || 'מנהל מערכת',
               clientId: this.clientId
             })
           );
@@ -3498,7 +3618,7 @@ class RealtimeSyncService {
           teamMembers: baseState.teamMembers || getStoredTeamMembers(),
           partitionVersion: 2,
           revision: Math.max(baseState.revision || 0, 1),
-          lastUpdatedBy: baseState.lastUpdatedBy || 'Admin',
+          lastUpdatedBy: baseState.lastUpdatedBy || this.firebaseUserProfile?.fullName || 'מנהל מערכת',
           lastAction: 'מיגרציה אוטומטית למחיצות מאובטחות לפי מערכת',
           updatedAt: Date.now(),
           clientId: this.clientId
@@ -4921,8 +5041,12 @@ class RealtimeSyncService {
 
     const effectiveAction =
       actionSummary !== undefined ? actionSummary : this.currentState.lastAction;
-    const effectiveActor =
-      actionSummary ? actorName : (this.currentState.lastUpdatedBy || actorName);
+    const resolvedActor =
+      (actorName && actorName.trim() && actorName !== 'חבר צוות' ? actorName.trim() : '') ||
+      this.firebaseUserProfile?.fullName?.trim() ||
+      this.currentState.lastUpdatedBy ||
+      'חבר צוות';
+    const effectiveActor = resolvedActor;
 
     const candidatePayload: SyncStatePayload = {
       systems: nextState.systems,
