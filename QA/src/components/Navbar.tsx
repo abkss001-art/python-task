@@ -45,6 +45,7 @@ interface NavbarProps {
   onOpenSecurityModal?: () => void;
   onOpenAdminToolsModal?: () => void;
   onOpenMcpModal?: () => void;
+  onOpenProfileModal?: () => void;
   pendingJoinRequestsCount?: number;
   onManualSync?: () => void;
   issues: StdIssue[];
@@ -150,6 +151,7 @@ export const Navbar: React.FC<NavbarProps> = ({
   onOpenSecurityModal,
   onOpenAdminToolsModal,
   onOpenMcpModal,
+  onOpenProfileModal,
   pendingJoinRequestsCount = 0,
   onManualSync,
   issues,
@@ -389,8 +391,13 @@ export const Navbar: React.FC<NavbarProps> = ({
                 </button>
               )}
 
-              {/* Logged-In User Badge */}
-              <div className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl bg-slate-100 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-[11px] sm:text-xs font-medium text-slate-700 dark:text-slate-300">
+              {/* Logged-In User Badge (Clickable to open personal profile & stats modal) */}
+              <button
+                type="button"
+                onClick={onOpenProfileModal}
+                className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl bg-slate-100 hover:bg-indigo-50 dark:bg-slate-800 dark:hover:bg-slate-700 border border-slate-200 hover:border-indigo-300 dark:border-slate-700 dark:hover:border-indigo-600 text-[11px] sm:text-xs font-medium text-slate-700 dark:text-slate-300 transition cursor-pointer"
+                title="לחץ לצפייה בפרטי המשתמש, הפרויקטים והפעילות שלך"
+              >
                 <UserCheck className="w-3.5 h-3.5 text-indigo-600 dark:text-indigo-400 shrink-0" />
                 <span className="font-bold text-slate-900 dark:text-slate-100 max-w-[100px] sm:max-w-[130px] truncate rtl-safe">
                   {currentUserName}
@@ -406,7 +413,7 @@ export const Navbar: React.FC<NavbarProps> = ({
                 >
                   {isAdmin ? 'מנהל' : currentUserRole === 'dev' ? 'מפתח' : 'בודק QA'}
                 </span>
-              </div>
+              </button>
 
               {/* Switch User / Logout Button */}
               <button

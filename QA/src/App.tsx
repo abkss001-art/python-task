@@ -41,6 +41,7 @@ import { AdminSystemManageModal } from './components/AdminSystemManageModal';
 import { AdminToolsModal } from './components/AdminToolsModal';
 import { McpConnectModal } from './components/McpConnectModal';
 import { AdminMcpModal } from './components/AdminMcpModal';
+import { UserProfileModal } from './components/UserProfileModal';
 import { SystemSelectorHome } from './components/SystemSelectorHome';
 import { LoginScreen, AuthenticatedUser } from './components/LoginScreen';
 import { PendingApprovalScreen } from './components/PendingApprovalScreen';
@@ -246,6 +247,7 @@ export function App() {
   const [isDevVaultUnlocked, setIsDevVaultUnlocked] = useState<boolean>(false);
   const [isMcpModalOpen, setIsMcpModalOpen] = useState<boolean>(false);
   const [isAdminMcpOpen, setIsAdminMcpOpen] = useState<boolean>(false);
+  const [isProfileModalOpen, setIsProfileModalOpen] = useState<boolean>(false);
   const [joinRequestsReturnTo, setJoinRequestsReturnTo] = useState<'tools' | 'team' | null>(null);
   const [archiveReturnToTools, setArchiveReturnToTools] = useState<boolean>(false);
   const [teamMembers, setTeamMembers] = useState<TeamMember[]>(() => getStoredTeamMembers());
@@ -589,6 +591,7 @@ export function App() {
         isAdminToolsOpen ||
         isMcpModalOpen ||
         isAdminMcpOpen ||
+        isProfileModalOpen ||
         isChatDrawerOpen ||
         systemToManage
       ) {
@@ -651,6 +654,7 @@ export function App() {
     isAdminToolsOpen,
     isMcpModalOpen,
     isAdminMcpOpen,
+    isProfileModalOpen,
     isChatDrawerOpen,
     systemToManage,
     activeSystem,
@@ -780,6 +784,7 @@ export function App() {
     setIsDevVaultUnlocked(false);
     setIsMcpModalOpen(false);
     setIsAdminMcpOpen(false);
+    setIsProfileModalOpen(false);
     setJoinRequestsReturnTo(null);
     setArchiveReturnToTools(false);
     setAuthUser(null);
@@ -2136,6 +2141,7 @@ export function App() {
           }
         }}
         onOpenMcpModal={() => setIsMcpModalOpen(true)}
+        onOpenProfileModal={() => setIsProfileModalOpen(true)}
         pendingJoinRequestsCount={isAdmin ? pendingJoinRequestsCount : 0}
         onManualSync={() => {
           syncService.requestManualSync();
@@ -3067,6 +3073,36 @@ export function App() {
           }}
           onOpenMcpAdmin={() => setIsAdminMcpOpen(true)}
           onClose={() => setIsAdminToolsOpen(false)}
+        />
+      )}
+
+      {/* Personal User Profile & Activity Stats Modal (Clickable Name Badge in Navbar) */}
+      {isProfileModalOpen && authUser && (
+        <UserProfileModal
+          fullName={currentUserName}
+          email={authUser.email}
+          role={currentUserRole}
+          isAdmin={isAdmin}
+          visibleSystems={visibleSystems}
+          isAllSystemsAccess={isAdmin || !userAllowedSystems}
+          issues={issues.filter(
+            (i) => !archivedSystems.includes(i.system) && visibleSystems.includes(i.system)
+          )}
+          onSelectIssue={(issue) => {
+            setIsProfileModalOpen(false);
+            handleSelectSystem(issue.system);
+            setSearchQuery('');
+            setPlatformFilter('ALL');
+            setStatusFilter('ALL');
+            setQuickPreset('ALL');
+            setHighlightedIssueId(issue.id);
+            setTimeout(() => setHighlightedIssueId(null), 4500);
+            setTimeout(() => {
+              const el = document.getElementById(`issue-item-${issue.id}`);
+              el?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+            }, 180);
+          }}
+          onClose={() => setIsProfileModalOpen(false)}
         />
       )}
 
