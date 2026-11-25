@@ -3186,6 +3186,62 @@ class RealtimeSyncService {
     this.notifyState(isRemote);
   }
 
+  /**
+   * שליפת כלל פרופילי המשתמשים מ-std_users למנהל בלבד (כולל כתובת אימייל ההתחברות לתצוגה במסך ניהול צוות)
+   */
+  public async fetchAdminUserProfiles(): Promise<FirebaseUserProfile[]> {
+    if (!this.activeFirebaseConfig || !this.isFirebaseAuthRequired()) return [];
+    if (this.firebaseUserProfile?.role !== 'admin') return [];
+
+    const profiles: FirebaseUserProfile[] = [];
+    try {
+      if (this.activeFirebaseConfig.mode === 'firestore' && this.firestore) {
+        const snap = await getDocs(collection(this.firestore, 'std_users'));
+        snap.forEach((docSnap) => {
+          const data = docSnap.data() as Partial<FirebaseUserProfile>;
+          if (data && data.fullName && data.role) {
+            profiles.push({
+              uid: docSnap.id,
+              email: data.email,
+              fullName: data.fullName.trim(),
+              role: data.role,
+              allowedSystems: data.allowedSystems,
+              allowedSystemKeys: data.allowedSystemKeys,
+              allSystems: data.allSystems,
+              isSuperAdmin: data.isSuperAdmin,
+              updatedAt: data.updatedAt
+            });
+          }
+        });
+      } else if (this.rtdb) {
+        const res = await this.fetchRtdbNodeWithFallback('std_users');
+        const val = (res.ok && res.exists ? res.value : null) as
+          | Record<string, Partial<FirebaseUserProfile>>
+          | null;
+        if (val && typeof val === 'object') {
+          for (const [uid, data] of Object.entries(val)) {
+            if (data && data.fullName && data.role) {
+              profiles.push({
+                uid,
+                email: data.email,
+                fullName: data.fullName.trim(),
+                role: data.role,
+                allowedSystems: data.allowedSystems,
+                allowedSystemKeys: data.allowedSystemKeys,
+                allSystems: data.allSystems,
+                isSuperAdmin: data.isSuperAdmin,
+                updatedAt: data.updatedAt
+              });
+            }
+          }
+        }
+      }
+    } catch {
+      // ignore read errors
+    }
+    return profiles;
+  }
+
   public async syncTeamMemberAccessProfiles(members: TeamMember[]): Promise<void> {
     if (!this.activeFirebaseConfig || !this.isFirebaseAuthRequired()) return;
     if (this.firebaseUserProfile?.role !== 'admin') return;
