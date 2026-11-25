@@ -1,4 +1,4 @@
-import React, { useMemo, useState, useRef } from 'react';
+import React, { useEffect, useMemo, useState, useRef } from 'react';
 import {
   ArrowUpDown,
   MessageSquare,
@@ -17,7 +17,12 @@ import {
   ChevronRight,
   ChevronsLeft,
   ChevronsRight,
-  SlidersHorizontal
+  SlidersHorizontal,
+  FileText,
+  Copy,
+  Check,
+  Clock,
+  User
 } from 'lucide-react';
 import {
   SEVERITIES,
@@ -80,6 +85,8 @@ export const SmartTableView: React.FC<SmartTableViewProps> = ({
   const [sortKey, setSortKey] = useState<SortKey>('testCaseId');
   const [sortAsc, setSortAsc] = useState<boolean>(true);
   const [expandedRowId, setExpandedRowId] = useState<string | null>(null);
+  const [viewingIssueId, setViewingIssueId] = useState<string | null>(null);
+  const [copiedDetailText, setCopiedDetailText] = useState<boolean>(false);
   const [quickComment, setQuickComment] = useState('');
   const [commentScreenshot, setCommentScreenshot] = useState<string | undefined>(undefined);
   const [readCounts, setReadCounts] = useState<Record<string, number>>(() =>
@@ -87,6 +94,33 @@ export const SmartTableView: React.FC<SmartTableViewProps> = ({
   );
   const commentFileRef = useRef<HTMLInputElement | null>(null);
   const tableContainerRef = useRef<HTMLDivElement | null>(null);
+
+  const viewingIssue = useMemo(
+    () => (viewingIssueId ? issues.find((i) => i.id === viewingIssueId) || null : null),
+    [issues, viewingIssueId]
+  );
+
+  useEffect(() => {
+    if (!viewingIssueId) return;
+    const onKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') {
+        setViewingIssueId(null);
+      }
+    };
+    window.addEventListener('keydown', onKeyDown);
+    return () => window.removeEventListener('keydown', onKeyDown);
+  }, [viewingIssueId]);
+
+  const handleCopyFullText = async (issue: StdIssue) => {
+    const fullText = `${issue.subject || ''}\n\n${issue.description || ''}`.trim();
+    try {
+      await navigator.clipboard.writeText(fullText);
+      setCopiedDetailText(true);
+      setTimeout(() => setCopiedDetailText(false), 2000);
+    } catch {
+      // ignore clipboard errors
+    }
+  };
 
   const scrollByDelta = (delta: number) => {
     if (!tableContainerRef.current) return;
@@ -402,12 +436,34 @@ export const SmartTableView: React.FC<SmartTableViewProps> = ({
                       </span>
                     </td>
 
-                    {/* Subject & Description */}
+                    {/* Subject & Description (Click to open full-text modal) */}
                     <td className="py-3.5 px-4 align-top max-w-md">
-                      <div className="font-bold text-slate-900 dark:text-slate-100 rtl-safe">{issue.subject}</div>
-                      <div className="text-xs text-slate-600 dark:text-slate-300 mt-1 line-clamp-2 rtl-safe">
-                        {issue.description}
-                      </div>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setCopiedDetailText(false);
+                          setViewingIssueId(issue.id);
+                        }}
+                        className="group/text block w-full text-right rounded-xl -m-1.5 p-1.5 hover:bg-indigo-50/70 dark:hover:bg-indigo-950/40 transition cursor-pointer focus:outline-none focus:ring-2 focus:ring-indigo-500/30"
+                        title="לחץ לצפייה במלל המלא"
+                      >
+                        <div className="font-bold text-slate-900 dark:text-slate-100 group-hover/text:text-indigo-700 dark:group-hover/text:text-indigo-300 transition rtl-safe">
+                          {issue.subject}
+                        </div>
+                        {issue.description && (
+                          <div className="text-xs text-slate-600 dark:text-slate-300 mt-1 line-clamp-2 rtl-safe">
+                            {issue.description}
+                          </div>
+                        )}
+                        {((issue.description || '').length > 75 ||
+                          (issue.description || '').includes('\n') ||
+                          (issue.subject || '').length > 55) && (
+                          <span className="inline-flex items-center gap-1 mt-1 text-[11px] font-bold text-indigo-600 dark:text-indigo-400 group-hover/text:underline">
+                            <FileText className="w-3 h-3 shrink-0" />
+                            <span>לחץ לצפייה במלל המלא</span>
+                          </span>
+                        )}
+                      </button>
                     </td>
 
                     {/* Screenshots Preview */}
@@ -729,6 +785,223 @@ export const SmartTableView: React.FC<SmartTableViewProps> = ({
           💡 גרור את הטבלה ימינה/שמאלה עם האצבע או השתמש בחצים למעלה כדי לעבור בין העמודות
         </span>
       </div>
+
+      {/* Full-Text Issue Detail Modal (Opens on clicking Subject / Description in Table) */}
+      {viewingIssue && (() => {
+        const vStatusStyle = STATUS_CONFIG[viewingIssue.status] || STATUS_CONFIG['פתוח'];
+        const vSev = viewingIssue.severity || 'בינונית';
+        const vSevStyle = SEVERITY_CONFIG[vSev] || SEVERITY_CONFIG['בינונית'];
+        const validScreenshots = (viewingIssue.screenshots || [])
+          .map((raw) => ({ raw, safe: sanitizeImageUrl(raw) }))
+          .filter((item): item is { raw: string; safe: string } => Boolean(item.safe));
+
+        return (
+          <div
+            className="fixed inset-0 z-40 flex items-center justify-center bg-slate-900/65 dark:bg-slate-950/80 backdrop-blur-xs p-3 sm:p-4 overflow-y-auto"
+            dir="rtl"
+            onClick={() => setViewingIssueId(null)}
+          >
+            <div
+              className="bg-white dark:bg-slate-900 rounded-3xl shadow-2xl border border-slate-200 dark:border-slate-800 w-full max-w-2xl overflow-hidden my-auto max-h-[90vh] flex flex-col animate-in fade-in zoom-in-95 duration-150"
+              onClick={(e) => e.stopPropagation()}
+            >
+              {/* Modal Header */}
+              <div className="flex items-start justify-between gap-3 px-5 sm:px-6 py-4 bg-gradient-to-l from-slate-950 via-indigo-950 to-slate-900 text-white border-b border-slate-800 shrink-0">
+                <div className="min-w-0 space-y-2">
+                  <div className="flex items-center gap-2 flex-wrap">
+                    <span className="inline-flex items-center px-2.5 py-0.5 rounded-lg bg-white/15 text-white font-mono font-extrabold text-xs border border-white/15">
+                      #{viewingIssue.testCaseId}
+                    </span>
+                    <span className="px-2.5 py-0.5 rounded-lg bg-indigo-500/25 text-indigo-200 border border-indigo-400/30 font-bold text-xs bidi-isolate">
+                      {viewingIssue.system}
+                    </span>
+                    <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-lg bg-white/10 text-slate-200 text-xs font-semibold">
+                      <PlatformIcon platform={viewingIssue.platform} className="w-3.5 h-3.5 text-indigo-300" />
+                      <span className="bidi-isolate">{viewingIssue.platform}</span>
+                    </span>
+                    <span
+                      className={`inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full border text-[11px] font-extrabold ${vSevStyle.bgBadge} ${vSevStyle.textBadge} ${vSevStyle.borderBadge}`}
+                    >
+                      {vSev === 'קריטית' ? (
+                        <Flame className="w-3 h-3 text-rose-600" />
+                      ) : (
+                        <span className={`w-1.5 h-1.5 rounded-full ${vSevStyle.dotColor}`} />
+                      )}
+                      <span>{vSev}</span>
+                    </span>
+                  </div>
+                  <h3 className="text-base sm:text-lg font-black leading-snug text-white rtl-safe break-words">
+                    {viewingIssue.subject}
+                  </h3>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setViewingIssueId(null)}
+                  className="p-1.5 rounded-lg text-slate-400 hover:text-white hover:bg-slate-800 cursor-pointer shrink-0 transition"
+                  aria-label="סגור"
+                  title="סגור (Esc)"
+                >
+                  <X className="w-5 h-5" />
+                </button>
+              </div>
+
+              {/* Modal Body */}
+              <div className="p-5 sm:p-6 space-y-4 overflow-y-auto flex-1">
+                {/* Status + Metadata Strip */}
+                <div className="flex flex-wrap items-center justify-between gap-2.5 p-3 rounded-2xl bg-slate-50 dark:bg-slate-800/60 border border-slate-200/80 dark:border-slate-700/80">
+                  <div className="flex items-center gap-2">
+                    <span className="text-xs font-bold text-slate-600 dark:text-slate-300">סטטוס:</span>
+                    <div className="relative inline-block">
+                      <select
+                        value={viewingIssue.status}
+                        onChange={(e) =>
+                          onStatusChange(viewingIssue.id, e.target.value as StdStatus)
+                        }
+                        className={`appearance-none pr-6 pl-3 py-1 rounded-full border text-xs font-bold transition cursor-pointer focus:outline-none ${vStatusStyle.bgBadge} ${vStatusStyle.textBadge} ${vStatusStyle.borderBadge}`}
+                      >
+                        {STATUSES.map((st) => (
+                          <option
+                            key={st}
+                            value={st}
+                            className="bg-white dark:bg-slate-900 text-slate-900 dark:text-slate-100 font-semibold"
+                          >
+                            {st}
+                          </option>
+                        ))}
+                      </select>
+                      <span
+                        className={`w-2 h-2 rounded-full absolute right-2.5 top-1/2 -translate-y-1/2 pointer-events-none ${vStatusStyle.dotColor}`}
+                      />
+                    </div>
+                  </div>
+
+                  <div className="flex flex-wrap items-center gap-3 text-[11px] text-slate-500 dark:text-slate-300">
+                    <span className="inline-flex items-center gap-1 font-semibold">
+                      <User className="w-3.5 h-3.5 text-indigo-500 shrink-0" />
+                      <span className="rtl-safe">{viewingIssue.createdBy}</span>
+                    </span>
+                    <span className="inline-flex items-center gap-1 font-mono">
+                      <Clock className="w-3.5 h-3.5 text-slate-400 shrink-0" />
+                      <span>{formatHebrewDateTime(viewingIssue.updatedAt)}</span>
+                    </span>
+                  </div>
+                </div>
+
+                {/* Full Description Card */}
+                <div className="space-y-2">
+                  <div className="flex items-center justify-between gap-2">
+                    <span className="text-xs font-extrabold text-slate-700 dark:text-slate-200 flex items-center gap-1.5">
+                      <FileText className="w-4 h-4 text-indigo-600 dark:text-indigo-400" />
+                      <span>מהות השגיאה והפירוט המלא</span>
+                    </span>
+                    <button
+                      type="button"
+                      onClick={() => handleCopyFullText(viewingIssue)}
+                      className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg bg-slate-100 dark:bg-slate-800 hover:bg-indigo-50 dark:hover:bg-indigo-950/50 text-slate-600 dark:text-slate-300 hover:text-indigo-700 dark:hover:text-indigo-300 border border-slate-200 dark:border-slate-700 text-[11px] font-bold cursor-pointer transition"
+                    >
+                      {copiedDetailText ? (
+                        <>
+                          <Check className="w-3.5 h-3.5 text-emerald-600" />
+                          <span className="text-emerald-700 dark:text-emerald-400">הועתק!</span>
+                        </>
+                      ) : (
+                        <>
+                          <Copy className="w-3.5 h-3.5" />
+                          <span>העתק טקסט</span>
+                        </>
+                      )}
+                    </button>
+                  </div>
+
+                  <div className="p-4 rounded-2xl bg-slate-50/90 dark:bg-slate-950/70 border border-slate-200 dark:border-slate-800 text-sm text-slate-800 dark:text-slate-100 leading-relaxed whitespace-pre-wrap break-words rtl-safe select-text">
+                    {viewingIssue.description || 'אין פירוט נוסף לתקלה זו.'}
+                  </div>
+                </div>
+
+                {/* Screenshots Preview Grid (if present) */}
+                {validScreenshots.length > 0 && (
+                  <div className="space-y-2">
+                    <div className="text-xs font-extrabold text-slate-700 dark:text-slate-200 flex items-center gap-1.5">
+                      <ImageIcon className="w-4 h-4 text-indigo-600 dark:text-indigo-400" />
+                      <span>צילומי מסך ({validScreenshots.length})</span>
+                    </div>
+                    <div className="flex flex-wrap gap-2">
+                      {validScreenshots.map((img, idx) => (
+                        <button
+                          key={idx}
+                          type="button"
+                          onClick={() =>
+                            onOpenLightbox(
+                              viewingIssue.screenshots,
+                              idx,
+                              `תסריט #${viewingIssue.testCaseId} - ${viewingIssue.subject}`
+                            )
+                          }
+                          className="relative group/vthumb w-24 h-20 rounded-xl bg-slate-900 border border-slate-200 dark:border-slate-700 overflow-hidden flex items-center justify-center cursor-zoom-in p-1 hover:border-indigo-500 transition"
+                          title="לחץ להגדלה במסך מלא"
+                        >
+                          <img
+                            src={img.safe}
+                            alt={`צילום מסך ${idx + 1}`}
+                            loading="lazy"
+                            decoding="async"
+                            className="max-w-full max-h-full object-contain"
+                          />
+                          <span className="absolute inset-0 bg-slate-900/40 opacity-0 group-hover/vthumb:opacity-100 flex items-center justify-center transition">
+                            <Maximize2 className="w-4 h-4 text-white" />
+                          </span>
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                )}
+              </div>
+
+              {/* Modal Footer */}
+              <div className="flex flex-wrap items-center justify-between gap-2 px-5 sm:px-6 py-3.5 bg-slate-50 dark:bg-slate-950 border-t border-slate-200 dark:border-slate-800 shrink-0">
+                <div className="flex items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const targetId = viewingIssue.id;
+                      const commentCount = viewingIssue.comments.length;
+                      setViewingIssueId(null);
+                      setExpandedRowId(targetId);
+                      markIssueCommentsRead(targetId, commentCount);
+                    }}
+                    className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-xl border border-indigo-200 dark:border-indigo-800 bg-indigo-50/80 dark:bg-indigo-950/60 hover:bg-indigo-100 dark:hover:bg-indigo-900/60 text-indigo-700 dark:text-indigo-300 text-xs font-extrabold cursor-pointer transition"
+                  >
+                    <MessageSquare className="w-3.5 h-3.5" />
+                    <span>הערות והיסטוריה ({viewingIssue.comments.length})</span>
+                  </button>
+                  {canEdit && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        const target = viewingIssue;
+                        setViewingIssueId(null);
+                        onEditIssue(target);
+                      }}
+                      className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 hover:bg-slate-100 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 text-xs font-bold cursor-pointer transition"
+                    >
+                      <Edit3 className="w-3.5 h-3.5" />
+                      <span>ערוך תקלה</span>
+                    </button>
+                  )}
+                </div>
+
+                <button
+                  type="button"
+                  onClick={() => setViewingIssueId(null)}
+                  className="px-5 py-2 rounded-xl bg-slate-900 dark:bg-indigo-600 hover:bg-slate-800 dark:hover:bg-indigo-500 text-white text-xs font-extrabold cursor-pointer transition"
+                >
+                  סגור
+                </button>
+              </div>
+            </div>
+          </div>
+        );
+      })()}
     </div>
   );
 };
