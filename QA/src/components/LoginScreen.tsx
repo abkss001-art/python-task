@@ -131,7 +131,7 @@ export const LoginScreen: React.FC<LoginScreenProps> = ({
       firstName: fName,
       lastName: lName,
       fullName: cleanFullName,
-      role: isAdmin ? 'qa' : profile.role,
+      role: isAdmin ? 'admin' : profile.role,
       isAdmin,
       uid: profile.uid,
       email: profile.email,

@@ -306,12 +306,15 @@ export const IssueCard: React.FC<IssueCardProps> = ({
         {visibleComments.length > 0 ? (
           <div className="space-y-2 max-h-64 overflow-y-auto pl-1">
             {visibleComments.map((c) => {
-              const isDev = c.role === 'dev' || c.author.includes('מפתח');
+              const isCommentAdmin = c.role === 'admin' || c.author.includes('מנהל');
+              const isDev = !isCommentAdmin && (c.role === 'dev' || c.author.includes('מפתח'));
               return (
                 <div
                   key={c.id}
                   className={`p-3 rounded-xl border text-xs space-y-1.5 ${
-                    isDev
+                    isCommentAdmin
+                      ? 'bg-amber-50/50 dark:bg-amber-950/30 border-amber-200/80 dark:border-amber-800/60'
+                      : isDev
                       ? 'bg-purple-50/60 dark:bg-purple-950/40 border-purple-200/70 dark:border-purple-800/60'
                       : 'bg-white dark:bg-slate-900 border-slate-200/80 dark:border-slate-750'
                   }`}
@@ -321,12 +324,14 @@ export const IssueCard: React.FC<IssueCardProps> = ({
                       <span className="font-bold text-slate-900 dark:text-slate-100 rtl-safe">{c.author}</span>
                       <span
                         className={`px-1.5 py-0.2 rounded text-[10px] font-bold ${
-                          isDev
+                          isCommentAdmin
+                            ? 'bg-amber-100 dark:bg-amber-900/70 text-amber-800 dark:text-amber-200'
+                            : isDev
                             ? 'bg-purple-100 dark:bg-purple-900/70 text-purple-700 dark:text-purple-200'
                             : 'bg-sky-100 dark:bg-sky-900/70 text-sky-700 dark:text-sky-200'
                         }`}
                       >
-                        {isDev ? 'פיתוח' : 'QA'}
+                        {isCommentAdmin ? 'מנהל' : isDev ? 'פיתוח' : 'QA'}
                       </span>
                     </div>
                     <span className="text-[11px] text-slate-400 dark:text-slate-400 font-mono">

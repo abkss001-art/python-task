@@ -287,7 +287,7 @@ export function App() {
 
   const isAdmin = Boolean(authUser?.isAdmin);
   const currentUserName = authUser?.fullName || 'חבר צוות';
-  const currentUserRole = authUser?.role || 'qa';
+  const currentUserRole = isAdmin ? 'admin' : authUser?.role || 'qa';
   const userTeamTitle = isAdmin ? 'מנהל מערכת' : currentUserRole === 'dev' ? 'צוות פיתוח' : 'צוות בדיקות';
   const formattedUserDisplay = `${currentUserName} ${userTeamTitle}`;
   // QA testers and Admins can create/edit issues; Developers (1111) only update status and add comments
@@ -371,7 +371,7 @@ export function App() {
         firstName: parts[0] || profile.fullName,
         lastName: parts.slice(1).join(' ') || '',
         fullName: profile.fullName.trim(),
-        role: isServerAdmin ? 'qa' : profile.role,
+        role: isServerAdmin ? 'admin' : profile.role,
         isAdmin: isServerAdmin,
         uid: profile.uid,
         email: profile.email,
