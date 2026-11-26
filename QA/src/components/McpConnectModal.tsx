@@ -28,6 +28,7 @@ import {
   getMcpScriptDownloadUrl,
   maskMcpTokenForDisplay
 } from '../utils/mcpTokenUtils';
+import { useModalUx } from '../utils/modalViewportAndBack';
 
 interface McpConnectModalProps {
   currentUserName: string;
@@ -180,12 +181,14 @@ export const McpConnectModal: React.FC<McpConnectModalProps> = ({
         }
       ];
 
+  useModalUx(true, onClose);
+
   return (
     <div
-      className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/65 dark:bg-slate-950/80 backdrop-blur-xs p-3 sm:p-4 overflow-y-auto"
+      className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/65 dark:bg-slate-950/80 backdrop-blur-xs p-3 sm:p-4 overflow-hidden overscroll-none"
       dir="rtl"
     >
-      <div className="bg-white dark:bg-slate-900 rounded-3xl shadow-2xl border border-slate-200 dark:border-slate-800 w-full max-w-2xl overflow-hidden my-auto max-h-[92vh] flex flex-col animate-in fade-in zoom-in-95 duration-150">
+      <div className="bg-white dark:bg-slate-900 rounded-3xl shadow-2xl border border-slate-200 dark:border-slate-800 w-full max-w-2xl overflow-hidden my-auto max-h-[92dvh] flex flex-col animate-in fade-in zoom-in-95 duration-150">
         {/* Header */}
         <div className="flex items-center justify-between gap-2 px-5 sm:px-6 py-4 bg-gradient-to-l from-slate-950 via-indigo-950 to-violet-950 text-white border-b border-slate-800 shrink-0">
           <div className="flex items-center gap-3 min-w-0">
@@ -215,7 +218,7 @@ export const McpConnectModal: React.FC<McpConnectModalProps> = ({
         </div>
 
         {/* Body */}
-        <div className="p-5 sm:p-6 space-y-4 overflow-y-auto flex-1">
+        <div className="p-5 sm:p-6 space-y-4 min-h-0 overflow-y-auto flex-1 modal-scroll-area">
           {/* Personal Permissions & What This Gives You Card */}
           <div className="p-3.5 rounded-2xl bg-indigo-50/70 dark:bg-indigo-950/40 border border-indigo-200 dark:border-indigo-800/80 flex items-start gap-3">
             <ShieldCheck className="w-5 h-5 text-indigo-600 dark:text-indigo-400 shrink-0 mt-0.5" />

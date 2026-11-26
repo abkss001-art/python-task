@@ -11,6 +11,7 @@ import {
   Save,
   Info
 } from 'lucide-react';
+import { useModalUx } from '../utils/modalViewportAndBack';
 
 interface AdminSystemManageModalProps {
   systemName: string;
@@ -67,12 +68,20 @@ export const AdminSystemManageModal: React.FC<AdminSystemManageModalProps> = ({
     onClose();
   };
 
+  useModalUx(true, () => {
+    if (confirmDelete) {
+      setConfirmDelete(false);
+    } else {
+      onClose();
+    }
+  });
+
   return (
     <div
-      className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/60 dark:bg-slate-950/80 backdrop-blur-xs p-3 sm:p-4 overflow-y-auto"
+      className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/60 dark:bg-slate-950/80 backdrop-blur-xs p-3 sm:p-4 overflow-hidden overscroll-none"
       dir="rtl"
     >
-      <div className="bg-white dark:bg-slate-900 rounded-3xl shadow-2xl border border-slate-200 dark:border-slate-800 w-full max-w-lg overflow-hidden my-auto max-h-[92vh] flex flex-col">
+      <div className="bg-white dark:bg-slate-900 rounded-3xl shadow-2xl border border-slate-200 dark:border-slate-800 w-full max-w-lg overflow-hidden my-auto max-h-[92dvh] flex flex-col">
         {/* Header */}
         <div className="flex items-center justify-between px-6 py-4 bg-gradient-to-r from-slate-950 via-indigo-950 to-slate-900 text-white shrink-0">
           <div className="flex items-center gap-3">
@@ -102,7 +111,7 @@ export const AdminSystemManageModal: React.FC<AdminSystemManageModalProps> = ({
           </button>
         </div>
 
-        <div className="p-5 sm:p-6 space-y-5 overflow-y-auto flex-1">
+        <div className="p-5 sm:p-6 space-y-5 min-h-0 overflow-y-auto flex-1 modal-scroll-area">
           {errorMsg && (
             <div className="p-3.5 rounded-2xl bg-red-50 dark:bg-red-950/60 border border-red-200 dark:border-red-800 text-red-800 dark:text-red-300 text-xs font-bold flex items-center gap-2">
               <AlertTriangle className="w-4 h-4 text-red-600 dark:text-red-400 shrink-0" />

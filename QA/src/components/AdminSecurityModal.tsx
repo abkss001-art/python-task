@@ -16,6 +16,7 @@ import {
 import { ServerAuditLogEntry } from '../types/std';
 import { syncService } from '../services/syncService';
 import { getSavedGoogleDriveUrl } from '../services/googleDriveService';
+import { useModalUx } from '../utils/modalViewportAndBack';
 
 interface AdminSecurityModalProps {
   onBack?: () => void;
@@ -100,12 +101,14 @@ export const AdminSecurityModal: React.FC<AdminSecurityModalProps> = ({ onBack, 
     }
   };
 
+  useModalUx(true, onBack || onClose);
+
   return (
     <div
-      className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/65 dark:bg-slate-950/80 backdrop-blur-xs p-3 sm:p-4 overflow-y-auto"
+      className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/65 dark:bg-slate-950/80 backdrop-blur-xs p-3 sm:p-4 overflow-hidden overscroll-none"
       dir="rtl"
     >
-      <div className="bg-white dark:bg-slate-900 rounded-2xl shadow-2xl border border-slate-200 dark:border-slate-800 w-full max-w-2xl overflow-hidden my-auto max-h-[92vh] flex flex-col">
+      <div className="bg-white dark:bg-slate-900 rounded-2xl shadow-2xl border border-slate-200 dark:border-slate-800 w-full max-w-2xl overflow-hidden my-auto max-h-[92dvh] flex flex-col">
         {/* Header */}
         <div className="flex items-center justify-between gap-2 px-5 sm:px-6 py-4 bg-gradient-to-l from-slate-900 via-indigo-950 to-slate-900 text-white border-b border-slate-800 shrink-0">
           <div className="flex items-center gap-2.5 min-w-0">
@@ -139,7 +142,7 @@ export const AdminSecurityModal: React.FC<AdminSecurityModalProps> = ({ onBack, 
           </button>
         </div>
 
-        <div className="p-5 sm:p-6 space-y-5 overflow-y-auto flex-1">
+        <div className="p-5 sm:p-6 space-y-5 min-h-0 overflow-y-auto flex-1 modal-scroll-area">
           {/* Active Security Layers Status */}
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
             <div className="p-3 rounded-xl border border-emerald-200 dark:border-emerald-800/70 bg-emerald-50/70 dark:bg-emerald-950/30 flex items-start gap-2.5">

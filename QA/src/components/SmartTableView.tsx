@@ -34,6 +34,7 @@ import {
   TeamRole
 } from '../types/std';
 import { PlatformIcon, formatHebrewDateTime } from './IssueCard';
+import { useModalUx } from '../utils/modalViewportAndBack';
 import {
   extractImagesFromClipboardEvent,
   processScreenshotFile
@@ -99,6 +100,8 @@ export const SmartTableView: React.FC<SmartTableViewProps> = ({
     () => (viewingIssueId ? issues.find((i) => i.id === viewingIssueId) || null : null),
     [issues, viewingIssueId]
   );
+
+  useModalUx(Boolean(viewingIssue), () => setViewingIssueId(null));
 
   useEffect(() => {
     if (!viewingIssueId) return;
@@ -797,12 +800,12 @@ export const SmartTableView: React.FC<SmartTableViewProps> = ({
 
         return (
           <div
-            className="fixed inset-0 z-40 flex items-center justify-center bg-slate-900/65 dark:bg-slate-950/80 backdrop-blur-xs p-3 sm:p-4 overflow-y-auto"
+            className="fixed inset-0 z-40 flex items-center justify-center bg-slate-900/65 dark:bg-slate-950/80 backdrop-blur-xs p-3 sm:p-4 overflow-hidden overscroll-none"
             dir="rtl"
             onClick={() => setViewingIssueId(null)}
           >
             <div
-              className="bg-white dark:bg-slate-900 rounded-3xl shadow-2xl border border-slate-200 dark:border-slate-800 w-full max-w-2xl overflow-hidden my-auto max-h-[90vh] flex flex-col animate-in fade-in zoom-in-95 duration-150"
+              className="bg-white dark:bg-slate-900 rounded-3xl shadow-2xl border border-slate-200 dark:border-slate-800 w-full max-w-2xl overflow-hidden my-auto max-h-[90dvh] flex flex-col animate-in fade-in zoom-in-95 duration-150"
               onClick={(e) => e.stopPropagation()}
             >
               {/* Modal Header */}
@@ -846,7 +849,7 @@ export const SmartTableView: React.FC<SmartTableViewProps> = ({
               </div>
 
               {/* Modal Body */}
-              <div className="p-5 sm:p-6 space-y-4 overflow-y-auto flex-1">
+              <div className="p-5 sm:p-6 space-y-4 min-h-0 overflow-y-auto flex-1 modal-scroll-area">
                 {/* Status + Metadata Strip */}
                 <div className="flex flex-wrap items-center justify-between gap-2.5 p-3 rounded-2xl bg-slate-50 dark:bg-slate-800/60 border border-slate-200/80 dark:border-slate-700/80">
                   <div className="flex items-center gap-2">

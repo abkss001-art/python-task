@@ -74,11 +74,10 @@ import {
   computeFullNameHash,
   computeUsernameHash,
   isValidEmailAddress,
-  isValidUsername,
   maskEmailForDisplay,
   MAX_JOIN_REJECTIONS,
-  normalizeLoginEmail,
-  normalizeUsername
+  normalizeFullNameKey,
+  normalizeLoginEmail
 } from '../utils/authHelpers';
 import {
   encodeMcpPersonalToken,
@@ -1586,13 +1585,13 @@ class RealtimeSyncService {
   }
 
   private async lookupUsernameMapping(
-    rawUsername: string
+    rawIdentifier: string
   ): Promise<{ email: string; uid: string } | null> {
     if (!this.activeFirebaseConfig) return null;
-    const cleanUser = normalizeUsername(rawUsername);
-    if (!cleanUser || cleanUser.includes('@')) return null;
+    const cleanName = normalizeFullNameKey(rawIdentifier);
+    if (!cleanName || cleanName.includes('@')) return null;
     try {
-      const usernameHash = await computeUsernameHash(cleanUser);
+      const usernameHash = await computeUsernameHash(cleanName);
       if (!usernameHash) return null;
 
       if (this.activeFirebaseConfig.mode === 'firestore' && this.firestore) {
@@ -1660,16 +1659,16 @@ class RealtimeSyncService {
   }
 
   private async registerUsernameMapping(
-    rawUsername: string,
+    rawFullName: string,
     email: string,
     uid: string
   ): Promise<void> {
     if (!this.activeFirebaseConfig || !uid) return;
-    const cleanUser = normalizeUsername(rawUsername);
+    const cleanName = normalizeFullNameKey(rawFullName);
     const cleanEmail = String(email || '').trim().toLowerCase();
-    if (!isValidUsername(cleanUser) || !isValidEmailAddress(cleanEmail)) return;
+    if (cleanName.length < 2 || !isValidEmailAddress(cleanEmail)) return;
     try {
-      const usernameHash = await computeUsernameHash(cleanUser);
+      const usernameHash = await computeUsernameHash(cleanName);
       if (!usernameHash) return;
       const entry = { email: cleanEmail, uid, updatedAt: Date.now() };
       if (this.activeFirebaseConfig.mode === 'firestore' && this.firestore) {
@@ -1682,33 +1681,79 @@ class RealtimeSyncService {
     }
   }
 
+  private async syncUsernameMappingsFromProfiles(
+    profiles: Iterable<FirebaseUserProfile>
+  ): Promise<void> {
+    if (!this.activeFirebaseConfig) return;
+    try {
+      const now = Date.now();
+      const nextMap: Record<string, { email: string; uid: string; updatedAt: number }> = {};
+      for (const p of profiles) {
+        if (!p?.fullName || !p?.uid || !p?.email || !isValidEmailAddress(p.email)) continue;
+        const hash = await computeUsernameHash(p.fullName);
+        if (hash) {
+          nextMap[hash] = {
+            email: p.email.trim().toLowerCase(),
+            uid: p.uid,
+            updatedAt: now
+          };
+        }
+      }
+      if (this.activeFirebaseConfig.mode === 'firestore' && this.firestore) {
+        const existingSnap = await getDocs(collection(this.firestore, 'std_usernames'));
+        const existingIds = new Set<string>();
+        existingSnap.forEach((d) => existingIds.add(d.id));
+        for (const [hash, entry] of Object.entries(nextMap)) {
+          await setDoc(doc(this.firestore, 'std_usernames', hash), entry).catch(() => {});
+        }
+        for (const oldHash of existingIds) {
+          if (!nextMap[oldHash]) {
+            await deleteDoc(doc(this.firestore, 'std_usernames', oldHash)).catch(() => {});
+          }
+        }
+      } else if (this.rtdb) {
+        await set(
+          ref(this.rtdb, 'std_usernames'),
+          Object.keys(nextMap).length > 0 ? nextMap : null
+        );
+      }
+    } catch {
+      // non-fatal
+    }
+  }
+
   private async resolveLoginIdentifierToEmail(rawInput: string): Promise<{
     email: string;
-    resolvedViaUsername: boolean;
-    username?: string;
+    resolvedViaName: boolean;
+    notFoundByName?: boolean;
   }> {
-    const cleaned = String(rawInput || '').trim().replace(/\s+/g, '');
-    if (!cleaned) {
-      return { email: '', resolvedViaUsername: false };
+    const trimmed = String(rawInput || '').trim();
+    if (!trimmed) {
+      return { email: '', resolvedViaName: false };
     }
-    if (cleaned.includes('@')) {
-      return { email: cleaned.toLowerCase(), resolvedViaUsername: false };
+    if (trimmed.includes('@')) {
+      return { email: trimmed.replace(/\s+/g, '').toLowerCase(), resolvedViaName: false };
     }
-    const mapping = await this.lookupUsernameMapping(cleaned);
+    // 1. Primary lookup: Full Name -> Email via privacy-preserving SHA-256 index
+    const mapping = await this.lookupUsernameMapping(trimmed);
     if (mapping?.email) {
       return {
         email: mapping.email,
-        resolvedViaUsername: true,
-        username: normalizeUsername(cleaned)
+        resolvedViaName: true
       };
     }
-    // Legacy compatibility: allow existing Gmail users who type only the prefix before @gmail.com
-    const { email } = normalizeLoginEmail(cleaned);
-    return { email, resolvedViaUsername: false };
+    // 2. Legacy compatibility: single ASCII word without spaces (e.g. "abkss001") -> @gmail.com
+    const compact = trimmed.replace(/\s+/g, '');
+    if (/^[a-zA-Z0-9._-]+$/.test(trimmed)) {
+      const { email } = normalizeLoginEmail(compact);
+      return { email, resolvedViaName: false };
+    }
+    // 3. Full name (e.g. Hebrew name with space) not found in std_usernames
+    return { email: '', resolvedViaName: false, notFoundByName: true };
   }
 
   public async signInWithFirebaseEmail(
-    emailOrUsername: string,
+    emailOrFullName: string,
     password: string
   ): Promise<{
     ok: boolean;
@@ -1723,10 +1768,16 @@ class RealtimeSyncService {
     if (!this.firebaseAuth) {
       return { ok: false, error: 'שירות ההתחברות אינו זמין כרגע.' };
     }
-    const resolved = await this.resolveLoginIdentifierToEmail(emailOrUsername);
+    const resolved = await this.resolveLoginIdentifierToEmail(emailOrFullName);
+    if (resolved.notFoundByName) {
+      return {
+        ok: false,
+        error: 'לא נמצא חשבון עבור השם המלא שהוזן — בדוק את האיות או התחבר עם כתובת האימייל.'
+      };
+    }
     const normalizedEmail = resolved.email;
     if (!normalizedEmail) {
-      return { ok: false, error: 'נא להזין שם משתמש או אימייל.' };
+      return { ok: false, error: 'נא להזין שם מלא או אימייל.' };
     }
     try {
       const cred = await signInWithEmailAndPassword(this.firebaseAuth, normalizedEmail, password);
@@ -1742,6 +1793,14 @@ class RealtimeSyncService {
       const profile = profileRes.profile;
       if (profile) {
         this.firebaseUserProfile = profile;
+        // Opportunistically ensure existing user's fullName is indexed in std_usernames for future Full-Name logins
+        if (profile.fullName && (profile.email || cred.user.email)) {
+          this.registerUsernameMapping(
+            profile.fullName,
+            profile.email || cred.user.email || '',
+            cred.user.uid
+          ).catch(() => {});
+        }
         this.detachWaitingRoomListeners();
         if (this.activeFirebaseConfig) {
           this.attachFirebaseDataListeners(this.activeFirebaseConfig);
@@ -1775,7 +1834,7 @@ class RealtimeSyncService {
     } catch (err: any) {
       const code = String(err?.code || '');
       if (code === 'auth/invalid-credential' || code === 'auth/wrong-password' || code === 'auth/user-not-found') {
-        return { ok: false, error: 'שם משתמש / אימייל או סיסמה שגויים.' };
+        return { ok: false, error: 'שם מלא / אימייל או סיסמה שגויים.' };
       }
       if (code === 'auth/invalid-email') {
         return { ok: false, error: 'כתובת האימייל אינה תקינה.' };
@@ -1791,34 +1850,40 @@ class RealtimeSyncService {
   }
 
   public async sendFirebasePasswordReset(
-    rawEmailOrUsername: string
+    rawEmailOrFullName: string
   ): Promise<{
     ok: boolean;
     normalizedEmail?: string;
-    resolvedViaUsername?: boolean;
+    resolvedViaName?: boolean;
     maskedEmail?: string;
     error?: string;
   }> {
     if (!this.firebaseAuth) {
       return { ok: false, error: 'שירות איפוס הסיסמה אינו זמין כרגע.' };
     }
-    const resolved = await this.resolveLoginIdentifierToEmail(rawEmailOrUsername);
+    const resolved = await this.resolveLoginIdentifierToEmail(rawEmailOrFullName);
+    if (resolved.notFoundByName) {
+      return {
+        ok: false,
+        error: 'לא נמצא חשבון עבור השם המלא שהוזן — בדוק את האיות או הזן את כתובת האימייל שלך.'
+      };
+    }
     const email = resolved.email;
     if (!email || !email.includes('@')) {
-      return { ok: false, error: 'נא להזין תחילה שם משתמש או כתובת אימייל לאיפוס סיסמה.' };
+      return { ok: false, error: 'נא להזין תחילה שם מלא או כתובת אימייל לאיפוס סיסמה.' };
     }
     try {
       await sendPasswordResetEmail(this.firebaseAuth, email);
       return {
         ok: true,
         normalizedEmail: email,
-        resolvedViaUsername: resolved.resolvedViaUsername,
+        resolvedViaName: resolved.resolvedViaName,
         maskedEmail: maskEmailForDisplay(email)
       };
     } catch (err: any) {
       const code = String(err?.code || '');
       if (code === 'auth/user-not-found') {
-        return { ok: false, error: 'לא נמצא חשבון רשום עבור שם המשתמש או האימייל הזה.' };
+        return { ok: false, error: 'לא נמצא חשבון רשום עבור השם או האימייל הזה.' };
       }
       if (code === 'auth/invalid-email') {
         return { ok: false, error: 'כתובת האימייל אינה תקינה.' };
@@ -1902,7 +1967,6 @@ class RealtimeSyncService {
     return {
       uid: String(raw.uid || uid),
       fullName: String(raw.fullName).trim(),
-      ...(raw.username ? { username: normalizeUsername(String(raw.username)) } : {}),
       email: String(raw.email || '').trim(),
       status: rejectCount >= MAX_JOIN_REJECTIONS && status !== 'approved' ? 'blocked' : status,
       rejectCount,
@@ -2157,8 +2221,7 @@ class RealtimeSyncService {
   public async registerAndSubmitJoinRequest(
     fullName: string,
     rawEmail: string,
-    password: string,
-    rawUsername?: string
+    password: string
   ): Promise<{
     ok: boolean;
     request?: JoinRequest;
@@ -2169,36 +2232,28 @@ class RealtimeSyncService {
     if (!this.firebaseAuth || !this.activeFirebaseConfig) {
       return { ok: false, error: 'שירות ההרשמה אינו זמין כרגע.' };
     }
-    const cleanName = fullName.trim().slice(0, 120);
+    const cleanName = fullName.trim().replace(/\s+/g, ' ').slice(0, 120);
     const cleanEmail = String(rawEmail || '').trim().replace(/\s+/g, '').toLowerCase();
-    const cleanUsername = rawUsername !== undefined ? normalizeUsername(rawUsername) : '';
     if (cleanName.length < 2) {
-      return { ok: false, error: 'נא להזין שם מלא (לפחות 2 תווים).' };
-    }
-    if (rawUsername !== undefined && !isValidUsername(cleanUsername)) {
-      return {
-        ok: false,
-        error: 'שם המשתמש חייב להכיל 3–32 תווים באנגלית, ספרות, נקודה, קו תחתון או מקף (ללא רווחים או @).'
-      };
+      return { ok: false, error: 'נא להזין שם מלא (פרטי ומשפחה, לפחות 2 תווים).' };
     }
     if (!isValidEmailAddress(cleanEmail)) {
       return {
         ok: false,
-        error: 'יש להכניס כתובת אימייל מלאה ותקינה (למשל name@gmail.com) למקרה שיידרש שחזור סיסמה.'
+        error: 'יש להכניס כתובת מייל תקינה (למשל name@gmail.com) למקרה שיידרש שחזור סיסמה.'
       };
     }
     if (!password || password.length < 6) {
       return { ok: false, error: 'הסיסמה חייבת להכיל לפחות 6 תווים.' };
     }
 
-    if (cleanUsername) {
-      const existingUsername = await this.lookupUsernameMapping(cleanUsername);
-      if (existingUsername && existingUsername.email.toLowerCase() !== cleanEmail) {
-        return {
-          ok: false,
-          error: `שם המשתמש "${cleanUsername}" כבר תפוס במערכת — נא לבחור שם משתמש אחר.`
-        };
-      }
+    // Check pre-auth if this fullName is already mapped to another account's email
+    const existingByName = await this.lookupUsernameMapping(cleanName);
+    if (existingByName && existingByName.email.toLowerCase() !== cleanEmail) {
+      return {
+        ok: false,
+        error: `השם "${cleanName}" כבר קיים במערכת תחת חשבון אחר — לא ניתן להירשם שוב עם אותו שם. עבור ללשונית "התחברות" או הוסף פרט מזהה אם מדובר בעובד אחר.`
+      };
     }
 
     let signedInUser: User | null = null;
@@ -2210,8 +2265,6 @@ class RealtimeSyncService {
     } catch (err: any) {
       const code = String(err?.code || '');
       if (code === 'auth/email-already-in-use') {
-        // Attempt sign-in so returning waiting/rejected users enter their server-enforced Waiting Room,
-        // while blocking already-active approved accounts from re-registering via the Register tab!
         try {
           const cred = await signInWithEmailAndPassword(this.firebaseAuth, cleanEmail, password);
           signedInUser = cred.user;
@@ -2250,9 +2303,11 @@ class RealtimeSyncService {
 
     const existingReq = await this.fetchOwnJoinRequest(signedInUser.uid);
     if (existingReq && existingReq.status !== 'approved') {
-      if (cleanUsername) {
-        await this.registerUsernameMapping(cleanUsername, signedInUser.email || cleanEmail, signedInUser.uid);
-      }
+      await this.registerUsernameMapping(
+        existingReq.fullName || cleanName,
+        signedInUser.email || cleanEmail,
+        signedInUser.uid
+      );
       this.pendingJoinRequest = existingReq;
       this.attachWaitingRoomListeners(signedInUser.uid);
       this.notifyPendingJoinRequestListeners();
@@ -2273,15 +2328,13 @@ class RealtimeSyncService {
       };
     }
 
-    if (cleanUsername) {
-      await this.registerUsernameMapping(cleanUsername, signedInUser.email || cleanEmail, signedInUser.uid);
-    }
+    // Index fullName -> email so user can sign in & reset password using their full name!
+    await this.registerUsernameMapping(cleanName, signedInUser.email || cleanEmail, signedInUser.uid);
 
     const now = Date.now();
     const newReq: JoinRequest = {
       uid: signedInUser.uid,
       fullName: cleanName,
-      ...(cleanUsername ? { username: cleanUsername } : {}),
       email: signedInUser.email || cleanEmail,
       status: 'pending',
       rejectCount: 0,
@@ -2476,8 +2529,8 @@ class RealtimeSyncService {
         await set(ref(this.rtdb, `std_join_requests/${req.uid}`), stripUndefinedDeep(updatedReq));
       }
       await this.registerTakenNameHash(newProfile.fullName, req.uid);
-      if (req.username && req.email) {
-        await this.registerUsernameMapping(req.username, req.email, req.uid);
+      if (newProfile.fullName && req.email) {
+        await this.registerUsernameMapping(newProfile.fullName, req.email, req.uid);
       }
       const roleHe = role === 'dev' ? 'מפתח (Dev)' : 'בודק תוכנה (QA)';
       this.recordAuditEvent(
@@ -2625,6 +2678,9 @@ class RealtimeSyncService {
         return { ok: false, error: 'מסד הנתונים אינו מחובר.' };
       }
       await this.registerTakenNameHash(profile.fullName, profile.uid);
+      if (profile.email) {
+        await this.registerUsernameMapping(profile.fullName, profile.email, profile.uid);
+      }
       this.firebaseUserProfile = profile;
       this.attachFirebaseDataListeners(this.activeFirebaseConfig);
       this.notifyAuthListeners();
@@ -2701,6 +2757,7 @@ class RealtimeSyncService {
         await set(ref(this.rtdb, `std_users/${newUid}`), stripUndefinedDeep(profile));
       }
       await this.registerTakenNameHash(profile.fullName, newUid);
+      await this.registerUsernameMapping(profile.fullName, cleanEmail, newUid);
 
       this.recordAuditEvent(
         `יצירת חשבון Firebase Auth חדש (${role}) עבור ${cleanName}`,
@@ -2913,6 +2970,9 @@ class RealtimeSyncService {
       }
       this.firebaseUserProfile = updatedProfile;
       await this.registerTakenNameHash(cleanName, uid);
+      if (updatedProfile.email) {
+        await this.registerUsernameMapping(cleanName, updatedProfile.email, uid);
+      }
       this.notifyAuthListeners();
       this.recordAuditEvent(`עדכון שם מנהל מ-"${oldName}" ל-"${cleanName}"`, 'team', updatedProfile.email || uid);
       return { ok: true, oldName, newName: cleanName };
@@ -3668,8 +3728,9 @@ class RealtimeSyncService {
         );
       }
 
-      // Keep privacy-preserving SHA-256 taken-names index strictly synchronized with active std_users
+      // Keep privacy-preserving SHA-256 taken-names & login-name indexes strictly synchronized with active std_users
       await this.syncTakenNamesIndexFromProfiles(survivingProfiles.values());
+      await this.syncUsernameMappingsFromProfiles(survivingProfiles.values());
     } catch {
       // ignore background profile sync error
     }

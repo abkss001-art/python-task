@@ -16,6 +16,7 @@ import {
 } from 'lucide-react';
 import { PlatformQuotaSnapshot } from '../types/std';
 import { syncService } from '../services/syncService';
+import { useModalUx } from '../utils/modalViewportAndBack';
 
 interface AdminQuotaModalProps {
   onBack?: () => void;
@@ -73,6 +74,8 @@ export const AdminQuotaModal: React.FC<AdminQuotaModalProps> = ({ onBack, onClos
   const [snapshot, setSnapshot] = useState<PlatformQuotaSnapshot | null>(null);
   const [isLoading, setIsLoading] = useState<boolean>(true);
   const [error, setError] = useState<string | null>(null);
+
+  useModalUx(true, onBack || onClose);
 
   const fbConfig = syncService.getActiveFirebaseConfig();
   const projectId = fbConfig?.projectId || 'tzavman-qa';
@@ -142,10 +145,10 @@ export const AdminQuotaModal: React.FC<AdminQuotaModalProps> = ({ onBack, onClos
 
   return (
     <div
-      className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/65 dark:bg-slate-950/80 backdrop-blur-xs p-3 sm:p-4 overflow-y-auto"
+      className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/65 dark:bg-slate-950/80 backdrop-blur-xs p-3 sm:p-4 overflow-hidden overscroll-none"
       dir="rtl"
     >
-      <div className="bg-white dark:bg-slate-900 rounded-2xl shadow-2xl border border-slate-200 dark:border-slate-800 w-full max-w-2xl overflow-hidden my-auto max-h-[92vh] flex flex-col">
+      <div className="bg-white dark:bg-slate-900 rounded-2xl shadow-2xl border border-slate-200 dark:border-slate-800 w-full max-w-2xl overflow-hidden my-auto max-h-[92dvh] flex flex-col">
         {/* Header */}
         <div className="flex items-center justify-between gap-2 px-5 sm:px-6 py-4 bg-gradient-to-l from-slate-900 via-cyan-950 to-slate-900 text-white border-b border-slate-800 shrink-0">
           <div className="flex items-center gap-2.5 min-w-0">
@@ -192,7 +195,7 @@ export const AdminQuotaModal: React.FC<AdminQuotaModalProps> = ({ onBack, onClos
         </div>
 
         {/* Body */}
-        <div className="p-5 sm:p-6 space-y-5 overflow-y-auto flex-1">
+        <div className="p-5 sm:p-6 space-y-5 overflow-y-auto min-h-0 flex-1 modal-scroll-area">
           {error && (
             <div className="p-3.5 rounded-xl bg-rose-50 dark:bg-rose-950/40 border border-rose-200 dark:border-rose-800 text-xs text-rose-800 dark:text-rose-300 font-semibold">
               {error}

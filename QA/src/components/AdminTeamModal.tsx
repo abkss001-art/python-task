@@ -32,6 +32,7 @@ import { TeamMember } from '../utils/teamMembers';
 import { FirebaseUserProfile, TeamRole } from '../types/std';
 import { syncService } from '../services/syncService';
 import { buildWhatsAppInviteMessage, normalizeLoginEmail } from '../utils/authHelpers';
+import { useMobileBackHandler, useModalUx } from '../utils/modalViewportAndBack';
 
 interface AdminTeamModalProps {
   systems: string[];
@@ -144,6 +145,9 @@ export const AdminTeamModal: React.FC<AdminTeamModalProps> = ({
 
   // Deletion confirmation warning state
   const [memberToDelete, setMemberToDelete] = useState<TeamMember | null>(null);
+
+  useModalUx(true, onBack || onClose);
+  useMobileBackHandler(Boolean(memberToDelete), () => setMemberToDelete(null));
 
   useEffect(() => {
     if (systemFilter !== 'ALL' && !systems.includes(systemFilter)) {
@@ -446,10 +450,10 @@ export const AdminTeamModal: React.FC<AdminTeamModalProps> = ({
 
   return (
     <div
-      className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/60 dark:bg-slate-950/80 backdrop-blur-xs p-3 sm:p-4 overflow-y-auto"
+      className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/60 dark:bg-slate-950/80 backdrop-blur-xs p-3 sm:p-4 overflow-hidden overscroll-none"
       dir="rtl"
     >
-      <div className="bg-white dark:bg-slate-900 rounded-3xl shadow-2xl border border-slate-200 dark:border-slate-800 w-full max-w-3xl overflow-hidden my-auto max-h-[92vh] flex flex-col animate-in fade-in zoom-in-95 duration-150">
+      <div className="bg-white dark:bg-slate-900 rounded-3xl shadow-2xl border border-slate-200 dark:border-slate-800 w-full max-w-3xl overflow-hidden my-auto max-h-[92dvh] flex flex-col animate-in fade-in zoom-in-95 duration-150">
         {/* Modal Header */}
         <div className="flex items-center justify-between gap-2 px-5 sm:px-6 py-4 bg-gradient-to-l from-slate-950 via-indigo-950 to-slate-900 text-white border-b border-slate-800 shrink-0">
           <div className="flex items-center gap-2.5 min-w-0">
@@ -524,7 +528,7 @@ export const AdminTeamModal: React.FC<AdminTeamModalProps> = ({
         </div>
 
         {/* Scrollable Content */}
-        <div className="p-5 sm:p-6 space-y-4 overflow-y-auto flex-1">
+        <div className="p-5 sm:p-6 space-y-4 overflow-y-auto min-h-0 flex-1 modal-scroll-area">
           {pendingJoinRequestsCount > 0 && onOpenJoinRequests && (
             <div className="p-3.5 rounded-2xl bg-rose-50 dark:bg-rose-950/50 border border-rose-200 dark:border-rose-800 flex items-center justify-between gap-3">
               <div className="flex items-center gap-2 text-xs font-extrabold text-rose-900 dark:text-rose-200">
@@ -1240,7 +1244,7 @@ export const AdminTeamModal: React.FC<AdminTeamModalProps> = ({
                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-1">
                     <div>
                       <label className="block text-xs font-bold text-slate-700 dark:text-slate-200 mb-1.5">
-                        אימייל או שם משתמש להתחברות
+                        כתובת אימייל (לשחזור סיסמה ולהתחברות)
                       </label>
                       <div className="relative">
                         <Mail className="w-4 h-4 text-slate-400 absolute right-3 top-1/2 -translate-y-1/2 pointer-events-none" />
@@ -1250,7 +1254,7 @@ export const AdminTeamModal: React.FC<AdminTeamModalProps> = ({
                           dir="ltr"
                           value={newAuthEmail}
                           onChange={(e) => setNewAuthEmail(e.target.value)}
-                          placeholder="david או member@gmail.com"
+                          placeholder="member@gmail.com"
                           className="w-full pr-9 pl-3 py-2.5 rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-950 text-xs sm:text-sm font-mono text-left text-slate-900 dark:text-slate-100 focus:outline-none focus:ring-2 focus:ring-indigo-500/30 focus:border-indigo-500"
                         />
                       </div>
@@ -1497,10 +1501,10 @@ export const AdminTeamModal: React.FC<AdminTeamModalProps> = ({
       {/* Warning Confirmation Modal Before Deleting a Member */}
       {memberToDelete && (
         <div
-          className="fixed inset-0 z-60 flex items-center justify-center bg-slate-950/70 backdrop-blur-xs p-4"
+          className="fixed inset-0 z-60 flex items-center justify-center bg-slate-950/70 backdrop-blur-xs p-4 overflow-hidden overscroll-none"
           dir="rtl"
         >
-          <div className="bg-white dark:bg-slate-900 rounded-2xl shadow-2xl border border-slate-200 dark:border-slate-800 w-full max-w-md overflow-hidden p-6 space-y-4 animate-in fade-in zoom-in-95">
+          <div className="bg-white dark:bg-slate-900 rounded-2xl shadow-2xl border border-slate-200 dark:border-slate-800 w-full max-w-md max-h-[90dvh] overflow-y-auto modal-scroll-area p-6 space-y-4 animate-in fade-in zoom-in-95">
             <div className="flex items-start gap-3.5">
               <div className="w-11 h-11 rounded-2xl bg-red-50 dark:bg-red-950/50 border border-red-200 dark:border-red-900 flex items-center justify-center text-red-600 dark:text-red-400 shrink-0">
                 <AlertTriangle className="w-6 h-6" />

@@ -99,6 +99,7 @@ import {
 } from 'lucide-react';
 import { computeUserAuthSignature } from './utils/securityUtils';
 import { envStorageKey } from './utils/appEnv';
+import { useMobileBackHandler, useModalUx } from './utils/modalViewportAndBack';
 
 const AUTH_STORAGE_KEY = envStorageKey('std_qa_auth_user_v1');
 const LAST_ACTIVE_SYSTEM_KEY = envStorageKey('std_qa_last_active_system_v1');
@@ -277,6 +278,22 @@ export function App() {
     }
     return () => document.removeEventListener('mousedown', handleClickOutside);
   }, [isSystemSwitcherOpen]);
+
+  // Mobile Back button / swipe-back support for system view & App-level inline modals
+  useMobileBackHandler(
+    Boolean(authUser && activeSystem && activeSystem !== 'HOME'),
+    () => handleSelectSystem('HOME')
+  );
+  useModalUx(isInstallModalOpen, () => setIsInstallModalOpen(false));
+  useModalUx(Boolean(issueToDelete), () => setIssueToDelete(null));
+  useModalUx(isArchiveModalOpen, () => {
+    setIsArchiveModalOpen(false);
+    if (archiveReturnToTools) {
+      setArchiveReturnToTools(false);
+      setAdminToolsInitialView('main');
+      setIsAdminToolsOpen(true);
+    }
+  });
   const prevIssuesRef = useRef<StdIssue[]>([]);
   const hasLoadedInitialStateRef = useRef<boolean>(false);
 
@@ -1712,10 +1729,10 @@ export function App() {
     if (!isInstallModalOpen) return null;
     return (
       <div
-        className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/60 dark:bg-slate-950/80 backdrop-blur-xs p-4"
+        className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/60 dark:bg-slate-950/80 backdrop-blur-xs p-3 sm:p-4 overflow-hidden overscroll-none"
         dir="rtl"
       >
-        <div className="bg-white dark:bg-slate-900 rounded-2xl shadow-2xl border border-slate-200 dark:border-slate-800 w-full max-w-md overflow-hidden p-5 sm:p-6 space-y-4 max-h-[90vh] overflow-y-auto">
+        <div className="bg-white dark:bg-slate-900 rounded-2xl shadow-2xl border border-slate-200 dark:border-slate-800 w-full max-w-md p-5 sm:p-6 space-y-4 max-h-[90dvh] overflow-y-auto modal-scroll-area">
           <div className="flex items-start justify-between gap-3">
             <div className="flex items-center gap-3">
               <div
@@ -2128,8 +2145,8 @@ export function App() {
           onFirebaseEmailLogin={(email, password) =>
             syncService.signInWithFirebaseEmail(email, password)
           }
-          onRegisterJoinRequest={(fullName, email, password, username) =>
-            syncService.registerAndSubmitJoinRequest(fullName, email, password, username)
+          onRegisterJoinRequest={(fullName, email, password) =>
+            syncService.registerAndSubmitJoinRequest(fullName, email, password)
           }
           onSendPasswordReset={(email) => syncService.sendFirebasePasswordReset(email)}
           onBootstrapAdminProfile={(fullName) =>
@@ -2784,10 +2801,10 @@ export function App() {
       {/* Popup Confirmation Modal Before Deleting an Issue (Admin Only) */}
       {issueToDelete && isAdmin && (
         <div
-          className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/60 dark:bg-slate-950/80 backdrop-blur-xs p-4"
+          className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/60 dark:bg-slate-950/80 backdrop-blur-xs p-3 sm:p-4 overflow-hidden overscroll-none"
           dir="rtl"
         >
-          <div className="bg-white dark:bg-slate-900 rounded-2xl shadow-2xl border border-slate-200 dark:border-slate-800 w-full max-w-md overflow-hidden p-6 space-y-4">
+          <div className="bg-white dark:bg-slate-900 rounded-2xl shadow-2xl border border-slate-200 dark:border-slate-800 w-full max-w-md max-h-[90dvh] overflow-y-auto modal-scroll-area p-6 space-y-4">
             <div className="flex items-start gap-3.5">
               <div className="w-11 h-11 rounded-2xl bg-red-50 dark:bg-red-950/50 border border-red-200 dark:border-red-900 flex items-center justify-center text-red-600 dark:text-red-400 shrink-0">
                 <AlertTriangle className="w-6 h-6" />
@@ -2857,11 +2874,11 @@ export function App() {
       {/* Admin Archive Management Modal */}
       {isArchiveModalOpen && isAdmin && (
         <div
-          className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/60 dark:bg-slate-950/80 backdrop-blur-xs p-4"
+          className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/60 dark:bg-slate-950/80 backdrop-blur-xs p-3 sm:p-4 overflow-hidden overscroll-none"
           dir="rtl"
         >
-          <div className="bg-white dark:bg-slate-900 rounded-2xl shadow-2xl border border-slate-200 dark:border-slate-800 w-full max-w-xl overflow-hidden">
-            <div className="flex items-center justify-between gap-2 px-5 sm:px-6 py-4 bg-slate-900 text-white border-b border-slate-800">
+          <div className="bg-white dark:bg-slate-900 rounded-2xl shadow-2xl border border-slate-200 dark:border-slate-800 w-full max-w-xl max-h-[90dvh] flex flex-col overflow-hidden">
+            <div className="flex items-center justify-between gap-2 px-5 sm:px-6 py-4 bg-slate-900 text-white border-b border-slate-800 shrink-0">
               <div className="flex items-center gap-2.5 min-w-0">
                 {archiveReturnToTools && (
                   <button
@@ -2899,7 +2916,7 @@ export function App() {
               </button>
             </div>
 
-            <div className="p-6 space-y-3 max-h-[70vh] overflow-y-auto">
+            <div className="p-6 space-y-3 min-h-0 flex-1 overflow-y-auto modal-scroll-area">
               {archivedSystems.length === 0 ? (
                 <div className="text-center py-8 text-slate-500 dark:text-slate-400 text-sm">
                   אין כרגע מערכות בארכיון.

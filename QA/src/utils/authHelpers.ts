@@ -32,10 +32,10 @@ export function isValidEmailAddress(rawEmail: string): boolean {
 }
 
 /**
- * מחשב hash חד-כיווני (SHA-256) עבור שם משתמש לצורך אימות ייחודיות ואיתור מייל בהתחברות/איפוס סיסמה
+ * מחשב hash חד-כיווני (SHA-256) עבור שם מלא / שם משתמש לצורך איתור מייל בהתחברות/איפוס סיסמה
  */
-export async function computeUsernameHash(rawUsername: string): Promise<string> {
-  const normalized = normalizeUsername(rawUsername);
+export async function computeUsernameHash(rawIdentifier: string): Promise<string> {
+  const normalized = normalizeFullNameKey(rawIdentifier);
   if (!normalized) return '';
   const bytes = new TextEncoder().encode(`tzavman-username-v1:${normalized}`);
   const digest = await crypto.subtle.digest('SHA-256', bytes);

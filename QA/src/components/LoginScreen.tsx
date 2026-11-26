@@ -15,16 +15,13 @@ import {
   UserPlus,
   LogIn,
   HelpCircle,
-  Send,
-  AtSign
+  Send
 } from 'lucide-react';
 import { FirebaseUserProfile, JoinRequest, TeamRole } from '../types/std';
 import { computeUserAuthSignature } from '../utils/securityUtils';
 import {
   getLastLoginIdentifier,
   isValidEmailAddress,
-  isValidUsername,
-  normalizeUsername,
   saveLastLoginIdentifier,
   storeBrowserPasswordCredential
 } from '../utils/authHelpers';
@@ -46,7 +43,7 @@ interface LoginScreenProps {
   onInstallAndNotify: () => void;
   notificationsEnabled: boolean;
   onFirebaseEmailLogin: (
-    emailOrUsername: string,
+    emailOrFullName: string,
     password: string
   ) => Promise<{
     ok: boolean;
@@ -59,8 +56,7 @@ interface LoginScreenProps {
   onRegisterJoinRequest: (
     fullName: string,
     email: string,
-    password: string,
-    username: string
+    password: string
   ) => Promise<{
     ok: boolean;
     request?: JoinRequest;
@@ -68,10 +64,10 @@ interface LoginScreenProps {
     alreadyApproved?: boolean;
     error?: string;
   }>;
-  onSendPasswordReset: (emailOrUsername: string) => Promise<{
+  onSendPasswordReset: (emailOrFullName: string) => Promise<{
     ok: boolean;
     normalizedEmail?: string;
-    resolvedViaUsername?: boolean;
+    resolvedViaName?: boolean;
     maskedEmail?: string;
     error?: string;
   }>;
@@ -99,9 +95,8 @@ export const LoginScreen: React.FC<LoginScreenProps> = ({
   const [showPassword, setShowPassword] = useState(false);
   const [saveToPasswordManager, setSaveToPasswordManager] = useState(true);
 
-  // Self-registration state (Name + Username + Email + Password + Confirm Password)
+  // Self-registration state (Full Name as login username + Recovery Email + Password + Confirm Password)
   const [registerFullName, setRegisterFullName] = useState('');
-  const [registerUsername, setRegisterUsername] = useState('');
   const [registerEmail, setRegisterEmail] = useState('');
   const [registerPassword, setRegisterPassword] = useState('');
   const [registerConfirmPassword, setRegisterConfirmPassword] = useState('');
@@ -173,7 +168,7 @@ export const LoginScreen: React.FC<LoginScreenProps> = ({
 
     const rawIdentifier = email.trim();
     if (!rawIdentifier || !password) {
-      setError('נא להזין שם משתמש או אימייל וסיסמה.');
+      setError('נא להזין שם מלא או אימייל וסיסמה.');
       return;
     }
     setIsSubmitting(true);
@@ -187,7 +182,7 @@ export const LoginScreen: React.FC<LoginScreenProps> = ({
     saveLastLoginIdentifier(rawIdentifier);
     if (saveToPasswordManager) {
       void storeBrowserPasswordCredential(
-        res.resolvedEmail || rawIdentifier,
+        rawIdentifier,
         password,
         res.profile?.fullName || rawIdentifier
       );
@@ -209,15 +204,10 @@ export const LoginScreen: React.FC<LoginScreenProps> = ({
     e.preventDefault();
     setError(null);
 
-    const cleanName = registerFullName.trim();
-    const cleanUsername = normalizeUsername(registerUsername);
+    const cleanName = registerFullName.trim().replace(/\s+/g, ' ');
     const cleanEmail = registerEmail.trim().toLowerCase();
     if (cleanName.length < 2) {
-      setError('נא להזין שם מלא (לפחות 2 תווים).');
-      return;
-    }
-    if (!isValidUsername(cleanUsername)) {
-      setError('שם המשתמש חייב להכיל 3–32 תווים באנגלית, ספרות, נקודה, מקף או קו תחתון (ללא רווחים או @).');
+      setError('נא להזין שם מלא (פרטי ומשפחה, לפחות 2 תווים).');
       return;
     }
     if (!isValidEmailAddress(cleanEmail)) {
@@ -234,16 +224,16 @@ export const LoginScreen: React.FC<LoginScreenProps> = ({
     }
 
     setIsSubmitting(true);
-    const res = await onRegisterJoinRequest(cleanName, cleanEmail, registerPassword, cleanUsername);
+    const res = await onRegisterJoinRequest(cleanName, cleanEmail, registerPassword);
     setIsSubmitting(false);
     if (!res.ok) {
       setError(res.error || 'ההרשמה נכשלה. נסה שוב.');
       return;
     }
 
-    saveLastLoginIdentifier(cleanUsername);
+    saveLastLoginIdentifier(cleanName);
     if (saveToPasswordManager) {
-      void storeBrowserPasswordCredential(cleanUsername, registerPassword, cleanName);
+      void storeBrowserPasswordCredential(cleanName, registerPassword, cleanName);
     }
 
     if (res.alreadyApproved && res.profile) {
@@ -257,7 +247,7 @@ export const LoginScreen: React.FC<LoginScreenProps> = ({
     setResetSuccessMsg(null);
     const raw = resetEmail.trim();
     if (!raw) {
-      setError('נא להזין שם משתמש או אימייל.');
+      setError('נא להזין שם מלא או אימייל.');
       return;
     }
     setIsSubmitting(true);
@@ -267,7 +257,7 @@ export const LoginScreen: React.FC<LoginScreenProps> = ({
       setError(res.error || 'שליחת קישור האיפוס נכשלה.');
       return;
     }
-    if (res.resolvedViaUsername && res.maskedEmail) {
+    if (res.resolvedViaName && res.maskedEmail) {
       setResetSuccessMsg(
         `קישור לאיפוס סיסמה נשלח לכתובת המייל השמורה בחשבון (${res.maskedEmail}). בדוק גם בספאם.`
       );
@@ -401,17 +391,17 @@ export const LoginScreen: React.FC<LoginScreenProps> = ({
           <form onSubmit={handleRegisterSubmit} className="p-6 pt-4 space-y-3.5" autoComplete="on">
             <div>
               <label className="block text-xs font-bold text-slate-700 mb-1">
-                שם מלא <span className="text-red-500">*</span>
+                שם מלא (שם המשתמש שלך) <span className="text-red-500">*</span>
               </label>
               <div className="relative">
                 <User className="w-4 h-4 text-slate-400 absolute right-3.5 top-1/2 -translate-y-1/2 pointer-events-none" />
                 <input
                   type="text"
-                  name="name"
+                  name="username"
                   required
                   minLength={2}
                   maxLength={120}
-                  autoComplete="name"
+                  autoComplete="username"
                   value={registerFullName}
                   onChange={(e) => {
                     setRegisterFullName(e.target.value);
@@ -421,33 +411,8 @@ export const LoginScreen: React.FC<LoginScreenProps> = ({
                   className="w-full pr-10 pl-3.5 py-2.5 rounded-xl border border-slate-300 bg-slate-50/70 focus:bg-white text-sm text-slate-900 focus:outline-none focus:ring-2 focus:ring-indigo-500/30 focus:border-indigo-500 transition rtl-safe font-medium"
                 />
               </div>
-            </div>
-
-            <div>
-              <label className="block text-xs font-bold text-slate-700 mb-1">
-                שם משתמש <span className="text-red-500">*</span>
-              </label>
-              <div className="relative">
-                <AtSign className="w-4 h-4 text-slate-400 absolute right-3.5 top-1/2 -translate-y-1/2 pointer-events-none" />
-                <input
-                  type="text"
-                  name="username"
-                  dir="ltr"
-                  required
-                  minLength={3}
-                  maxLength={32}
-                  autoComplete="username"
-                  value={registerUsername}
-                  onChange={(e) => {
-                    setRegisterUsername(e.target.value);
-                    setError(null);
-                  }}
-                  placeholder="למשל: david123"
-                  className="w-full pr-10 pl-3.5 py-2.5 rounded-xl border border-slate-300 bg-slate-50/70 focus:bg-white text-sm text-slate-900 focus:outline-none focus:ring-2 focus:ring-indigo-500/30 focus:border-indigo-500 transition text-left font-medium"
-                />
-              </div>
               <p className="mt-1 text-[11px] text-slate-500 font-medium">
-                אותיות באנגלית ומספרים (3+ תווים) — ישמש אותך להתחברות מהירה
+                השם המלא ישמש אותך להתחברות למערכת ויוצג לשאר הצוות
               </p>
             </div>
 
@@ -611,20 +576,19 @@ export const LoginScreen: React.FC<LoginScreenProps> = ({
                 <span>איפוס סיסמה</span>
               </div>
               <p className="text-[11px] leading-relaxed">
-                הזן את שם המשתמש או האימייל שלך ונשלח קישור לאיפוס הסיסמה לכתובת המייל השמורה בחשבון.
+                הזן את שמך המלא או את כתובת האימייל שלך ונשלח קישור לאיפוס הסיסמה לכתובת המייל השמורה בחשבון.
               </p>
             </div>
 
             <div>
               <label className="block text-xs font-bold text-slate-700 mb-1.5">
-                שם משתמש או אימייל <span className="text-red-500">*</span>
+                שם מלא או אימייל <span className="text-red-500">*</span>
               </label>
               <div className="relative">
-                <Mail className="w-4 h-4 text-slate-400 absolute right-3.5 top-1/2 -translate-y-1/2 pointer-events-none" />
+                <User className="w-4 h-4 text-slate-400 absolute right-3.5 top-1/2 -translate-y-1/2 pointer-events-none" />
                 <input
                   type="text"
-                  inputMode="email"
-                  dir="ltr"
+                  dir="auto"
                   required
                   value={resetEmail}
                   onChange={(e) => {
@@ -632,8 +596,8 @@ export const LoginScreen: React.FC<LoginScreenProps> = ({
                     setError(null);
                     setResetSuccessMsg(null);
                   }}
-                  placeholder="שם משתמש או name@gmail.com"
-                  className="w-full pr-10 pl-3.5 py-2.5 rounded-xl border border-slate-300 bg-slate-50/70 focus:bg-white text-sm text-slate-900 focus:outline-none focus:ring-2 focus:ring-indigo-500/30 focus:border-indigo-500 transition text-left font-medium"
+                  placeholder="שם מלא או name@gmail.com"
+                  className="w-full pr-10 pl-3.5 py-2.5 rounded-xl border border-slate-300 bg-slate-50/70 focus:bg-white text-sm text-slate-900 focus:outline-none focus:ring-2 focus:ring-indigo-500/30 focus:border-indigo-500 transition font-medium"
                 />
               </div>
             </div>
@@ -679,15 +643,14 @@ export const LoginScreen: React.FC<LoginScreenProps> = ({
           <form onSubmit={handleLoginSubmit} className="p-6 pt-4 space-y-3.5" autoComplete="on">
             <div>
               <label className="block text-xs font-bold text-slate-700 mb-1">
-                שם משתמש או אימייל <span className="text-red-500">*</span>
+                שם מלא או אימייל <span className="text-red-500">*</span>
               </label>
               <div className="relative">
-                <Mail className="w-4 h-4 text-slate-400 absolute right-3.5 top-1/2 -translate-y-1/2 pointer-events-none" />
+                <User className="w-4 h-4 text-slate-400 absolute right-3.5 top-1/2 -translate-y-1/2 pointer-events-none" />
                 <input
                   type="text"
                   name="username"
-                  inputMode="email"
-                  dir="ltr"
+                  dir="auto"
                   required
                   value={email}
                   onChange={(e) => {
@@ -695,12 +658,12 @@ export const LoginScreen: React.FC<LoginScreenProps> = ({
                     setError(null);
                   }}
                   autoComplete="username"
-                  placeholder="שם משתמש או name@gmail.com"
-                  className="w-full pr-10 pl-3.5 py-2.5 rounded-xl border border-slate-300 bg-slate-50/70 focus:bg-white text-sm text-slate-900 focus:outline-none focus:ring-2 focus:ring-indigo-500/30 focus:border-indigo-500 transition text-left font-medium"
+                  placeholder="שם מלא או name@gmail.com"
+                  className="w-full pr-10 pl-3.5 py-2.5 rounded-xl border border-slate-300 bg-slate-50/70 focus:bg-white text-sm text-slate-900 focus:outline-none focus:ring-2 focus:ring-indigo-500/30 focus:border-indigo-500 transition font-medium"
                 />
               </div>
               <p className="mt-1 text-[11px] text-slate-500 font-medium">
-                ניתן להתחבר עם שם המשתמש שבחרת או עם כתובת האימייל
+                ניתן להתחבר עם השם המלא (פרטי ומשפחה) או עם כתובת האימייל
               </p>
             </div>
 

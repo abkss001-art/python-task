@@ -23,6 +23,7 @@ import {
   FIREBASE_FIRESTORE_RULES,
   FIREBASE_RTDB_RULES_JSON
 } from '../utils/firebaseRulesTemplates';
+import { useModalUx } from '../utils/modalViewportAndBack';
 
 interface FirebaseSetupModalProps {
   currentConfig: FirebaseConfigData | null;
@@ -110,14 +111,16 @@ export const FirebaseSetupModal: React.FC<FirebaseSetupModalProps> = ({
     setTimeout(() => setCopiedLink(false), 2500);
   };
 
+  useModalUx(true, onBack || onClose);
+
   return (
     <div
-      className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/60 dark:bg-slate-950/80 backdrop-blur-sm p-4 overflow-y-auto"
+      className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/60 dark:bg-slate-950/80 backdrop-blur-sm p-3 sm:p-4 overflow-hidden overscroll-none"
       dir="rtl"
     >
-      <div className="bg-white dark:bg-slate-900 rounded-2xl shadow-2xl border border-slate-200 dark:border-slate-800 w-full max-w-2xl overflow-hidden">
+      <div className="bg-white dark:bg-slate-900 rounded-2xl shadow-2xl border border-slate-200 dark:border-slate-800 w-full max-w-2xl my-auto max-h-[92dvh] flex flex-col overflow-hidden">
         {/* Header */}
-        <div className="flex items-center justify-between gap-2 px-5 sm:px-6 py-4 bg-gradient-to-l from-indigo-600 to-violet-600 text-white">
+        <div className="flex items-center justify-between gap-2 px-5 sm:px-6 py-4 bg-gradient-to-l from-indigo-600 to-violet-600 text-white shrink-0">
           <div className="flex items-center gap-2.5 min-w-0">
             {onBack && (
               <button
@@ -149,7 +152,7 @@ export const FirebaseSetupModal: React.FC<FirebaseSetupModalProps> = ({
           </button>
         </div>
 
-        <form onSubmit={handleConnect} className="p-6 space-y-5">
+        <form onSubmit={handleConnect} className="p-6 space-y-5 min-h-0 flex-1 overflow-y-auto modal-scroll-area">
           {/* Current Status Banner */}
           <div
             className={`flex items-center justify-between p-3.5 rounded-xl border ${

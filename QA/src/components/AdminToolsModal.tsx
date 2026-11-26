@@ -20,9 +20,13 @@ import {
   Loader2,
   ShieldAlert,
   Bot,
-  UserCog
+  UserCog,
+  FlaskConical,
+  ExternalLink
 } from 'lucide-react';
 import { syncService } from '../services/syncService';
+import { IS_STAGING, PROD_APP_URL, STAGING_APP_URL } from '../utils/appEnv';
+import { useModalUx } from '../utils/modalViewportAndBack';
 
 interface AdminToolsModalProps {
   archivedCount: number;
@@ -151,6 +155,17 @@ export const AdminToolsModal: React.FC<AdminToolsModalProps> = ({
     setView('main');
   };
 
+  // Lock background scroll + support phone Back button (dev/dev_gate -> main -> close)
+  useModalUx(true, () => {
+    if (view === 'dev' || view === 'dev_gate') {
+      setAuthError(null);
+      setDevPassword('');
+      setView('main');
+    } else {
+      onClose();
+    }
+  });
+
   const regularSecondaryTools = [
     {
       id: 'report',
@@ -171,7 +186,16 @@ export const AdminToolsModal: React.FC<AdminToolsModalProps> = ({
     }
   ];
 
-  const devTools = [
+  const devTools: Array<{
+    id: string;
+    title: string;
+    subtitle: string;
+    icon: React.ComponentType<{ className?: string }>;
+    iconBg: string;
+    badge?: string;
+    isExternal?: boolean;
+    action: () => void;
+  }> = [
     {
       id: 'dev_settings',
       title: 'הגדרות מנהל וסיסמת מפתח',
@@ -179,6 +203,21 @@ export const AdminToolsModal: React.FC<AdminToolsModalProps> = ({
       icon: UserCog,
       iconBg: 'bg-rose-100 text-rose-700 border-rose-200 dark:bg-rose-950/70 dark:text-rose-300 dark:border-rose-800',
       action: onOpenDevSettings
+    },
+    {
+      id: 'preprod_env',
+      title: IS_STAGING ? 'סביבת בדיקות (Pre-Prod)' : 'מעבר לסביבת Pre-Prod (בדיקות)',
+      subtitle: IS_STAGING
+        ? 'הנך נמצא כעת ב-Pre-Prod — לחץ לפתיחת סביבת ה-Prod החיה בטאב חדש'
+        : 'פתיחת סביבת הבדיקות המבודדת (Staging) לבדיקת שינויים לפני עדכון גרסה',
+      icon: FlaskConical,
+      iconBg: 'bg-amber-100 text-amber-700 border-amber-200 dark:bg-amber-950/70 dark:text-amber-300 dark:border-amber-800',
+      badge: IS_STAGING ? 'אתה כאן' : 'Pre-Prod',
+      isExternal: true,
+      action: () => {
+        const targetUrl = IS_STAGING ? PROD_APP_URL : STAGING_APP_URL;
+        window.open(targetUrl, '_blank', 'noopener,noreferrer');
+      }
     },
     {
       id: 'backup',
@@ -226,10 +265,10 @@ export const AdminToolsModal: React.FC<AdminToolsModalProps> = ({
 
   return (
     <div
-      className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/60 dark:bg-slate-950/80 backdrop-blur-xs p-3 sm:p-4 overflow-y-auto"
+      className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/60 dark:bg-slate-950/80 backdrop-blur-xs p-3 sm:p-4 overflow-hidden overscroll-none"
       dir="rtl"
     >
-      <div className="bg-white dark:bg-slate-900 rounded-3xl shadow-2xl border border-slate-200 dark:border-slate-800 w-full max-w-lg overflow-hidden my-auto max-h-[92vh] flex flex-col animate-in fade-in zoom-in-95 duration-150">
+      <div className="bg-white dark:bg-slate-900 rounded-3xl shadow-2xl border border-slate-200 dark:border-slate-800 w-full max-w-lg overflow-hidden my-auto max-h-[92dvh] flex flex-col animate-in fade-in zoom-in-95 duration-150">
         {/* Header */}
         <div
           className={`flex items-center justify-between gap-2 px-5 sm:px-6 py-4 text-white shrink-0 ${
@@ -323,7 +362,7 @@ export const AdminToolsModal: React.FC<AdminToolsModalProps> = ({
 
         {/* Body */}
         {view === 'main' && (
-          <div className="p-4 sm:p-6 space-y-3 overflow-y-auto flex-1">
+          <div className="p-4 sm:p-6 space-y-3 min-h-0 overflow-y-auto flex-1 modal-scroll-area">
             {/* Row 1: Team Management (First / Right) + Join Requests (Second / Left) side by side */}
             <div className="grid grid-cols-2 gap-2.5">
               <button
@@ -477,7 +516,7 @@ export const AdminToolsModal: React.FC<AdminToolsModalProps> = ({
         )}
 
         {view === 'dev_gate' && (
-          <form onSubmit={handleSubmitDevPassword} className="p-5 sm:p-6 space-y-4">
+          <form onSubmit={handleSubmitDevPassword} className="p-5 sm:p-6 space-y-4 min-h-0 overflow-y-auto flex-1 modal-scroll-area">
             <div className="flex items-center gap-3 p-3.5 rounded-2xl bg-amber-50 dark:bg-amber-950/40 border border-amber-200 dark:border-amber-800/80 text-xs text-amber-950 dark:text-amber-200">
               <Lock className="w-5 h-5 text-amber-600 dark:text-amber-400 shrink-0" />
               <p className="leading-relaxed font-medium">
@@ -547,7 +586,7 @@ export const AdminToolsModal: React.FC<AdminToolsModalProps> = ({
         )}
 
         {view === 'dev' && (
-          <div className="p-4 sm:p-6 space-y-2.5 overflow-y-auto flex-1">
+          <div className="p-4 sm:p-6 space-y-2.5 min-h-0 overflow-y-auto flex-1 modal-scroll-area">
             {devTools.map((tool) => {
               const Icon = tool.icon;
               return (
@@ -555,7 +594,9 @@ export const AdminToolsModal: React.FC<AdminToolsModalProps> = ({
                   key={tool.id}
                   type="button"
                   onClick={() => {
-                    onClose();
+                    if (!tool.isExternal) {
+                      onClose();
+                    }
                     tool.action();
                   }}
                   className="w-full flex items-center justify-between p-3 sm:p-3.5 rounded-2xl border border-slate-200/90 dark:border-slate-800 hover:border-amber-400 dark:hover:border-amber-500 bg-white dark:bg-slate-800/90 hover:bg-amber-50/40 dark:hover:bg-slate-800 transition cursor-pointer text-right group shadow-xs hover:shadow-sm"
@@ -567,16 +608,27 @@ export const AdminToolsModal: React.FC<AdminToolsModalProps> = ({
                       <Icon className="w-5 h-5" />
                     </div>
                     <div className="min-w-0 flex-1">
-                      <span className="block text-xs sm:text-sm font-extrabold text-slate-900 dark:text-slate-100 group-hover:text-amber-700 dark:group-hover:text-amber-400 truncate">
-                        {tool.title}
-                      </span>
+                      <div className="flex items-center gap-2">
+                        <span className="block text-xs sm:text-sm font-extrabold text-slate-900 dark:text-slate-100 group-hover:text-amber-700 dark:group-hover:text-amber-400 truncate">
+                          {tool.title}
+                        </span>
+                        {tool.badge && (
+                          <span className="px-2 py-0.5 rounded-md text-[10px] font-bold border shrink-0 bg-amber-100 dark:bg-amber-950 text-amber-800 dark:text-amber-300 border-amber-300 dark:border-amber-800">
+                            {tool.badge}
+                          </span>
+                        )}
+                      </div>
                       <p className="text-[11px] text-slate-500 dark:text-slate-300 mt-0.5 leading-relaxed truncate">
                         {tool.subtitle}
                       </p>
                     </div>
                   </div>
 
-                  <ArrowLeft className="w-4 h-4 text-slate-400 group-hover:text-amber-600 dark:group-hover:text-amber-400 group-hover:-translate-x-1 transition-transform shrink-0 mr-2" />
+                  {tool.isExternal ? (
+                    <ExternalLink className="w-4 h-4 text-amber-600 dark:text-amber-400 shrink-0 mr-2" />
+                  ) : (
+                    <ArrowLeft className="w-4 h-4 text-slate-400 group-hover:text-amber-600 dark:group-hover:text-amber-400 group-hover:-translate-x-1 transition-transform shrink-0 mr-2" />
+                  )}
                 </button>
               );
             })}

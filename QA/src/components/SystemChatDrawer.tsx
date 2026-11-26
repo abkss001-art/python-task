@@ -36,6 +36,7 @@ import {
   parseMessageTokens
 } from '../utils/chatUtils';
 import { sanitizeImageUrl } from '../utils/securityUtils';
+import { useModalUx } from '../utils/modalViewportAndBack';
 
 interface SystemChatDrawerProps {
   isOpen: boolean;
@@ -123,6 +124,8 @@ export const SystemChatDrawer: React.FC<SystemChatDrawerProps> = ({
   const [uploadFeedback, setUploadFeedback] = useState<string | null>(null);
 
   const messagesEndRef = useRef<HTMLDivElement>(null);
+
+  useModalUx(isOpen, onClose);
   const scrollContainerRef = useRef<HTMLDivElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -381,16 +384,16 @@ export const SystemChatDrawer: React.FC<SystemChatDrawerProps> = ({
   const normalizedSelf = currentUserName.trim().toLowerCase();
 
   return (
-    <div className="fixed inset-0 z-50 flex justify-end pointer-events-none" dir="rtl">
+    <div className="fixed inset-0 z-50 flex justify-end pointer-events-none overflow-hidden overscroll-none" dir="rtl">
       {/* Backdrop */}
       <div
         onClick={onClose}
-        className="fixed inset-0 bg-slate-900/45 dark:bg-slate-950/70 backdrop-blur-[2px] pointer-events-auto transition-opacity"
+        className="fixed inset-0 bg-slate-900/45 dark:bg-slate-950/70 backdrop-blur-[2px] pointer-events-auto transition-opacity overscroll-none"
       />
 
       {/* Drawer Panel (Full-screen on mobile, Side drawer on Left side in RTL desktop so board remains visible) */}
       <aside
-        className="relative mr-auto h-full w-full sm:w-[440px] md:w-[480px] bg-white dark:bg-slate-900 border-r border-slate-200 dark:border-slate-800 shadow-2xl flex flex-col pointer-events-auto animate-in slide-in-from-left duration-200"
+        className="relative mr-auto h-[100dvh] w-full sm:w-[440px] md:w-[480px] bg-white dark:bg-slate-900 border-r border-slate-200 dark:border-slate-800 shadow-2xl flex flex-col pointer-events-auto animate-in slide-in-from-left duration-200 overflow-hidden"
         onDragOver={(e) => {
           e.preventDefault();
           setIsDragging(true);
@@ -482,7 +485,7 @@ export const SystemChatDrawer: React.FC<SystemChatDrawerProps> = ({
         {/* Messages Scroll Area */}
         <div
           ref={scrollContainerRef}
-          className="flex-1 overflow-y-auto px-3.5 py-4 space-y-3 bg-slate-50 dark:bg-slate-950/70"
+          className="flex-1 min-h-0 overflow-y-auto modal-scroll-area px-3.5 py-4 space-y-3 bg-slate-50 dark:bg-slate-950/70"
         >
           {messages.length === 0 ? (
             <div className="h-full flex flex-col items-center justify-center text-center px-6 py-10">

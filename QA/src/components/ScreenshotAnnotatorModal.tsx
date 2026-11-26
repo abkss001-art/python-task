@@ -10,6 +10,7 @@ import {
   MoveUpRight,
   EyeOff
 } from 'lucide-react';
+import { useModalUx } from '../utils/modalViewportAndBack';
 
 interface ScreenshotAnnotatorModalProps {
   imageSrc: string;
@@ -40,6 +41,8 @@ export const ScreenshotAnnotatorModal: React.FC<ScreenshotAnnotatorModalProps> =
   const snapshotBeforeDrag = useRef<ImageData | null>(null);
 
   const [corsTainted, setCorsTainted] = useState(false);
+
+  useModalUx(true, onCancel);
 
   useEffect(() => {
     const canvas = canvasRef.current;
@@ -272,7 +275,7 @@ export const ScreenshotAnnotatorModal: React.FC<ScreenshotAnnotatorModalProps> =
 
   return (
     <div
-      className="fixed inset-0 z-50 flex flex-col bg-slate-950/95 backdrop-blur-sm p-3 sm:p-5"
+      className="fixed inset-0 z-50 flex flex-col bg-slate-950/95 backdrop-blur-sm p-3 sm:p-5 overflow-hidden overscroll-none"
       dir="rtl"
     >
       {/* Top Toolbar */}

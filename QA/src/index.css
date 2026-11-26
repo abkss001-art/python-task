@@ -45,6 +45,12 @@
   unicode-bidi: isolate;
 }
 
+/* Smooth inner modal scrolling on iOS & Android without chaining scroll to background page */
+.modal-scroll-area {
+  -webkit-overflow-scrolling: touch;
+  overscroll-behavior: contain;
+}
+
 /* Custom subtle scrollbars */
 ::-webkit-scrollbar {
   width: 8px;

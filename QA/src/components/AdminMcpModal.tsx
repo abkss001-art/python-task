@@ -13,6 +13,7 @@ import {
   Power
 } from 'lucide-react';
 import { syncService } from '../services/syncService';
+import { useModalUx } from '../utils/modalViewportAndBack';
 
 interface AdminMcpModalProps {
   onBack?: () => void;
@@ -66,12 +67,14 @@ export const AdminMcpModal: React.FC<AdminMcpModalProps> = ({ onBack, onClose })
 
   const consoleUrl = `https://console.firebase.google.com/project/${projectId}/appcheck/apps`;
 
+  useModalUx(true, onBack || onClose);
+
   return (
     <div
-      className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/65 dark:bg-slate-950/80 backdrop-blur-xs p-3 sm:p-4 overflow-y-auto"
+      className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/65 dark:bg-slate-950/80 backdrop-blur-xs p-3 sm:p-4 overflow-hidden overscroll-none"
       dir="rtl"
     >
-      <div className="bg-white dark:bg-slate-900 rounded-2xl shadow-2xl border border-slate-200 dark:border-slate-800 w-full max-w-xl overflow-hidden my-auto max-h-[92vh] flex flex-col">
+      <div className="bg-white dark:bg-slate-900 rounded-2xl shadow-2xl border border-slate-200 dark:border-slate-800 w-full max-w-xl overflow-hidden my-auto max-h-[92dvh] flex flex-col">
         {/* Header */}
         <div className="flex items-center justify-between gap-2 px-5 sm:px-6 py-4 bg-gradient-to-l from-slate-950 via-violet-950 to-slate-900 text-white border-b border-slate-800 shrink-0">
           <div className="flex items-center gap-2.5 min-w-0">
@@ -106,7 +109,7 @@ export const AdminMcpModal: React.FC<AdminMcpModalProps> = ({ onBack, onClose })
         </div>
 
         {/* Body */}
-        <form onSubmit={handleSave} className="p-5 sm:p-6 space-y-4 overflow-y-auto flex-1">
+        <form onSubmit={handleSave} className="p-5 sm:p-6 space-y-4 min-h-0 overflow-y-auto flex-1 modal-scroll-area">
           {/* Status Indicator + Kill Switch */}
           <div
             className={`flex items-center justify-between gap-3 p-4 rounded-2xl border ${

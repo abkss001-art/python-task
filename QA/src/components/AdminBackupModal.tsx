@@ -33,6 +33,7 @@ import {
   uploadImageToGoogleDrive
 } from '../services/googleDriveService';
 import { syncService } from '../services/syncService';
+import { useModalUx } from '../utils/modalViewportAndBack';
 
 interface AdminBackupModalProps {
   systems: string[];
@@ -332,12 +333,14 @@ export const AdminBackupModal: React.FC<AdminBackupModalProps> = ({
     e.target.value = '';
   };
 
+  useModalUx(true, onBack || onClose);
+
   return (
     <div
-      className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/60 dark:bg-slate-950/80 backdrop-blur-xs p-3 sm:p-4 overflow-y-auto"
+      className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/60 dark:bg-slate-950/80 backdrop-blur-xs p-3 sm:p-4 overflow-hidden overscroll-none"
       dir="rtl"
     >
-      <div className="bg-white dark:bg-slate-900 rounded-2xl shadow-2xl border border-slate-200 dark:border-slate-800 w-full max-w-2xl overflow-hidden my-auto max-h-[92vh] flex flex-col">
+      <div className="bg-white dark:bg-slate-900 rounded-2xl shadow-2xl border border-slate-200 dark:border-slate-800 w-full max-w-2xl overflow-hidden my-auto max-h-[92dvh] flex flex-col">
         <div className="flex items-center justify-between gap-2 px-5 sm:px-6 py-4 bg-slate-900 dark:bg-slate-950 text-white border-b border-slate-800 shrink-0">
           <div className="flex items-center gap-2.5 min-w-0">
             {onBack && (
@@ -370,7 +373,7 @@ export const AdminBackupModal: React.FC<AdminBackupModalProps> = ({
           </button>
         </div>
 
-        <div className="p-5 sm:p-6 space-y-4 overflow-y-auto flex-1">
+        <div className="p-5 sm:p-6 space-y-4 min-h-0 overflow-y-auto flex-1 modal-scroll-area">
           {statusMsg && (
             <div
               className={`flex items-start gap-2 p-3.5 rounded-xl border text-xs font-bold leading-relaxed ${

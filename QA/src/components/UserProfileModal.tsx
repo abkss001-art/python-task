@@ -15,6 +15,7 @@ import {
 } from 'lucide-react';
 import { STATUSES, STATUS_CONFIG, StdIssue, StdStatus, TeamRole } from '../types/std';
 import { formatHebrewDateTime } from './IssueCard';
+import { useModalUx } from '../utils/modalViewportAndBack';
 
 interface UserProfileModalProps {
   fullName: string;
@@ -39,6 +40,8 @@ export const UserProfileModal: React.FC<UserProfileModalProps> = ({
   onSelectIssue,
   onClose
 }) => {
+  useModalUx(true, onClose);
+
   useEffect(() => {
     const onKeyDown = (e: KeyboardEvent) => {
       if (e.key === 'Escape') onClose();
@@ -141,12 +144,12 @@ export const UserProfileModal: React.FC<UserProfileModalProps> = ({
 
   return (
     <div
-      className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/65 dark:bg-slate-950/80 backdrop-blur-xs p-3 sm:p-4 overflow-y-auto"
+      className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/65 dark:bg-slate-950/80 backdrop-blur-xs p-3 sm:p-4 overflow-hidden overscroll-none"
       dir="rtl"
       onClick={onClose}
     >
       <div
-        className="bg-white dark:bg-slate-900 rounded-3xl shadow-2xl border border-slate-200 dark:border-slate-800 w-full max-w-xl overflow-hidden my-auto max-h-[92vh] flex flex-col animate-in fade-in zoom-in-95 duration-150"
+        className="bg-white dark:bg-slate-900 rounded-3xl shadow-2xl border border-slate-200 dark:border-slate-800 w-full max-w-xl overflow-hidden my-auto max-h-[92dvh] flex flex-col animate-in fade-in zoom-in-95 duration-150"
         onClick={(e) => e.stopPropagation()}
       >
         {/* Header: Name, Role & Login Email ONLY (no copy button) */}
@@ -211,7 +214,7 @@ export const UserProfileModal: React.FC<UserProfileModalProps> = ({
         </div>
 
         {/* Body */}
-        <div className="p-5 sm:p-6 space-y-4 overflow-y-auto flex-1">
+        <div className="p-5 sm:p-6 space-y-4 overflow-y-auto min-h-0 flex-1 modal-scroll-area">
           {/* 1. Key Activity KPIs (Works great for QA, Dev & Admin alike!) */}
           <div className="grid grid-cols-3 gap-2.5">
             <div className="p-3.5 rounded-2xl bg-indigo-50/70 dark:bg-indigo-950/40 border border-indigo-200/80 dark:border-indigo-800/70 text-center space-y-1">

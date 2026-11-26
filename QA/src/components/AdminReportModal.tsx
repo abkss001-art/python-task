@@ -21,6 +21,7 @@ import {
 } from 'lucide-react';
 import { StdIssue, StdPlatform, StdStatus, STATUSES } from '../types/std';
 import { PlatformIcon } from './IssueCard';
+import { useModalUx } from '../utils/modalViewportAndBack';
 
 interface AdminReportModalProps {
   systems: string[];
@@ -40,9 +41,11 @@ export const AdminReportModal: React.FC<AdminReportModalProps> = ({
   onOpenLightbox
 }) => {
   const [selectedScope, setSelectedScope] = useState<string>(() =>
-    !initialSystem || initialSystem === 'HOME' ? 'ALL' : initialSystem
+    !initialSystem || initialSystem === 'ALL' ? 'ALL' : initialSystem === 'HOME' ? 'ALL' : initialSystem
   );
   const [copiedSummary, setCopiedSummary] = useState(false);
+
+  useModalUx(true, onBack || onClose);
 
   // Filtered issues according to selected scope ('ALL' or specific system)
   const scopedIssues = useMemo(() => {
@@ -240,12 +243,12 @@ export const AdminReportModal: React.FC<AdminReportModalProps> = ({
 
   return (
     <div
-      className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/70 backdrop-blur-xs p-2 sm:p-5 overflow-y-auto"
+      className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/70 backdrop-blur-xs p-2 sm:p-5 overflow-hidden overscroll-none"
       dir="rtl"
     >
-      <div className="bg-[#f4f7fc] dark:bg-slate-950 rounded-3xl shadow-2xl border border-slate-200/90 dark:border-slate-800 w-full max-w-7xl my-auto overflow-hidden flex flex-col max-h-[95vh]">
+      <div className="bg-[#f4f7fc] dark:bg-slate-950 rounded-3xl shadow-2xl border border-slate-200/90 dark:border-slate-800 w-full max-w-7xl my-auto overflow-hidden flex flex-col max-h-[95dvh]">
         {/* Top Action & Scope Selector Bar (Hidden when printing) */}
-        <div className="flex flex-wrap items-center justify-between gap-3 px-4 sm:px-6 py-3.5 bg-slate-900 text-white border-b border-slate-800 print:hidden">
+        <div className="flex flex-wrap items-center justify-between gap-3 px-4 sm:px-6 py-3.5 bg-slate-900 text-white border-b border-slate-800 print:hidden shrink-0">
           <div className="flex items-center gap-2.5">
             {onBack && (
               <button
@@ -356,7 +359,7 @@ export const AdminReportModal: React.FC<AdminReportModalProps> = ({
         </div>
 
         {/* Scrollable Executive Dashboard Report Body */}
-        <div className="p-4 sm:p-7 space-y-5 overflow-y-auto">
+        <div className="p-4 sm:p-7 space-y-5 overflow-y-auto min-h-0 flex-1 modal-scroll-area">
           {/* Report Header Banner (Matches Uploaded Infographic Layout) */}
           <div className="bg-gradient-to-l from-white via-indigo-50/40 to-sky-50/60 dark:from-slate-900 dark:via-slate-900 dark:to-indigo-950/40 rounded-3xl p-5 sm:p-6 border border-indigo-100/90 dark:border-slate-800 shadow-xs flex flex-col lg:flex-row lg:items-center lg:justify-between gap-5">
             {/* Right Title Block with Illustration */}

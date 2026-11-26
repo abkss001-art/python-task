@@ -22,3 +22,4 @@ export function envStorageKey(baseKey: string): string {
 }
 
 export const PROD_APP_URL = 'https://abkss001-art.github.io/python-task/';
+export const STAGING_APP_URL = 'https://abkss001-art.github.io/python-task/staging/';

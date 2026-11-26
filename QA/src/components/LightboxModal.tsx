@@ -12,6 +12,7 @@ import {
   Move
 } from 'lucide-react';
 import { sanitizeImageUrl } from '../utils/securityUtils';
+import { useModalUx } from '../utils/modalViewportAndBack';
 
 interface LightboxModalProps {
   images: string[];
@@ -34,6 +35,8 @@ export const LightboxModal: React.FC<LightboxModalProps> = ({
   const dragStartRef = useRef({ x: 0, y: 0 });
 
   const currentSrc = sanitizeImageUrl(images[currentIndex]) || '';
+
+  useModalUx(true, onClose);
 
   const resetTransform = () => {
     setScale(1);
@@ -129,7 +132,7 @@ export const LightboxModal: React.FC<LightboxModalProps> = ({
 
   return (
     <div
-      className="fixed inset-0 z-[80] flex flex-col bg-slate-950/95 backdrop-blur-md select-none"
+      className="fixed inset-0 z-[80] flex flex-col bg-slate-950/95 backdrop-blur-md select-none overflow-hidden overscroll-none"
       dir="rtl"
     >
       {/* Top Toolbar */}

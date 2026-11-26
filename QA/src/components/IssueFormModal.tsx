@@ -38,6 +38,7 @@ import {
 } from '../utils/csvImportUtils';
 import { PlatformIcon } from './IssueCard';
 import { ScreenshotAnnotatorModal } from './ScreenshotAnnotatorModal';
+import { useModalUx } from '../utils/modalViewportAndBack';
 
 interface IssueFormModalProps {
   systems: string[];
@@ -310,14 +311,16 @@ export const IssueFormModal: React.FC<IssueFormModalProps> = ({
     onClose();
   };
 
+  useModalUx(true, onClose);
+
   return (
     <div
-      className="fixed inset-0 z-40 flex items-center justify-center bg-slate-900/60 dark:bg-slate-950/80 backdrop-blur-xs p-3 sm:p-4 overflow-y-auto"
+      className="fixed inset-0 z-40 flex items-center justify-center bg-slate-900/60 dark:bg-slate-950/80 backdrop-blur-xs p-3 sm:p-4 overflow-hidden overscroll-none"
       dir="rtl"
     >
-      <div className="bg-white dark:bg-slate-900 rounded-2xl shadow-2xl border border-slate-200 dark:border-slate-800 w-full max-w-2xl my-auto overflow-hidden">
+      <div className="bg-white dark:bg-slate-900 rounded-2xl shadow-2xl border border-slate-200 dark:border-slate-800 w-full max-w-2xl my-auto max-h-[92dvh] flex flex-col overflow-hidden">
         {/* Modal Header */}
-        <div className="flex items-center justify-between px-5 sm:px-6 py-4 bg-slate-900 dark:bg-slate-950 text-white border-b border-slate-800">
+        <div className="flex items-center justify-between px-5 sm:px-6 py-4 bg-slate-900 dark:bg-slate-950 text-white border-b border-slate-800 shrink-0">
           <div>
             <h2 className="text-base sm:text-lg font-extrabold">
               {isEditing
@@ -351,7 +354,7 @@ export const IssueFormModal: React.FC<IssueFormModalProps> = ({
 
         {/* Mode Tabs inside New Issue Modal: Single Issue vs Excel/CSV Import */}
         {canShowCsvImport && (
-          <div className="px-5 sm:px-6 pt-3.5 pb-2 bg-slate-50/80 dark:bg-slate-900/80 border-b border-slate-200/80 dark:border-slate-800">
+          <div className="px-5 sm:px-6 pt-3.5 pb-2 bg-slate-50/80 dark:bg-slate-900/80 border-b border-slate-200/80 dark:border-slate-800 shrink-0">
             <div className="grid grid-cols-2 gap-1.5 p-1 rounded-xl bg-slate-200/70 dark:bg-slate-800">
               <button
                 type="button"
@@ -382,7 +385,7 @@ export const IssueFormModal: React.FC<IssueFormModalProps> = ({
         )}
 
         {activeMode === 'csv' && canShowCsvImport ? (
-          <div className="p-5 sm:p-6 space-y-4 max-h-[78vh] overflow-y-auto">
+          <div className="p-5 sm:p-6 space-y-4 min-h-0 flex-1 overflow-y-auto modal-scroll-area">
             {/* Target System Selector (scoped strictly to permitted systems) */}
             <div>
               <label className="block text-xs font-bold text-slate-700 dark:text-slate-200 mb-1.5 flex items-center justify-between">
@@ -576,7 +579,7 @@ export const IssueFormModal: React.FC<IssueFormModalProps> = ({
             </div>
           </div>
         ) : (
-        <form onSubmit={handleSubmit} className="p-5 sm:p-6 space-y-4 max-h-[84vh] overflow-y-auto">
+        <form onSubmit={handleSubmit} className="p-5 sm:p-6 space-y-4 min-h-0 flex-1 overflow-y-auto modal-scroll-area">
           {/* Top Row: System & Test Case ID */}
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             <div>
