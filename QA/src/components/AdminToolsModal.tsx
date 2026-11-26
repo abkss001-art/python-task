@@ -26,7 +26,7 @@ import {
 } from 'lucide-react';
 import { syncService } from '../services/syncService';
 import { IS_STAGING, PROD_APP_URL, STAGING_APP_URL } from '../utils/appEnv';
-import { useModalUx } from '../utils/modalViewportAndBack';
+import { useMobileBackHandler, useModalUx } from '../utils/modalViewportAndBack';
 
 interface AdminToolsModalProps {
   archivedCount: number;
@@ -155,15 +155,13 @@ export const AdminToolsModal: React.FC<AdminToolsModalProps> = ({
     setView('main');
   };
 
-  // Lock background scroll + support phone Back button (dev/dev_gate -> main -> close)
-  useModalUx(true, () => {
-    if (view === 'dev' || view === 'dev_gate') {
-      setAuthError(null);
-      setDevPassword('');
-      setView('main');
-    } else {
-      onClose();
-    }
+  // Level 1: Main tools hub (locks body scroll + closes modal on phone Back)
+  useModalUx(true, onClose);
+  // Level 2: Developer Vault sub-view pushes its own history entry so Back steps dev -> main -> close cleanly
+  useMobileBackHandler(view === 'dev' || view === 'dev_gate', () => {
+    setAuthError(null);
+    setDevPassword('');
+    setView('main');
   });
 
   const regularSecondaryTools = [

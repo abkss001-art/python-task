@@ -51,6 +51,77 @@
   overscroll-behavior: contain;
 }
 
+/* Native-feeling GPU modal & toast transitions (zero layout shift or scroll jumps) */
+@keyframes tzvFadeIn {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+@keyframes tzvModalIn {
+  from {
+    opacity: 0;
+    transform: translate3d(0, 8px, 0) scale(0.985);
+  }
+  to {
+    opacity: 1;
+    transform: translate3d(0, 0, 0) scale(1);
+  }
+}
+
+@keyframes tzvSlideInLeft {
+  from {
+    opacity: 0.7;
+    transform: translate3d(-100%, 0, 0);
+  }
+  to {
+    opacity: 1;
+    transform: translate3d(0, 0, 0);
+  }
+}
+
+@keyframes tzvExitToastIn {
+  from {
+    opacity: 0;
+    transform: translate3d(0, 12px, 0) scale(0.96);
+  }
+  to {
+    opacity: 1;
+    transform: translate3d(0, 0, 0) scale(1);
+  }
+}
+
+.animate-in.fade-in {
+  animation: tzvFadeIn 170ms cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+
+.animate-in.fade-in.zoom-in-95 {
+  animation: tzvModalIn 190ms cubic-bezier(0.22, 1, 0.36, 1) both;
+  will-change: transform, opacity;
+}
+
+.animate-in.slide-in-from-left {
+  animation: tzvSlideInLeft 220ms cubic-bezier(0.22, 1, 0.36, 1) both;
+  will-change: transform, opacity;
+}
+
+.exit-toast-in {
+  animation: tzvExitToastIn 200ms cubic-bezier(0.22, 1, 0.36, 1) both;
+  will-change: transform, opacity;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .animate-in.fade-in,
+  .animate-in.fade-in.zoom-in-95,
+  .animate-in.slide-in-from-left,
+  .exit-toast-in {
+    animation: none !important;
+  }
+}
+
 /* Custom subtle scrollbars */
 ::-webkit-scrollbar {
   width: 8px;

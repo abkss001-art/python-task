@@ -99,7 +99,11 @@ import {
 } from 'lucide-react';
 import { computeUserAuthSignature } from './utils/securityUtils';
 import { envStorageKey } from './utils/appEnv';
-import { useMobileBackHandler, useModalUx } from './utils/modalViewportAndBack';
+import {
+  useExitPromptNotice,
+  useMobileBackHandler,
+  useModalUx
+} from './utils/modalViewportAndBack';
 
 const AUTH_STORAGE_KEY = envStorageKey('std_qa_auth_user_v1');
 const LAST_ACTIVE_SYSTEM_KEY = envStorageKey('std_qa_last_active_system_v1');
@@ -279,7 +283,8 @@ export function App() {
     return () => document.removeEventListener('mousedown', handleClickOutside);
   }, [isSystemSwitcherOpen]);
 
-  // Mobile Back button / swipe-back support for system view & App-level inline modals
+  // Mobile Back button / swipe-back support for system view, App-level inline modals & Double-Back to Exit
+  const showExitPrompt = useExitPromptNotice();
   useMobileBackHandler(
     Boolean(authUser && activeSystem && activeSystem !== 'HOME'),
     () => handleSelectSystem('HOME')
@@ -2037,6 +2042,24 @@ export function App() {
     );
   };
 
+  // Native-feeling Double-Back-to-Exit floating pill toast (Android & iOS root screen)
+  const renderExitPromptToast = () => {
+    if (!showExitPrompt) return null;
+    return (
+      <div
+        className="fixed bottom-24 sm:bottom-8 inset-x-0 z-[100] flex justify-center px-4 pointer-events-none"
+        dir="rtl"
+        role="status"
+        aria-live="polite"
+      >
+        <div className="exit-toast-in inline-flex items-center gap-2 px-4 py-2.5 rounded-full bg-slate-900/95 dark:bg-slate-800/95 text-white text-xs sm:text-sm font-bold shadow-2xl border border-slate-700/80 backdrop-blur-md">
+          <ArrowRight className="w-4 h-4 text-amber-400 shrink-0" />
+          <span>לחץ שוב על &quot;חזור&quot; כדי לצאת מהאפליקציה</span>
+        </div>
+      </div>
+    );
+  };
+
   // Wait for Firebase Auth server verification before rendering either dashboard or login (prevents any pre-auth localStorage flash)
   if (!authReady) {
     const showRecovery = authTakingLong || Boolean(syncStatus.errorMessage);
@@ -2129,6 +2152,7 @@ export function App() {
           onToggleTheme={toggleTheme}
         />
         {renderInstallModal()}
+        {renderExitPromptToast()}
       </>
     );
   }
@@ -2154,6 +2178,7 @@ export function App() {
           }
         />
         {renderInstallModal()}
+        {renderExitPromptToast()}
       </>
     );
   }
@@ -3348,6 +3373,9 @@ export function App() {
           onClose={() => setLightboxData(null)}
         />
       )}
+
+      {/* Root-screen Double-Back-to-Exit confirmation toast */}
+      {renderExitPromptToast()}
     </div>
   );
 }
