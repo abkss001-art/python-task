@@ -51,6 +51,37 @@
   overscroll-behavior: contain;
 }
 
+/* Safe-area helpers for iPhone notch / Dynamic Island / Home Indicator & Android gesture bar */
+.safe-bottom {
+  padding-bottom: max(0.35rem, env(safe-area-inset-bottom));
+}
+
+.safe-top {
+  padding-top: max(0.5rem, env(safe-area-inset-top));
+}
+
+/* Responsive modal backdrop & card height across all phone sizes (320px SE -> 440px+ Ultra, landscape & soft keyboard) */
+.modal-backdrop-safe {
+  padding-top: max(0.5rem, env(safe-area-inset-top));
+  padding-bottom: max(0.5rem, env(safe-area-inset-bottom));
+  padding-left: max(0.5rem, env(safe-area-inset-left));
+  padding-right: max(0.5rem, env(safe-area-inset-right));
+}
+
+.modal-card-safe {
+  max-height: calc(100dvh - max(1rem, env(safe-area-inset-top) + env(safe-area-inset-bottom) + 0.75rem));
+}
+
+@media (min-width: 640px) {
+  .modal-backdrop-safe {
+    padding: 1rem;
+  }
+
+  .modal-card-safe {
+    max-height: 92dvh;
+  }
+}
+
 /* Native-feeling GPU modal & toast transitions (zero layout shift or scroll jumps) */
 @keyframes tzvFadeIn {
   from {

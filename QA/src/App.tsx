@@ -1734,10 +1734,10 @@ export function App() {
     if (!isInstallModalOpen) return null;
     return (
       <div
-        className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/60 dark:bg-slate-950/80 backdrop-blur-xs p-3 sm:p-4 overflow-hidden overscroll-none"
+        className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/60 dark:bg-slate-950/80 backdrop-blur-xs modal-backdrop-safe overflow-hidden overscroll-none"
         dir="rtl"
       >
-        <div className="bg-white dark:bg-slate-900 rounded-2xl shadow-2xl border border-slate-200 dark:border-slate-800 w-full max-w-md p-5 sm:p-6 space-y-4 max-h-[90dvh] overflow-y-auto modal-scroll-area">
+        <div className="bg-white dark:bg-slate-900 rounded-2xl shadow-2xl border border-slate-200 dark:border-slate-800 w-full max-w-md p-4 sm:p-6 space-y-4 modal-card-safe overflow-y-auto modal-scroll-area animate-in fade-in zoom-in-95 duration-150">
           <div className="flex items-start justify-between gap-3">
             <div className="flex items-center gap-3">
               <div
@@ -2243,9 +2243,9 @@ export function App() {
         onToggleTheme={toggleTheme}
       />
 
-      {/* Floating Real-Time Event Toast (when another team member updates something) */}
+      {/* Floating Real-Time Event Toast (positioned cleanly above MobileBottomNav on phones) */}
       {liveToast && (
-        <div className="fixed bottom-5 left-5 z-50 flex items-center gap-2.5 px-4 py-3 rounded-2xl bg-slate-900 text-white text-xs sm:text-sm font-semibold shadow-2xl border border-indigo-500/40 animate-bounce">
+        <div className="fixed bottom-24 md:bottom-5 left-3 right-3 sm:right-auto sm:left-5 z-[95] flex items-center gap-2.5 px-4 py-3 rounded-2xl bg-slate-900 text-white text-xs sm:text-sm font-semibold shadow-2xl border border-indigo-500/40 animate-bounce">
           <Radio className="w-4 h-4 text-emerald-400 animate-pulse shrink-0" />
           <span className="rtl-safe">{liveToast}</span>
         </div>
@@ -2826,10 +2826,10 @@ export function App() {
       {/* Popup Confirmation Modal Before Deleting an Issue (Admin Only) */}
       {issueToDelete && isAdmin && (
         <div
-          className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/60 dark:bg-slate-950/80 backdrop-blur-xs p-3 sm:p-4 overflow-hidden overscroll-none"
+          className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/60 dark:bg-slate-950/80 backdrop-blur-xs modal-backdrop-safe overflow-hidden overscroll-none"
           dir="rtl"
         >
-          <div className="bg-white dark:bg-slate-900 rounded-2xl shadow-2xl border border-slate-200 dark:border-slate-800 w-full max-w-md max-h-[90dvh] overflow-y-auto modal-scroll-area p-6 space-y-4">
+          <div className="bg-white dark:bg-slate-900 rounded-2xl shadow-2xl border border-slate-200 dark:border-slate-800 w-full max-w-md modal-card-safe overflow-y-auto modal-scroll-area p-4 sm:p-6 space-y-4 animate-in fade-in zoom-in-95 duration-150">
             <div className="flex items-start gap-3.5">
               <div className="w-11 h-11 rounded-2xl bg-red-50 dark:bg-red-950/50 border border-red-200 dark:border-red-900 flex items-center justify-center text-red-600 dark:text-red-400 shrink-0">
                 <AlertTriangle className="w-6 h-6" />
@@ -2899,10 +2899,10 @@ export function App() {
       {/* Admin Archive Management Modal */}
       {isArchiveModalOpen && isAdmin && (
         <div
-          className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/60 dark:bg-slate-950/80 backdrop-blur-xs p-3 sm:p-4 overflow-hidden overscroll-none"
+          className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/60 dark:bg-slate-950/80 backdrop-blur-xs modal-backdrop-safe overflow-hidden overscroll-none"
           dir="rtl"
         >
-          <div className="bg-white dark:bg-slate-900 rounded-2xl shadow-2xl border border-slate-200 dark:border-slate-800 w-full max-w-xl max-h-[90dvh] flex flex-col overflow-hidden">
+          <div className="bg-white dark:bg-slate-900 rounded-2xl shadow-2xl border border-slate-200 dark:border-slate-800 w-full max-w-xl modal-card-safe flex flex-col overflow-hidden animate-in fade-in zoom-in-95 duration-150">
             <div className="flex items-center justify-between gap-2 px-5 sm:px-6 py-4 bg-slate-900 text-white border-b border-slate-800 shrink-0">
               <div className="flex items-center gap-2.5 min-w-0">
                 {archiveReturnToTools && (

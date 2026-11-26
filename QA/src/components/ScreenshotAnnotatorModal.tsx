@@ -275,7 +275,7 @@ export const ScreenshotAnnotatorModal: React.FC<ScreenshotAnnotatorModalProps> =
 
   return (
     <div
-      className="fixed inset-0 z-50 flex flex-col bg-slate-950/95 backdrop-blur-sm p-3 sm:p-5 overflow-hidden overscroll-none"
+      className="fixed inset-0 z-[90] flex flex-col bg-slate-950/95 backdrop-blur-sm modal-backdrop-safe sm:p-5 overflow-hidden overscroll-none"
       dir="rtl"
     >
       {/* Top Toolbar */}

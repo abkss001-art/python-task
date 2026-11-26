@@ -450,12 +450,12 @@ export const AdminTeamModal: React.FC<AdminTeamModalProps> = ({
 
   return (
     <div
-      className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/60 dark:bg-slate-950/80 backdrop-blur-xs p-3 sm:p-4 overflow-hidden overscroll-none"
+      className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/60 dark:bg-slate-950/80 backdrop-blur-xs modal-backdrop-safe overflow-hidden overscroll-none"
       dir="rtl"
     >
-      <div className="bg-white dark:bg-slate-900 rounded-3xl shadow-2xl border border-slate-200 dark:border-slate-800 w-full max-w-3xl overflow-hidden my-auto max-h-[92dvh] flex flex-col animate-in fade-in zoom-in-95 duration-150">
+      <div className="bg-white dark:bg-slate-900 rounded-2xl sm:rounded-3xl shadow-2xl border border-slate-200 dark:border-slate-800 w-full max-w-3xl overflow-hidden my-auto modal-card-safe flex flex-col animate-in fade-in zoom-in-95 duration-150">
         {/* Modal Header */}
-        <div className="flex items-center justify-between gap-2 px-5 sm:px-6 py-4 bg-gradient-to-l from-slate-950 via-indigo-950 to-slate-900 text-white border-b border-slate-800 shrink-0">
+        <div className="flex items-center justify-between gap-2 px-3.5 sm:px-6 py-3 sm:py-4 bg-gradient-to-l from-slate-950 via-indigo-950 to-slate-900 text-white border-b border-slate-800 shrink-0">
           <div className="flex items-center gap-2.5 min-w-0">
             {onBack && (
               <button
@@ -528,7 +528,7 @@ export const AdminTeamModal: React.FC<AdminTeamModalProps> = ({
         </div>
 
         {/* Scrollable Content */}
-        <div className="p-5 sm:p-6 space-y-4 overflow-y-auto min-h-0 flex-1 modal-scroll-area">
+        <div className="p-3.5 sm:p-6 space-y-4 overflow-y-auto min-h-0 flex-1 modal-scroll-area">
           {pendingJoinRequestsCount > 0 && onOpenJoinRequests && (
             <div className="p-3.5 rounded-2xl bg-rose-50 dark:bg-rose-950/50 border border-rose-200 dark:border-rose-800 flex items-center justify-between gap-3">
               <div className="flex items-center gap-2 text-xs font-extrabold text-rose-900 dark:text-rose-200">
@@ -1501,10 +1501,10 @@ export const AdminTeamModal: React.FC<AdminTeamModalProps> = ({
       {/* Warning Confirmation Modal Before Deleting a Member */}
       {memberToDelete && (
         <div
-          className="fixed inset-0 z-60 flex items-center justify-center bg-slate-950/70 backdrop-blur-xs p-4 overflow-hidden overscroll-none"
+          className="fixed inset-0 z-[60] flex items-center justify-center bg-slate-950/70 backdrop-blur-xs modal-backdrop-safe overflow-hidden overscroll-none"
           dir="rtl"
         >
-          <div className="bg-white dark:bg-slate-900 rounded-2xl shadow-2xl border border-slate-200 dark:border-slate-800 w-full max-w-md max-h-[90dvh] overflow-y-auto modal-scroll-area p-6 space-y-4 animate-in fade-in zoom-in-95">
+          <div className="bg-white dark:bg-slate-900 rounded-2xl shadow-2xl border border-slate-200 dark:border-slate-800 w-full max-w-md modal-card-safe overflow-y-auto modal-scroll-area p-4 sm:p-6 space-y-4 animate-in fade-in zoom-in-95">
             <div className="flex items-start gap-3.5">
               <div className="w-11 h-11 rounded-2xl bg-red-50 dark:bg-red-950/50 border border-red-200 dark:border-red-900 flex items-center justify-center text-red-600 dark:text-red-400 shrink-0">
                 <AlertTriangle className="w-6 h-6" />

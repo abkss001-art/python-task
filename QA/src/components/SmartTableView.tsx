@@ -800,30 +800,30 @@ export const SmartTableView: React.FC<SmartTableViewProps> = ({
 
         return (
           <div
-            className="fixed inset-0 z-40 flex items-center justify-center bg-slate-900/65 dark:bg-slate-950/80 backdrop-blur-xs p-3 sm:p-4 overflow-hidden overscroll-none"
+            className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/65 dark:bg-slate-950/80 backdrop-blur-xs modal-backdrop-safe overflow-hidden overscroll-none"
             dir="rtl"
             onClick={() => setViewingIssueId(null)}
           >
             <div
-              className="bg-white dark:bg-slate-900 rounded-3xl shadow-2xl border border-slate-200 dark:border-slate-800 w-full max-w-2xl overflow-hidden my-auto max-h-[90dvh] flex flex-col animate-in fade-in zoom-in-95 duration-150"
+              className="bg-white dark:bg-slate-900 rounded-2xl sm:rounded-3xl shadow-2xl border border-slate-200 dark:border-slate-800 w-full max-w-2xl overflow-hidden my-auto modal-card-safe flex flex-col animate-in fade-in zoom-in-95 duration-150"
               onClick={(e) => e.stopPropagation()}
             >
               {/* Modal Header */}
-              <div className="flex items-start justify-between gap-3 px-5 sm:px-6 py-4 bg-gradient-to-l from-slate-950 via-indigo-950 to-slate-900 text-white border-b border-slate-800 shrink-0">
-                <div className="min-w-0 space-y-2">
-                  <div className="flex items-center gap-2 flex-wrap">
-                    <span className="inline-flex items-center px-2.5 py-0.5 rounded-lg bg-white/15 text-white font-mono font-extrabold text-xs border border-white/15">
+              <div className="flex items-start justify-between gap-2.5 sm:gap-3 px-3.5 sm:px-6 py-3 sm:py-4 bg-gradient-to-l from-slate-950 via-indigo-950 to-slate-900 text-white border-b border-slate-800 shrink-0">
+                <div className="min-w-0 space-y-1.5 sm:space-y-2">
+                  <div className="flex items-center gap-1.5 sm:gap-2 flex-wrap">
+                    <span className="inline-flex items-center px-2 sm:px-2.5 py-0.5 rounded-lg bg-white/15 text-white font-mono font-extrabold text-[11px] sm:text-xs border border-white/15">
                       #{viewingIssue.testCaseId}
                     </span>
-                    <span className="px-2.5 py-0.5 rounded-lg bg-indigo-500/25 text-indigo-200 border border-indigo-400/30 font-bold text-xs bidi-isolate">
+                    <span className="px-2 sm:px-2.5 py-0.5 rounded-lg bg-indigo-500/25 text-indigo-200 border border-indigo-400/30 font-bold text-[11px] sm:text-xs bidi-isolate">
                       {viewingIssue.system}
                     </span>
-                    <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-lg bg-white/10 text-slate-200 text-xs font-semibold">
+                    <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-lg bg-white/10 text-slate-200 text-[11px] sm:text-xs font-semibold">
                       <PlatformIcon platform={viewingIssue.platform} className="w-3.5 h-3.5 text-indigo-300" />
                       <span className="bidi-isolate">{viewingIssue.platform}</span>
                     </span>
                     <span
-                      className={`inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full border text-[11px] font-extrabold ${vSevStyle.bgBadge} ${vSevStyle.textBadge} ${vSevStyle.borderBadge}`}
+                      className={`inline-flex items-center gap-1 px-2 sm:px-2.5 py-0.5 rounded-full border text-[11px] font-extrabold ${vSevStyle.bgBadge} ${vSevStyle.textBadge} ${vSevStyle.borderBadge}`}
                     >
                       {vSev === 'קריטית' ? (
                         <Flame className="w-3 h-3 text-rose-600" />
@@ -833,7 +833,7 @@ export const SmartTableView: React.FC<SmartTableViewProps> = ({
                       <span>{vSev}</span>
                     </span>
                   </div>
-                  <h3 className="text-base sm:text-lg font-black leading-snug text-white rtl-safe break-words">
+                  <h3 className="text-sm sm:text-lg font-black leading-snug text-white rtl-safe break-words">
                     {viewingIssue.subject}
                   </h3>
                 </div>
@@ -849,7 +849,7 @@ export const SmartTableView: React.FC<SmartTableViewProps> = ({
               </div>
 
               {/* Modal Body */}
-              <div className="p-5 sm:p-6 space-y-4 min-h-0 overflow-y-auto flex-1 modal-scroll-area">
+              <div className="p-3.5 sm:p-6 space-y-3 sm:space-y-4 min-h-0 overflow-y-auto flex-1 modal-scroll-area">
                 {/* Status + Metadata Strip */}
                 <div className="flex flex-wrap items-center justify-between gap-2.5 p-3 rounded-2xl bg-slate-50 dark:bg-slate-800/60 border border-slate-200/80 dark:border-slate-700/80">
                   <div className="flex items-center gap-2">
@@ -916,7 +916,7 @@ export const SmartTableView: React.FC<SmartTableViewProps> = ({
                     </button>
                   </div>
 
-                  <div className="p-4 rounded-2xl bg-slate-50/90 dark:bg-slate-950/70 border border-slate-200 dark:border-slate-800 text-sm text-slate-800 dark:text-slate-100 leading-relaxed whitespace-pre-wrap break-words rtl-safe select-text">
+                  <div className="p-3 sm:p-4 rounded-2xl bg-slate-50/90 dark:bg-slate-950/70 border border-slate-200 dark:border-slate-800 text-[13px] sm:text-sm text-slate-800 dark:text-slate-100 leading-relaxed whitespace-pre-wrap break-words rtl-safe select-text">
                     {viewingIssue.description || 'אין פירוט נוסף לתקלה זו.'}
                   </div>
                 </div>
@@ -960,9 +960,9 @@ export const SmartTableView: React.FC<SmartTableViewProps> = ({
                 )}
               </div>
 
-              {/* Modal Footer */}
-              <div className="flex flex-wrap items-center justify-between gap-2 px-5 sm:px-6 py-3.5 bg-slate-50 dark:bg-slate-950 border-t border-slate-200 dark:border-slate-800 shrink-0">
-                <div className="flex items-center gap-2">
+              {/* Modal Footer (Single crisp row across 320px–440px+ phones & desktop) */}
+              <div className="flex items-center justify-between gap-2 px-3.5 sm:px-6 py-2.5 sm:py-3.5 bg-slate-50 dark:bg-slate-950 border-t border-slate-200 dark:border-slate-800 shrink-0">
+                <div className="flex items-center gap-1.5 sm:gap-2 min-w-0">
                   <button
                     type="button"
                     onClick={() => {
@@ -972,10 +972,11 @@ export const SmartTableView: React.FC<SmartTableViewProps> = ({
                       setExpandedRowId(targetId);
                       markIssueCommentsRead(targetId, commentCount);
                     }}
-                    className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-xl border border-indigo-200 dark:border-indigo-800 bg-indigo-50/80 dark:bg-indigo-950/60 hover:bg-indigo-100 dark:hover:bg-indigo-900/60 text-indigo-700 dark:text-indigo-300 text-xs font-extrabold cursor-pointer transition"
+                    className="inline-flex items-center gap-1.5 px-2.5 sm:px-3.5 py-2 min-h-[38px] rounded-xl border border-indigo-200 dark:border-indigo-800 bg-indigo-50/80 dark:bg-indigo-950/60 hover:bg-indigo-100 dark:hover:bg-indigo-900/60 text-indigo-700 dark:text-indigo-300 text-xs font-extrabold cursor-pointer transition shrink-0 whitespace-nowrap"
                   >
-                    <MessageSquare className="w-3.5 h-3.5" />
-                    <span>הערות והיסטוריה ({viewingIssue.comments.length})</span>
+                    <MessageSquare className="w-3.5 h-3.5 shrink-0" />
+                    <span className="sm:hidden">הערות ({viewingIssue.comments.length})</span>
+                    <span className="hidden sm:inline">הערות והיסטוריה ({viewingIssue.comments.length})</span>
                   </button>
                   {canEdit && (
                     <button
@@ -985,10 +986,11 @@ export const SmartTableView: React.FC<SmartTableViewProps> = ({
                         setViewingIssueId(null);
                         onEditIssue(target);
                       }}
-                      className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 hover:bg-slate-100 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 text-xs font-bold cursor-pointer transition"
+                      className="inline-flex items-center gap-1.5 px-2.5 sm:px-3.5 py-2 min-h-[38px] rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 hover:bg-slate-100 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 text-xs font-bold cursor-pointer transition shrink-0 whitespace-nowrap"
                     >
-                      <Edit3 className="w-3.5 h-3.5" />
-                      <span>ערוך תקלה</span>
+                      <Edit3 className="w-3.5 h-3.5 shrink-0" />
+                      <span className="sm:hidden">ערוך</span>
+                      <span className="hidden sm:inline">ערוך תקלה</span>
                     </button>
                   )}
                 </div>
@@ -996,7 +998,7 @@ export const SmartTableView: React.FC<SmartTableViewProps> = ({
                 <button
                   type="button"
                   onClick={() => setViewingIssueId(null)}
-                  className="px-5 py-2 rounded-xl bg-slate-900 dark:bg-indigo-600 hover:bg-slate-800 dark:hover:bg-indigo-500 text-white text-xs font-extrabold cursor-pointer transition"
+                  className="px-4 sm:px-5 py-2 min-h-[38px] rounded-xl bg-slate-900 dark:bg-indigo-600 hover:bg-slate-800 dark:hover:bg-indigo-500 text-white text-xs font-extrabold cursor-pointer transition shrink-0 whitespace-nowrap"
                 >
                   סגור
                 </button>

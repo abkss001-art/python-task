@@ -416,7 +416,7 @@ export const SystemChatDrawer: React.FC<SystemChatDrawerProps> = ({
         )}
 
         {/* Drawer Header */}
-        <div className="shrink-0 px-4 py-3.5 bg-gradient-to-l from-indigo-600 to-violet-600 dark:from-indigo-950 dark:to-slate-900 text-white border-b border-indigo-500/30 dark:border-slate-800 flex items-center justify-between gap-2">
+        <div className="shrink-0 px-4 pb-3.5 safe-top bg-gradient-to-l from-indigo-600 to-violet-600 dark:from-indigo-950 dark:to-slate-900 text-white border-b border-indigo-500/30 dark:border-slate-800 flex items-center justify-between gap-2">
           <div className="flex items-center gap-3 min-w-0">
             <div className="w-10 h-10 rounded-2xl bg-white/15 border border-white/20 flex items-center justify-center shrink-0">
               <MessageCircle className="w-5 h-5 text-white" />
@@ -854,7 +854,7 @@ export const SystemChatDrawer: React.FC<SystemChatDrawerProps> = ({
         )}
 
         {/* Composer Section */}
-        <div className="relative shrink-0 p-3 bg-white dark:bg-slate-900 border-t border-slate-200 dark:border-slate-800 space-y-2">
+        <div className="relative shrink-0 px-3 pt-3 bg-white dark:bg-slate-900 border-t border-slate-200 dark:border-slate-800 space-y-2 safe-bottom">
           {/* Autocomplete Popover (@mention or #issue) */}
           {activePicker && pickerItems.length > 0 && (
             <div className="absolute bottom-full left-3 right-3 mb-2 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-2xl shadow-xl overflow-hidden z-20 max-h-52 overflow-y-auto">

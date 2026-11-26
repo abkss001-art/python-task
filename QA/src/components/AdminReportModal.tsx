@@ -243,10 +243,10 @@ export const AdminReportModal: React.FC<AdminReportModalProps> = ({
 
   return (
     <div
-      className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/70 backdrop-blur-xs p-2 sm:p-5 overflow-hidden overscroll-none"
+      className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/70 backdrop-blur-xs modal-backdrop-safe sm:p-5 overflow-hidden overscroll-none"
       dir="rtl"
     >
-      <div className="bg-[#f4f7fc] dark:bg-slate-950 rounded-3xl shadow-2xl border border-slate-200/90 dark:border-slate-800 w-full max-w-7xl my-auto overflow-hidden flex flex-col max-h-[95dvh]">
+      <div className="bg-[#f4f7fc] dark:bg-slate-950 rounded-2xl sm:rounded-3xl shadow-2xl border border-slate-200/90 dark:border-slate-800 w-full max-w-7xl my-auto overflow-hidden flex flex-col modal-card-safe sm:max-h-[95dvh] animate-in fade-in zoom-in-95 duration-150">
         {/* Top Action & Scope Selector Bar (Hidden when printing) */}
         <div className="flex flex-wrap items-center justify-between gap-3 px-4 sm:px-6 py-3.5 bg-slate-900 text-white border-b border-slate-800 print:hidden shrink-0">
           <div className="flex items-center gap-2.5">

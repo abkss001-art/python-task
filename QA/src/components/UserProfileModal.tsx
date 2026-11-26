@@ -144,16 +144,16 @@ export const UserProfileModal: React.FC<UserProfileModalProps> = ({
 
   return (
     <div
-      className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/65 dark:bg-slate-950/80 backdrop-blur-xs p-3 sm:p-4 overflow-hidden overscroll-none"
+      className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/65 dark:bg-slate-950/80 backdrop-blur-xs modal-backdrop-safe overflow-hidden overscroll-none"
       dir="rtl"
       onClick={onClose}
     >
       <div
-        className="bg-white dark:bg-slate-900 rounded-3xl shadow-2xl border border-slate-200 dark:border-slate-800 w-full max-w-xl overflow-hidden my-auto max-h-[92dvh] flex flex-col animate-in fade-in zoom-in-95 duration-150"
+        className="bg-white dark:bg-slate-900 rounded-2xl sm:rounded-3xl shadow-2xl border border-slate-200 dark:border-slate-800 w-full max-w-xl overflow-hidden my-auto modal-card-safe flex flex-col animate-in fade-in zoom-in-95 duration-150"
         onClick={(e) => e.stopPropagation()}
       >
         {/* Header: Name, Role & Login Email ONLY (no copy button) */}
-        <div className="flex items-start justify-between gap-3 px-5 sm:px-6 py-5 bg-gradient-to-l from-slate-950 via-indigo-950 to-slate-900 text-white border-b border-slate-800 shrink-0">
+        <div className="flex items-start justify-between gap-2.5 sm:gap-3 px-4 sm:px-6 py-4 sm:py-5 bg-gradient-to-l from-slate-950 via-indigo-950 to-slate-900 text-white border-b border-slate-800 shrink-0">
           <div className="flex items-center gap-3.5 min-w-0">
             <div
               className={`w-12 h-12 rounded-2xl flex items-center justify-center border shrink-0 shadow-md ${
@@ -214,42 +214,42 @@ export const UserProfileModal: React.FC<UserProfileModalProps> = ({
         </div>
 
         {/* Body */}
-        <div className="p-5 sm:p-6 space-y-4 overflow-y-auto min-h-0 flex-1 modal-scroll-area">
+        <div className="p-3.5 sm:p-6 space-y-3.5 sm:space-y-4 overflow-y-auto min-h-0 flex-1 modal-scroll-area">
           {/* 1. Key Activity KPIs (Works great for QA, Dev & Admin alike!) */}
-          <div className="grid grid-cols-3 gap-2.5">
-            <div className="p-3.5 rounded-2xl bg-indigo-50/70 dark:bg-indigo-950/40 border border-indigo-200/80 dark:border-indigo-800/70 text-center space-y-1">
-              <div className="inline-flex items-center justify-center w-8 h-8 rounded-xl bg-indigo-100 dark:bg-indigo-900/70 text-indigo-600 dark:text-indigo-300">
+          <div className="grid grid-cols-3 gap-2 sm:gap-2.5">
+            <div className="p-2.5 sm:p-3.5 rounded-2xl bg-indigo-50/70 dark:bg-indigo-950/40 border border-indigo-200/80 dark:border-indigo-800/70 text-center space-y-1">
+              <div className="inline-flex items-center justify-center w-7 h-7 sm:w-8 sm:h-8 rounded-xl bg-indigo-100 dark:bg-indigo-900/70 text-indigo-600 dark:text-indigo-300">
                 <Bug className="w-4 h-4" />
               </div>
-              <div className="text-xl font-black text-indigo-950 dark:text-white font-mono">
+              <div className="text-lg sm:text-xl font-black text-indigo-950 dark:text-white font-mono">
                 {stats.openedCount}
               </div>
-              <div className="text-[11px] font-bold text-indigo-800 dark:text-indigo-300">
+              <div className="text-[10px] sm:text-[11px] leading-tight font-bold text-indigo-800 dark:text-indigo-300">
                 תקלות שפתחתי
               </div>
             </div>
 
-            <div className="p-3.5 rounded-2xl bg-emerald-50/70 dark:bg-emerald-950/40 border border-emerald-200/80 dark:border-emerald-800/70 text-center space-y-1">
-              <div className="inline-flex items-center justify-center w-8 h-8 rounded-xl bg-emerald-100 dark:bg-emerald-900/70 text-emerald-600 dark:text-emerald-300">
+            <div className="p-2.5 sm:p-3.5 rounded-2xl bg-emerald-50/70 dark:bg-emerald-950/40 border border-emerald-200/80 dark:border-emerald-800/70 text-center space-y-1">
+              <div className="inline-flex items-center justify-center w-7 h-7 sm:w-8 sm:h-8 rounded-xl bg-emerald-100 dark:bg-emerald-900/70 text-emerald-600 dark:text-emerald-300">
                 <MessageSquare className="w-4 h-4" />
               </div>
-              <div className="text-xl font-black text-emerald-950 dark:text-white font-mono">
+              <div className="text-lg sm:text-xl font-black text-emerald-950 dark:text-white font-mono">
                 {stats.commentsWrittenCount}
               </div>
-              <div className="text-[11px] font-bold text-emerald-800 dark:text-emerald-300">
+              <div className="text-[10px] sm:text-[11px] leading-tight font-bold text-emerald-800 dark:text-emerald-300">
                 תגובות שכתבתי
               </div>
             </div>
 
-            <div className="p-3.5 rounded-2xl bg-amber-50/70 dark:bg-amber-950/40 border border-amber-200/80 dark:border-amber-800/70 text-center space-y-1">
-              <div className="inline-flex items-center justify-center w-8 h-8 rounded-xl bg-amber-100 dark:bg-amber-900/70 text-amber-600 dark:text-amber-300">
+            <div className="p-2.5 sm:p-3.5 rounded-2xl bg-amber-50/70 dark:bg-amber-950/40 border border-amber-200/80 dark:border-amber-800/70 text-center space-y-1">
+              <div className="inline-flex items-center justify-center w-7 h-7 sm:w-8 sm:h-8 rounded-xl bg-amber-100 dark:bg-amber-900/70 text-amber-600 dark:text-amber-300">
                 <AlertCircle className="w-4 h-4" />
               </div>
-              <div className="text-xl font-black text-amber-950 dark:text-white font-mono">
+              <div className="text-lg sm:text-xl font-black text-amber-950 dark:text-white font-mono">
                 {stats.openInMySystemsCount}
               </div>
-              <div className="text-[11px] font-bold text-amber-900 dark:text-amber-300">
-                ממתינות בפרויקטים שלי
+              <div className="text-[10px] sm:text-[11px] leading-tight font-bold text-amber-900 dark:text-amber-300">
+                ממתינות בפרויקטים
               </div>
             </div>
           </div>

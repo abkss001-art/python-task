@@ -14,6 +14,7 @@ import {
   Home
 } from 'lucide-react';
 import { SyncStatusInfo } from '../types/std';
+import { useMobileBackHandler } from '../utils/modalViewportAndBack';
 
 interface MobileBottomNavProps {
   viewMode: 'cards' | 'table' | 'kanban';
@@ -47,6 +48,11 @@ export const MobileBottomNav: React.FC<MobileBottomNavProps> = ({
   const systemMenuRef = useRef<HTMLDivElement>(null);
   const viewMenuRef = useRef<HTMLDivElement>(null);
 
+  useMobileBackHandler(isSystemMenuOpen || isViewMenuOpen, () => {
+    setIsSystemMenuOpen(false);
+    setIsViewMenuOpen(false);
+  });
+
   // Close menus on outside click
   useEffect(() => {
     const handleClickOutside = (e: MouseEvent) => {
@@ -74,7 +80,7 @@ export const MobileBottomNav: React.FC<MobileBottomNavProps> = ({
         <div
           ref={systemMenuRef}
           dir="rtl"
-          className="md:hidden fixed bottom-18 right-3 left-3 z-50 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl shadow-2xl p-3 max-h-72 overflow-y-auto animate-in fade-in slide-in-from-bottom-2 duration-150"
+          className="md:hidden fixed bottom-[4.75rem] right-3 left-3 z-40 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl shadow-2xl p-3 max-h-[60dvh] overflow-y-auto modal-scroll-area animate-in fade-in duration-150"
         >
           <div className="flex items-center justify-between pb-2 mb-2 border-b border-slate-100 dark:border-slate-800">
             <span className="text-xs font-bold text-slate-800 dark:text-slate-200 flex items-center gap-1.5">
@@ -136,7 +142,7 @@ export const MobileBottomNav: React.FC<MobileBottomNavProps> = ({
         <div
           ref={viewMenuRef}
           dir="rtl"
-          className="md:hidden fixed bottom-18 left-3 w-56 z-50 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl shadow-2xl p-2 animate-in fade-in slide-in-from-bottom-2 duration-150"
+          className="md:hidden fixed bottom-[4.75rem] left-3 w-56 max-w-[calc(100vw-1.5rem)] z-40 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl shadow-2xl p-2 animate-in fade-in duration-150"
         >
           <div className="text-[11px] font-bold text-slate-400 dark:text-slate-500 px-2 py-1 mb-1">
             בחר סגנון תצוגה
@@ -202,11 +208,11 @@ export const MobileBottomNav: React.FC<MobileBottomNavProps> = ({
         </div>
       )}
 
-      {/* Main Bottom Navigation Bar */}
+      {/* Main Bottom Navigation Bar (z-30 so all z-50 modals always cover it cleanly!) */}
       <nav
         dir="rtl"
         aria-label="סרגל ניווט תחתון"
-        className="md:hidden fixed bottom-0 left-0 right-0 z-40 bg-white/95 dark:bg-slate-900/95 backdrop-blur-md border-t border-slate-200/90 dark:border-slate-800/90 shadow-2xl px-2 py-1 flex items-center justify-around safe-bottom"
+        className="md:hidden fixed bottom-0 left-0 right-0 z-30 bg-white/95 dark:bg-slate-900/95 backdrop-blur-md border-t border-slate-200/90 dark:border-slate-800/90 shadow-2xl px-1.5 sm:px-2 pt-1 flex items-center justify-around safe-bottom"
       >
         {/* View Mode Switcher Button */}
         <button

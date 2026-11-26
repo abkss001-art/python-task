@@ -315,12 +315,12 @@ export const IssueFormModal: React.FC<IssueFormModalProps> = ({
 
   return (
     <div
-      className="fixed inset-0 z-40 flex items-center justify-center bg-slate-900/60 dark:bg-slate-950/80 backdrop-blur-xs p-3 sm:p-4 overflow-hidden overscroll-none"
+      className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/60 dark:bg-slate-950/80 backdrop-blur-xs modal-backdrop-safe overflow-hidden overscroll-none"
       dir="rtl"
     >
-      <div className="bg-white dark:bg-slate-900 rounded-2xl shadow-2xl border border-slate-200 dark:border-slate-800 w-full max-w-2xl my-auto max-h-[92dvh] flex flex-col overflow-hidden">
+      <div className="bg-white dark:bg-slate-900 rounded-2xl shadow-2xl border border-slate-200 dark:border-slate-800 w-full max-w-2xl my-auto modal-card-safe flex flex-col overflow-hidden animate-in fade-in zoom-in-95 duration-150">
         {/* Modal Header */}
-        <div className="flex items-center justify-between px-5 sm:px-6 py-4 bg-slate-900 dark:bg-slate-950 text-white border-b border-slate-800 shrink-0">
+        <div className="flex items-center justify-between gap-2 px-3.5 sm:px-6 py-3 sm:py-4 bg-slate-900 dark:bg-slate-950 text-white border-b border-slate-800 shrink-0">
           <div>
             <h2 className="text-base sm:text-lg font-extrabold">
               {isEditing
@@ -889,25 +889,30 @@ export const IssueFormModal: React.FC<IssueFormModalProps> = ({
           )}
 
           {/* Form Footer Actions */}
-          <div className="flex items-center justify-end gap-2.5 pt-3 border-t border-slate-200 dark:border-slate-800">
+          <div className="flex items-center justify-end gap-2 sm:gap-2.5 pt-3 border-t border-slate-200 dark:border-slate-800">
             <button
               type="button"
               onClick={onClose}
-              className="px-4 py-2.5 rounded-xl border border-slate-300 dark:border-slate-700 text-slate-700 dark:text-slate-200 hover:bg-slate-50 dark:hover:bg-slate-800 text-sm font-semibold transition cursor-pointer"
+              className="px-3.5 sm:px-4 py-2.5 rounded-xl border border-slate-300 dark:border-slate-700 text-slate-700 dark:text-slate-200 hover:bg-slate-50 dark:hover:bg-slate-800 text-xs sm:text-sm font-semibold transition cursor-pointer shrink-0"
             >
               ביטול
             </button>
             <button
               type="submit"
               disabled={!system.trim() || !testCaseId.trim() || !subject.trim() || !description.trim()}
-              className={`flex items-center gap-2 px-6 py-2.5 rounded-xl text-white text-sm font-bold shadow-md transition ${
+              className={`flex items-center gap-1.5 sm:gap-2 px-4 sm:px-6 py-2.5 rounded-xl text-white text-xs sm:text-sm font-bold shadow-md transition whitespace-nowrap ${
                 !system.trim() || !testCaseId.trim() || !subject.trim() || !description.trim()
                   ? 'bg-slate-400 dark:bg-slate-700 cursor-not-allowed opacity-60 shadow-none'
                   : 'bg-indigo-600 hover:bg-indigo-700 shadow-indigo-600/20 cursor-pointer'
               }`}
             >
-              <Check className="w-4 h-4 stroke-[2.5]" />
-              <span>
+              <Check className="w-4 h-4 stroke-[2.5] shrink-0" />
+              <span className="sm:hidden">
+                {editingIssue && editingIssue.id !== '__NEW_FROM_PASTE__'
+                  ? 'שמור שינויים'
+                  : 'פרסם תקלה'}
+              </span>
+              <span className="hidden sm:inline">
                 {editingIssue && editingIssue.id !== '__NEW_FROM_PASTE__'
                   ? 'שמור שינויים וסנכרן לצוות'
                   : 'פרסם תקלה וסנכרן בזמן אמת'}
