@@ -2,6 +2,7 @@ import React, { useEffect, useMemo, useState, useRef } from 'react';
 import {
   ArrowUpDown,
   MessageSquare,
+  MessageCircle,
   Edit3,
   Trash2,
   Maximize2,
@@ -54,6 +55,7 @@ interface SmartTableViewProps {
   onEditIssue: (issue: StdIssue) => void;
   onDeleteIssue: (issueId: string) => void;
   onOpenLightbox: (images: string[], index: number, title: string) => void;
+  onDiscussInChat?: (issue: StdIssue) => void;
 }
 
 type SortKey = 'testCaseId' | 'platform' | 'severity' | 'status' | 'updatedAt';
@@ -81,7 +83,8 @@ export const SmartTableView: React.FC<SmartTableViewProps> = ({
   onAddComment,
   onEditIssue,
   onDeleteIssue,
-  onOpenLightbox
+  onOpenLightbox,
+  onDiscussInChat
 }) => {
   const [sortKey, setSortKey] = useState<SortKey>('testCaseId');
   const [sortAsc, setSortAsc] = useState<boolean>(true);
@@ -369,7 +372,7 @@ export const SmartTableView: React.FC<SmartTableViewProps> = ({
                   <ArrowUpDown className="w-3.5 h-3.5 opacity-70" />
                 </button>
               </th>
-              {(canEdit || canDelete) && (
+              {(canEdit || canDelete || Boolean(onDiscussInChat)) && (
                 <th className="py-3.5 px-3.5 text-center whitespace-nowrap">פעולות</th>
               )}
             </tr>
@@ -595,10 +598,21 @@ export const SmartTableView: React.FC<SmartTableViewProps> = ({
                       <div className="text-[11px] text-slate-400 dark:text-slate-400 rtl-safe">{issue.createdBy}</div>
                     </td>
 
-                    {/* Actions (QA/Admin Edit, Admin Delete) */}
-                    {(canEdit || canDelete) && (
+                    {/* Actions (Chat Tag Link for All Roles, QA/Admin Edit, Admin Delete) */}
+                    {(canEdit || canDelete || Boolean(onDiscussInChat)) && (
                       <td className="py-3.5 px-3.5 align-top whitespace-nowrap text-center">
                         <div className="flex items-center justify-center gap-1">
+                          {onDiscussInChat && (
+                            <button
+                              type="button"
+                              onClick={() => onDiscussInChat(issue)}
+                              className="p-1.5 rounded-lg text-violet-600 dark:text-violet-400 hover:text-violet-700 dark:hover:text-violet-300 hover:bg-violet-50 dark:hover:bg-violet-950/50 transition cursor-pointer"
+                              title={`דון בתקלה בצ׳אט (מתייג #${issue.testCaseId})`}
+                              aria-label={`דון בתקלה #${issue.testCaseId} בצ׳אט`}
+                            >
+                              <MessageCircle className="w-4 h-4" />
+                            </button>
+                          )}
                           {canEdit && (
                             <button
                               type="button"
@@ -978,6 +992,22 @@ export const SmartTableView: React.FC<SmartTableViewProps> = ({
                     <span className="sm:hidden">הערות ({viewingIssue.comments.length})</span>
                     <span className="hidden sm:inline">הערות והיסטוריה ({viewingIssue.comments.length})</span>
                   </button>
+                  {onDiscussInChat && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        const target = viewingIssue;
+                        setViewingIssueId(null);
+                        onDiscussInChat(target);
+                      }}
+                      className="inline-flex items-center gap-1.5 px-2.5 sm:px-3.5 py-2 min-h-[38px] rounded-xl border border-violet-200 dark:border-violet-800 bg-violet-50/80 dark:bg-violet-950/60 hover:bg-violet-100 dark:hover:bg-violet-900/60 text-violet-700 dark:text-violet-300 text-xs font-extrabold cursor-pointer transition shrink-0 whitespace-nowrap"
+                      title={`פתח צ׳אט עם תיוג #${viewingIssue.testCaseId}`}
+                    >
+                      <MessageCircle className="w-3.5 h-3.5 shrink-0" />
+                      <span className="sm:hidden">צ׳אט</span>
+                      <span className="hidden sm:inline">תייג בצ׳אט</span>
+                    </button>
+                  )}
                   {canEdit && (
                     <button
                       type="button"

@@ -5,6 +5,7 @@ import {
   Monitor,
   Compass,
   MessageSquare,
+  MessageCircle,
   Send,
   Edit3,
   Trash2,
@@ -40,6 +41,7 @@ interface IssueCardProps {
   onEditIssue: (issue: StdIssue) => void;
   onDeleteIssue: (issueId: string) => void;
   onOpenLightbox: (images: string[], index: number, title: string) => void;
+  onDiscussInChat?: (issue: StdIssue) => void;
 }
 
 export const PlatformIcon: React.FC<{ platform: StdPlatform; className?: string }> = ({
@@ -80,7 +82,8 @@ export const IssueCard: React.FC<IssueCardProps> = ({
   onAddComment,
   onEditIssue,
   onDeleteIssue,
-  onOpenLightbox
+  onOpenLightbox,
+  onDiscussInChat
 }) => {
   const [commentText, setCommentText] = useState('');
   const [commentScreenshot, setCommentScreenshot] = useState<string | undefined>(undefined);
@@ -178,6 +181,20 @@ export const IssueCard: React.FC<IssueCardProps> = ({
                 className={`w-2 h-2 rounded-full absolute right-2.5 top-1/2 -translate-y-1/2 pointer-events-none ${statusStyle.dotColor}`}
               />
             </div>
+
+            {/* Quick Link to System Team Chat with Issue Tag (#testCaseId) */}
+            {onDiscussInChat && (
+              <button
+                type="button"
+                onClick={() => onDiscussInChat(issue)}
+                className="inline-flex items-center gap-1 px-2 py-1 rounded-lg text-violet-600 dark:text-violet-300 bg-violet-50/80 dark:bg-violet-950/50 hover:bg-violet-100 dark:hover:bg-violet-900/60 border border-violet-200/80 dark:border-violet-800/80 text-[11px] font-bold transition cursor-pointer"
+                title={`דון בתקלה בצ׳אט צוות (מתייג #${issue.testCaseId})`}
+                aria-label={`דון בתקלה #${issue.testCaseId} בצ׳אט`}
+              >
+                <MessageCircle className="w-3.5 h-3.5 shrink-0" />
+                <span>צ׳אט</span>
+              </button>
+            )}
 
             {/* Edit (QA & Admin only) & Delete (Admin only) Actions */}
             {canEdit && (

@@ -12,6 +12,7 @@ import {
   SystemChatMessage
 } from './types/std';
 import { SystemChatDrawer } from './components/SystemChatDrawer';
+import { ScrollToTopButton } from './components/ScrollToTopButton';
 import {
   doesMessageMentionUser,
   getLastChatReadMap,
@@ -312,6 +313,7 @@ export function App() {
     getLastChatReadMap()
   );
   const [chatInitialLastReadAt, setChatInitialLastReadAt] = useState<number>(0);
+  const [chatDraftSeed, setChatDraftSeed] = useState<{ tag: string; nonce: number } | null>(null);
 
   const isAdmin = Boolean(authUser?.isAdmin);
   const currentUserName = authUser?.fullName || 'חבר צוות';
@@ -1243,6 +1245,18 @@ export function App() {
       setIsChatDrawerOpen(true);
     },
     [activeSystem, chatReadTimestamps, handleSelectSystem]
+  );
+
+  const handleDiscussIssueInChat = useCallback(
+    (issue: StdIssue) => {
+      if (!issue?.system) return;
+      handleOpenSystemChat(issue.system);
+      setChatDraftSeed({
+        tag: `#${issue.testCaseId}`,
+        nonce: Date.now()
+      });
+    },
+    [handleOpenSystemChat]
   );
 
   const handleToggleMuteChatSystem = useCallback(
@@ -2728,6 +2742,7 @@ export function App() {
                 onOpenLightbox={(images, index, title) =>
                   setLightboxData({ images, index, title })
                 }
+                onDiscussInChat={handleDiscussIssueInChat}
               />
             ))}
           </div>
@@ -2771,11 +2786,17 @@ export function App() {
             onOpenLightbox={(images, index, title) =>
               setLightboxData({ images, index, title })
             }
+            onDiscussInChat={handleDiscussIssueInChat}
           />
         )}
           </>
         )}
       </main>
+
+      {/* Smart Direction-Aware Floating Scroll-to-Top Button */}
+      <ScrollToTopButton
+        disabled={activeSystem === 'HOME' || isChatDrawerOpen || Boolean(lightboxData)}
+      />
 
       {/* Mobile Bottom Navigation Bar (Visible on mobile/tablet screens) */}
       <MobileBottomNav
@@ -3322,6 +3343,7 @@ export function App() {
           isAdmin={isAdmin}
           isSystemMuted={(notifPrefs.mutedChatSystems || []).includes(activeSystem)}
           initialLastReadAt={chatInitialLastReadAt}
+          draftMentionSeed={chatDraftSeed}
           onClose={() => {
             setIsChatDrawerOpen(false);
             setChatReadTimestamps(saveLastChatReadTime(activeSystem, Date.now()));

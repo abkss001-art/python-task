@@ -50,6 +50,7 @@ interface SystemChatDrawerProps {
   isAdmin: boolean;
   isSystemMuted: boolean;
   initialLastReadAt: number;
+  draftMentionSeed?: { tag: string; nonce: number } | null;
   onClose: () => void;
   onSendMessage: (input: {
     text: string;
@@ -100,6 +101,7 @@ export const SystemChatDrawer: React.FC<SystemChatDrawerProps> = ({
   isAdmin,
   isSystemMuted,
   initialLastReadAt,
+  draftMentionSeed,
   onClose,
   onSendMessage,
   onEditMessage,
@@ -122,6 +124,11 @@ export const SystemChatDrawer: React.FC<SystemChatDrawerProps> = ({
   >(null);
   const [selectedPickerIndex, setSelectedPickerIndex] = useState(0);
   const [uploadFeedback, setUploadFeedback] = useState<string | null>(null);
+  const [viewportBox, setViewportBox] = useState<{
+    top: number;
+    height: number;
+    isKeyboardOpen: boolean;
+  } | null>(null);
 
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
@@ -131,6 +138,8 @@ export const SystemChatDrawer: React.FC<SystemChatDrawerProps> = ({
   const fileInputRef = useRef<HTMLInputElement>(null);
   const lastTypingSentRef = useRef<number>(0);
   const typingStopTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const lastAppliedSeedNonceRef = useRef<number>(0);
+  const prevMessageCountRef = useRef<number>(messages.length);
 
   const teamMemberNames = useMemo(
     () => teamMembers.map((m) => m.fullName),
@@ -188,19 +197,105 @@ export const SystemChatDrawer: React.FC<SystemChatDrawerProps> = ({
       }));
   }, [activePicker, teamMembers, systemIssues]);
 
-  // Auto-scroll to bottom when drawer opens or new messages arrive
+  // Pin drawer strictly to the visible visualViewport above mobile soft keyboard (iOS Safari & Android Chrome)
+  // so opening the keyboard NEVER pushes the header or first messages above the top edge of the screen!
+  useEffect(() => {
+    if (!isOpen || typeof window === 'undefined') {
+      setViewportBox(null);
+      return;
+    }
+
+    const syncVisualViewport = () => {
+      const vv = window.visualViewport;
+      if (!vv) {
+        setViewportBox(null);
+        return;
+      }
+      const layoutHeight = window.innerHeight || document.documentElement.clientHeight || vv.height;
+      const isKeyboardOpen = layoutHeight - vv.height > 110;
+      const shouldPin = window.innerWidth < 768 || isKeyboardOpen || vv.offsetTop > 0;
+      if (!shouldPin) {
+        setViewportBox(null);
+        return;
+      }
+      setViewportBox({
+        top: Math.max(0, Math.round(vv.offsetTop)),
+        height: Math.max(240, Math.round(vv.height)),
+        isKeyboardOpen
+      });
+    };
+
+    syncVisualViewport();
+    const vv = window.visualViewport;
+    vv?.addEventListener('resize', syncVisualViewport);
+    vv?.addEventListener('scroll', syncVisualViewport);
+    window.addEventListener('resize', syncVisualViewport);
+    return () => {
+      vv?.removeEventListener('resize', syncVisualViewport);
+      vv?.removeEventListener('scroll', syncVisualViewport);
+      window.removeEventListener('resize', syncVisualViewport);
+    };
+  }, [isOpen]);
+
+  // Apply prefilled issue tag (e.g. "#12 ") when opened from an Issue Card or Smart Table quick-link
+  useEffect(() => {
+    if (!isOpen || !draftMentionSeed?.tag) return;
+    if (draftMentionSeed.nonce === lastAppliedSeedNonceRef.current) return;
+    lastAppliedSeedNonceRef.current = draftMentionSeed.nonce;
+
+    const cleanTag = draftMentionSeed.tag.trim();
+    if (!cleanTag) return;
+
+    setText((prev) => {
+      const trimmedPrev = prev.trim();
+      if (!trimmedPrev) return `${cleanTag} `;
+      if (trimmedPrev.toLowerCase().includes(cleanTag.toLowerCase())) {
+        return prev.endsWith(' ') ? prev : `${prev} `;
+      }
+      return `${trimmedPrev} ${cleanTag} `;
+    });
+
+    const timer = window.setTimeout(() => {
+      const el = textareaRef.current;
+      if (el) {
+        el.focus({ preventScroll: true });
+        const len = el.value.length;
+        el.setSelectionRange(len, len);
+      }
+    }, 140);
+    return () => window.clearTimeout(timer);
+  }, [isOpen, draftMentionSeed]);
+
+  // Scroll ONLY the inner messages container (NEVER window/visualViewport!) on open or new incoming message
   useEffect(() => {
     if (!isOpen) return;
-    const timer = setTimeout(() => {
-      messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+    const prevCount = prevMessageCountRef.current;
+    prevMessageCountRef.current = messages.length;
+    const isNewMessage = messages.length > prevCount;
+
+    const timer = window.setTimeout(() => {
+      const container = scrollContainerRef.current;
+      if (!container) return;
+      // Only scroll down if messages actually overflow the visible container
+      if (container.scrollHeight > container.clientHeight) {
+        container.scrollTo({
+          top: container.scrollHeight,
+          behavior: isNewMessage ? 'smooth' : 'auto'
+        });
+      }
     }, 60);
-    return () => clearTimeout(timer);
+    return () => window.clearTimeout(timer);
   }, [isOpen, messages.length, system]);
 
-  // Focus composer when opening drawer
+  // Focus composer safely without scrolling outer viewport (desktop always; mobile stays readable until user taps or tags an issue)
   useEffect(() => {
     if (isOpen) {
-      setTimeout(() => textareaRef.current?.focus(), 120);
+      if (typeof window !== 'undefined' && window.innerWidth >= 640) {
+        const timer = window.setTimeout(() => {
+          textareaRef.current?.focus({ preventScroll: true });
+        }, 120);
+        return () => window.clearTimeout(timer);
+      }
     } else {
       setEditingId(null);
       setConfirmDeleteId(null);
@@ -244,7 +339,7 @@ export const SystemChatDrawer: React.FC<SystemChatDrawerProps> = ({
     setTimeout(() => {
       if (textareaRef.current) {
         const nextCursor = prefix.length + insertValue.length;
-        textareaRef.current.focus();
+        textareaRef.current.focus({ preventScroll: true });
         textareaRef.current.setSelectionRange(nextCursor, nextCursor);
       }
     }, 10);
@@ -337,7 +432,10 @@ export const SystemChatDrawer: React.FC<SystemChatDrawerProps> = ({
     } finally {
       setIsSending(false);
       setTimeout(() => {
-        messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+        const container = scrollContainerRef.current;
+        if (container && container.scrollHeight > container.clientHeight) {
+          container.scrollTo({ top: container.scrollHeight, behavior: 'smooth' });
+        }
       }, 40);
     }
   };
@@ -384,16 +482,24 @@ export const SystemChatDrawer: React.FC<SystemChatDrawerProps> = ({
   const normalizedSelf = currentUserName.trim().toLowerCase();
 
   return (
-    <div className="fixed inset-0 z-50 flex justify-end pointer-events-none overflow-hidden overscroll-none" dir="rtl">
+    <div
+      className="fixed inset-x-0 top-0 z-50 flex justify-end pointer-events-none overflow-hidden overscroll-none"
+      style={
+        viewportBox
+          ? { top: `${viewportBox.top}px`, height: `${viewportBox.height}px` }
+          : { bottom: 0 }
+      }
+      dir="rtl"
+    >
       {/* Backdrop */}
       <div
         onClick={onClose}
         className="fixed inset-0 bg-slate-900/45 dark:bg-slate-950/70 backdrop-blur-[2px] pointer-events-auto transition-opacity overscroll-none"
       />
 
-      {/* Drawer Panel (Full-screen on mobile, Side drawer on Left side in RTL desktop so board remains visible) */}
+      {/* Drawer Panel (Matches exact visualViewport above soft keyboard on mobile, side drawer on desktop) */}
       <aside
-        className="relative mr-auto h-[100dvh] w-full sm:w-[440px] md:w-[480px] bg-white dark:bg-slate-900 border-r border-slate-200 dark:border-slate-800 shadow-2xl flex flex-col pointer-events-auto animate-in slide-in-from-left duration-200 overflow-hidden"
+        className="relative mr-auto h-full w-full sm:w-[440px] md:w-[480px] bg-white dark:bg-slate-900 border-r border-slate-200 dark:border-slate-800 shadow-2xl flex flex-col pointer-events-auto animate-in slide-in-from-left duration-200 overflow-hidden"
         onDragOver={(e) => {
           e.preventDefault();
           setIsDragging(true);
@@ -416,7 +522,11 @@ export const SystemChatDrawer: React.FC<SystemChatDrawerProps> = ({
         )}
 
         {/* Drawer Header */}
-        <div className="shrink-0 px-4 pb-3.5 safe-top bg-gradient-to-l from-indigo-600 to-violet-600 dark:from-indigo-950 dark:to-slate-900 text-white border-b border-indigo-500/30 dark:border-slate-800 flex items-center justify-between gap-2">
+        <div
+          className={`shrink-0 px-4 bg-gradient-to-l from-indigo-600 to-violet-600 dark:from-indigo-950 dark:to-slate-900 text-white border-b border-indigo-500/30 dark:border-slate-800 flex items-center justify-between gap-2 ${
+            viewportBox?.isKeyboardOpen ? 'py-2' : 'pb-3.5 safe-top'
+          }`}
+        >
           <div className="flex items-center gap-3 min-w-0">
             <div className="w-10 h-10 rounded-2xl bg-white/15 border border-white/20 flex items-center justify-center shrink-0">
               <MessageCircle className="w-5 h-5 text-white" />
@@ -854,7 +964,11 @@ export const SystemChatDrawer: React.FC<SystemChatDrawerProps> = ({
         )}
 
         {/* Composer Section */}
-        <div className="relative shrink-0 px-3 pt-3 bg-white dark:bg-slate-900 border-t border-slate-200 dark:border-slate-800 space-y-2 safe-bottom">
+        <div
+          className={`relative shrink-0 px-3 pt-2.5 bg-white dark:bg-slate-900 border-t border-slate-200 dark:border-slate-800 space-y-2 ${
+            viewportBox?.isKeyboardOpen ? 'pb-2' : 'safe-bottom'
+          }`}
+        >
           {/* Autocomplete Popover (@mention or #issue) */}
           {activePicker && pickerItems.length > 0 && (
             <div className="absolute bottom-full left-3 right-3 mb-2 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-2xl shadow-xl overflow-hidden z-20 max-h-52 overflow-y-auto">
@@ -931,7 +1045,25 @@ export const SystemChatDrawer: React.FC<SystemChatDrawerProps> = ({
                 onChange={handleTextChange}
                 onKeyDown={handleComposerKeyDown}
                 onPaste={handlePasteInComposer}
-                rows={2}
+                onFocus={() => {
+                  // Re-sync visualViewport as iOS/Android soft keyboard finishes opening
+                  const syncNow = () => {
+                    const vv = window.visualViewport;
+                    if (!vv) return;
+                    const layoutHeight = window.innerHeight || document.documentElement.clientHeight || vv.height;
+                    const isKeyboardOpen = layoutHeight - vv.height > 110;
+                    if (window.innerWidth < 768 || isKeyboardOpen || vv.offsetTop > 0) {
+                      setViewportBox({
+                        top: Math.max(0, Math.round(vv.offsetTop)),
+                        height: Math.max(240, Math.round(vv.height)),
+                        isKeyboardOpen
+                      });
+                    }
+                  };
+                  window.setTimeout(syncNow, 80);
+                  window.setTimeout(syncNow, 280);
+                }}
+                rows={viewportBox?.isKeyboardOpen ? 1 : 2}
                 placeholder="כתוב הודעה... (@ לתיוג, # לתקלה, Ctrl+V לצילום מסך)"
                 className="w-full bg-transparent text-xs sm:text-[13px] text-slate-900 dark:text-slate-100 placeholder-slate-400 resize-none focus:outline-none leading-relaxed"
               />
@@ -976,7 +1108,7 @@ export const SystemChatDrawer: React.FC<SystemChatDrawerProps> = ({
                         query: '',
                         startIndex: prefix.length - 1
                       });
-                      setTimeout(() => textareaRef.current?.focus(), 10);
+                      setTimeout(() => textareaRef.current?.focus({ preventScroll: true }), 10);
                     }}
                     className="p-1.5 rounded-lg text-slate-500 dark:text-slate-400 hover:text-indigo-600 dark:hover:text-indigo-400 hover:bg-white dark:hover:bg-slate-700 transition cursor-pointer"
                     title="תייג חבר צוות (@)"
@@ -993,7 +1125,7 @@ export const SystemChatDrawer: React.FC<SystemChatDrawerProps> = ({
                         query: '',
                         startIndex: prefix.length - 1
                       });
-                      setTimeout(() => textareaRef.current?.focus(), 10);
+                      setTimeout(() => textareaRef.current?.focus({ preventScroll: true }), 10);
                     }}
                     className="p-1.5 rounded-lg text-slate-500 dark:text-slate-400 hover:text-indigo-600 dark:hover:text-indigo-400 hover:bg-white dark:hover:bg-slate-700 transition cursor-pointer"
                     title="קשר לתסריט תקלה (#)"
